@@ -4,7 +4,7 @@ Verified on Windows with Python 3.13.15 and uv 0.11.32. Tests use synthetic
 contracts, loopback HTTP servers, temporary output directories, and fixture-only
 credentials. No real API credentials or private API calls were used.
 
-- 165 unit, integration, property, security, generation, and fresh-install tests
+- 170 unit, integration, property, security, generation, and fresh-install tests
   pass on Windows, with 92.84% combined line and branch coverage against a 90% gate.
 - The distribution test downloads a contract from the local fixture server,
   generates a package, builds both runtime and generated wheels, installs them
@@ -28,12 +28,15 @@ credentials. No real API credentials or private API calls were used.
   Source distributions include tests and documentation and exclude temporary
   environments and caches. Strict package metadata and version checks pass.
 
-CI is configured for Ubuntu and Windows on Python 3.13 and 3.14. Hosted CI has
-not yet run for the publication checkpoint. A separate isolated Linux baseline
-passed. A bounded WSL mutation experiment completed 17 operation-policy mutants:
-16 were killed and one survived for inspection. The full generated inventory
-contained 2,734 mutants, so this is partial scope and cannot establish a project
-score. [Asynchronous full runs and alerts](mutation.md) provide continuing evidence.
+Hosted CI passed across Ubuntu and Windows on Python 3.13 and 3.14 for the initial
+public checkpoint. The [CI workflow](https://github.com/mikejhill/codapact/actions/workflows/ci.yml)
+shows subsequent checks. A separate isolated Linux baseline passed. A bounded
+WSL mutation experiment killed all 17 selected operation-policy mutants. Its
+first run found a missing assertion for useful denial diagnostics; the regression
+now requires the denied operation's identity in the error. The full generated
+inventory contained 2,763 mutants, so this is partial scope and cannot establish
+a project score. [Asynchronous full runs and alerts](mutation.md) provide
+continuing evidence.
 Fuzzing beyond the included Hypothesis properties has not been run. No package
 release or registry publication has occurred.
 

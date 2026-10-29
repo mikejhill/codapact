@@ -26,10 +26,14 @@ incidents.
 
 Each active class has one deduplicated issue assigned to `mikejhill`:
 
-- **Regression:** a complete score below 90%, or mutants without associated tests.
-- **Incomplete:** zero mutants, unresolved counts, interruptions, timeouts,
-  suspicious outcomes, skipped mutants, or crashed workers. These never pass.
-- **Infrastructure:** tool/baseline/setup failure, missing or malformed evidence.
+- **Regression:** a complete score below the required 90% floor. Equality and
+  scores above the floor pass even with survivors; survivor details remain in
+  evidence without creating a findings issue.
+- **Execution failure:** incomplete and infrastructure results share a separate
+  incident. Incomplete means zero mutants, unresolved counts, interruptions,
+  timeouts, suspicious outcomes, skipped mutants, or crashed workers.
+  Infrastructure means tool/baseline/setup failure, missing or malformed evidence.
+  The subtype remains explicit in the report and issue. Neither subtype passes.
 
 Issues contain first/last seen, commit and run links, recent evidence, the score
 and floor, completion state, and triage instructions. Repeated observations update

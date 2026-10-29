@@ -34,7 +34,10 @@ def counts(**updates):
     [
         (counts(), 0, "pass"),
         (counts(killed=80, survived=20), 0, "regression"),
-        (counts(killed=99, no_tests=1), 0, "regression"),
+        (counts(killed=99, no_tests=1), 0, "pass"),
+        (counts(killed=90, survived=10), 0, "pass"),
+        (counts(killed=91, survived=9), 0, "pass"),
+        (counts(killed=89, survived=11), 0, "regression"),
         (counts(killed=90), 0, "incomplete"),
         (counts(killed=0, total=0), 0, "incomplete"),
         (counts(killed=99, timeout=1), 0, "incomplete"),
@@ -129,7 +132,7 @@ def test_infrastructure_is_separate_and_recovery_requires_complete_evidence():
     api = Issues()
     alerts.reconcile(api, report("infrastructure"))
     alerts.reconcile(api, report("incomplete", day=1))
-    assert len(api.issues) == 2
+    assert len(api.issues) == 1
     with pytest.raises(ValueError):
         alerts.reconcile(api, report("pass", complete=False))
     assert all(issue["state"] == "open" for issue in api.issues)
@@ -146,7 +149,7 @@ def test_selftest_namespace_cannot_close_production_incidents():
     assert api.issues[1]["state"] == "closed"
 
 
-def test_alert_recurrence_reopens_incident_and_duplicate_detection_fails_closed():
+def test_alert_recurrence_reopens_incident_and_duplicate_consolidation_preserves_history():
     api = Issues()
     alerts.reconcile(api, report("regression"))
     alerts.reconcile(api, report("pass", day=1))
@@ -155,8 +158,9 @@ def test_alert_recurrence_reopens_incident_and_duplicate_detection_fails_closed(
     assert api.issues[0]["state"] == "open"
     assert any("Reopened" in body for _, body in api.comments)
     api.create("duplicate", api.issues[0]["body"])
-    with pytest.raises(RuntimeError, match="duplicate"):
-        alerts.reconcile(api, report("regression", day=3))
+    assert alerts.reconcile(api, report("regression", day=3)) == [1]
+    assert [issue["state"] for issue in api.issues] == ["open", "closed"]
+    assert any("Duplicate of #1" in body for _, body in api.comments)
 
 
 def test_only_authorized_repository_and_namespaces_allowed():
@@ -229,3 +233,45 @@ def test_issue_api_paginates_and_omits_pull_requests(monkeypatch):
     monkeypatch.setattr(api, "request", get)
     assert len(api.list()) == 100
     assert len(requests) == 2
+
+
+def test_adapter_preserves_read_after_write_when_remote_listing_lags(monkeypatch):
+    api = alerts.GitHub("mikejhill/codapact")
+    writes = []
+
+    def request(method, path, data=None):
+        if method == "GET":
+            return []
+        assert data is not None
+        if path.endswith("/comments"):
+            return {"id": 1, "body": data["body"]}
+        if method == "POST":
+            writes.append(data)
+            return {
+                "number": 1,
+                "body": data["body"],
+                "title": data["title"],
+                "state": "open",
+                "user": {"login": "github-actions[bot]"},
+            }
+        return {
+            "number": 1,
+            "body": data["body"],
+            "state": data["state"],
+            "user": {"login": "github-actions[bot]"},
+        }
+
+    monkeypatch.setattr(api, "request", request)
+    assert alerts.reconcile(api, report("regression")) == [1]
+    assert alerts.reconcile(api, report("regression", day=1)) == [1]
+    assert len(writes) == 1
+    alerts.reconcile(api, report("pass", day=2))
+    assert api.list()[0]["state"] == "closed"
+
+
+def test_passing_score_with_survivors_does_not_create_findings_issue():
+    api = Issues()
+    passing = report("pass")
+    passing.update(score=90.0, counts=counts(killed=90, survived=10))
+    assert alerts.reconcile(api, passing) == []
+    assert api.creations == 0
