@@ -7,13 +7,15 @@ import sys
 import tomllib
 import typing
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
 from codapact import __version__
 from codapact.errors import CodaError
-from codapact.generation import canonical, package_name
+from codapact.generation import ArgparseGenerator, canonical, package_name
 from codapact.net import Response
+from codapact.openapi import OpenAPITranslator
 from codapact.project import generate, write_project
 
 
@@ -327,3 +329,90 @@ def test_ownership_size_boundary_counts_trailing_data_before_writes(tmp_path):
     manifest.write_bytes(minimal + b" " * (2_000_000 - len(minimal)))
     write_project(root, {"client.py": "new data"})
     assert (root / "client.py").read_text() == "new data"
+
+
+@pytest.mark.parametrize(
+    "case", ["float_version", "extra_field", "duplicate", "invalid_name", "extra_command_field"]
+)
+def test_cli_definition_rejects_each_independent_constraint(contract, case):
+    definition: dict[str, typing.Any] = {
+        "version": 1,
+        "commands": [
+            {"name": "fetch", "operation": "get_pet"},
+            {"name": "create", "operation": "create_pet"},
+            {"name": "list", "operation": "list_pets"},
+            {"name": "delete", "operation": "delete_pet"},
+        ],
+    }
+    if case == "float_version":
+        definition["version"] = 1.0
+    elif case == "extra_field":
+        definition["unknown"] = True
+    elif case == "duplicate":
+        definition["commands"].append({"name": "fetch", "operation": "get_pet"})
+    elif case == "invalid_name":
+        definition["commands"][0]["name"] = "../escape"
+    else:
+        definition["commands"][0]["unknown"] = "unexpected"
+    with pytest.raises(CodaError, match="(?i)CLI"):
+        ArgparseGenerator().generate_with_definition(
+            OpenAPITranslator().translate(contract), "pets_api", definition
+        )
+
+
+def test_cli_flags_colliding_after_hyphen_normalization_are_rejected(contract):
+    contract["paths"]["/pets/{pet_id}"]["get"]["parameters"].extend(
+        [
+            {"name": "X-Trace", "in": "header", "schema": {"type": "string"}},
+            {"name": "X_Trace", "in": "header", "schema": {"type": "string"}},
+        ]
+    )
+    with pytest.raises(CodaError, match="(?i)flags collide"):
+        ArgparseGenerator().generate(OpenAPITranslator().translate(contract), "pets_api")
+
+
+def test_orchestration_preserves_custom_transport_and_cli_definition(contract, tmp_path):
+    calls = []
+
+    class Transport:
+        def send(self, method, url, headers, body):
+            calls.append((method, url, headers, body))
+            return Response(200, {}, json.dumps(contract).encode())
+
+    definition: dict[str, typing.Any] = {
+        "version": 1,
+        "commands": [
+            {"name": "fetch", "operation": "get_pet"},
+            {"name": "create", "operation": "create_pet"},
+            {"name": "list", "operation": "list_pets"},
+            {"name": "delete", "operation": "delete_pet"},
+        ],
+    }
+    generate(
+        "https://contracts.example.com/pets",
+        tmp_path,
+        package="pets_api",
+        transport=Transport(),
+        cli_definition=definition,
+    )
+    assert calls == [
+        ("GET", "https://contracts.example.com/pets", {"Accept": "application/json"}, None)
+    ]
+    assert json.loads((tmp_path / "src/pets_api/cli.json").read_text()) == definition
+
+
+def test_atomic_replacement_stages_on_destination_filesystem(tmp_path, monkeypatch):
+    import codapact.project as project
+
+    replace = project.os.replace
+    calls = []
+
+    def observe(source, destination):
+        assert Path(source).parent == Path(destination).parent
+        calls.append(Path(destination).name)
+        replace(source, destination)
+
+    monkeypatch.setattr(project.os, "replace", observe)
+    write_project(tmp_path / "output", {"nested/client.py": "client"})
+    assert calls == ["client.py", ".codapact-manifest.json"]
+    assert sorted(p.name for p in (tmp_path / "output/nested").iterdir()) == ["client.py"]

@@ -954,3 +954,84 @@ def test_paths_with_spaces_and_equals_are_data_not_override_syntax(tmp_path):
         local_path("https://example.com/file", tmp_path)
     with pytest.raises(CodaError, match="(?i)URL"):
         clean_defaults({"base_url": "https://example.com?query=1"})
+
+
+@pytest.mark.parametrize("value", [None, [], 1])
+def test_runtime_profile_root_rejection_has_safe_diagnostic(value):
+    with pytest.raises(CodaError, match="(?i)profile"):
+        profiles.validate_profile(value)
+
+
+def test_optional_auth_discovery_never_accepts_existing_empty_document(tmp_path):
+    path = tmp_path / "auth.json"
+    path.write_text("{}", encoding="utf-8")
+    with pytest.raises(CodaError, match="(?i)auth file"):
+        profiles.JsonFileStore(path, optional=True)
+
+
+def test_runtime_configuration_read_is_bounded_before_validation(tmp_path, monkeypatch):
+    path = tmp_path / "config.json"
+    path.write_bytes(b" " * 65_537)
+    original = Path.open
+
+    class Reader:
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.handle.close()
+
+        def fileno(self):
+            return self.handle.fileno()
+
+        def read(self, size=-1):
+            assert 0 < size < 100_000, "configuration reads must remain bounded"
+            return self.handle.read(size)
+
+    def opened(target, *args, **kwargs):
+        handle = original(target, *args, **kwargs)
+        return Reader(handle) if target == path else handle
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "open", opened)
+        with pytest.raises(CodaError, match="(?i)size limit"):
+            profiles.read_file(path)
+
+
+@pytest.mark.parametrize("version", [1.0, True])
+def test_manifest_schema_version_requires_integer_even_if_numerically_equal(version, tmp_path):
+    path = tmp_path / "generation.json"
+    path.write_text(
+        json.dumps({"version": version, "contract": {"source": "api.yaml"}}), encoding="utf-8"
+    )
+    with pytest.raises(CodaError, match="(?i)version"):
+        resolve_generation(path.name, {}, cwd=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "source", ["http://api.example.com/openapi.json", "https://api.example.com/openapi.json"]
+)
+def test_manifest_urls_relative_inputs_and_empty_runtime_values(source, tmp_path):
+    path = tmp_path / "generation.json"
+    path.write_text(
+        json.dumps({"version": 1, "contract": {"source": source}, "cli": {"slug": "my-pets"}}),
+        encoding="utf-8",
+    )
+    result = resolve_generation(path.name, {}, ["runtime={}"], cwd=tmp_path)
+    assert result["source"] == source
+    assert result["package"] == "my_pets_client"
+    assert result["profile"] == {
+        "version": 1,
+        "slug": "my-pets",
+        "config_directory": None,
+        "defaults": {},
+    }
+    with pytest.raises(CodaError):
+        resolve_generation(
+            path.name, {}, ['contract.source="unknown://example.com/api"'], cwd=tmp_path
+        )
+    with pytest.raises(CodaError):
+        resolve_generation(path.name, {}, ["invalid-field=1"], cwd=tmp_path)
