@@ -38,6 +38,7 @@ guide for precedence, credential-file permissions, and every generation override
 - [Supported features and safety boundaries](docs/support.md)
 - [CLI definition and runtime configuration](docs/configuration.md)
 - [Release process](docs/releasing.md)
+- [Security analysis](docs/security.md)
 - [Verification evidence and limits](docs/verification.md)
 - [Asynchronous mutation testing and open alerts](docs/mutation.md)
 
