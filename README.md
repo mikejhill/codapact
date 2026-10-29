@@ -6,7 +6,8 @@
 
 This first iteration generates an installable, typed Python client and a
 scriptable CLI from a local or remote OpenAPI contract. The package, module, and
-generator CLI are named `codapact`. Package registry publication is pending.
+generator CLI are named `codapact`. Install a published release with
+`uv tool install codapact`, or use the source workflow below.
 
 ```powershell
 uv sync
@@ -41,6 +42,6 @@ guide for precedence, credential-file permissions, and every generation override
 - [Asynchronous mutation testing and open alerts](docs/mutation.md)
 
 Run `uv run poe check` for formatting, lint, type checking, and tests. Generated
-packages depend on this runtime at the exact generator version. Before public
-publication, install the local runtime wheel and generated wheel together. The
-end-to-end test proves that workflow in a fresh environment.
+packages depend on this runtime at the exact generator version. For unreleased
+source changes, install the local runtime wheel and generated wheel together.
+The end-to-end test proves that workflow in a fresh environment.
