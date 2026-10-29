@@ -1,4 +1,6 @@
+import ipaddress
 import json
+import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import override
@@ -174,3 +176,31 @@ def server(contract):
 @pytest.fixture(autouse=True)
 def isolated_config(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+
+@pytest.fixture(autouse=True)
+def fixture_network_only(monkeypatch):
+    """API tests use loopback servers or explicit transport mocks, including under mutation."""
+    original_resolve = socket.getaddrinfo
+    original_connect = socket.create_connection
+
+    def check(host):
+        if host == "localhost":
+            return
+        try:
+            allowed = ipaddress.ip_address(host).is_loopback
+        except (TypeError, ValueError):
+            allowed = False
+        if not allowed:
+            pytest.fail("API tests may contact only loopback fixture addresses")
+
+    def resolve(host, *args, **kwargs):
+        check(host)
+        return original_resolve(host, *args, **kwargs)
+
+    def connect(address, *args, **kwargs):
+        check(address[0])
+        return original_connect(address, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    monkeypatch.setattr(socket, "create_connection", connect)

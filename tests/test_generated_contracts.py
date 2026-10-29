@@ -18,6 +18,7 @@ from codapact.generation import ArgparseGenerator, canonical, package_name
 from codapact.net import Response
 from codapact.openapi import OpenAPITranslator
 from codapact.project import generate, write_project
+from tests.assertions import safe_error
 
 
 @contextmanager
@@ -33,6 +34,7 @@ def generated(contract, tmp_path, monkeypatch):
     )
     with monkeypatch.context() as patch:
         patch.syspath_prepend(str(output / "src"))
+        patch.setenv("XDG_CONFIG_HOME", str(tmp_path / "isolated-xdg"))
         try:
             yield importlib.import_module("behavior_pets.client")
         finally:
@@ -74,6 +76,11 @@ def test_generated_types_and_call_signatures_are_usable(contract, tmp_path, monk
         signature = inspect.signature(module.Client.create_pet)
         assert signature.parameters["body"].default is inspect.Parameter.empty
         assert signature.parameters["parameters"].default is None
+        parameter_type = typing.get_type_hints(module.Client.get_pet, vars(module))["parameters"]
+        assert parameter_type is module.Op_get_petParams
+        assert typing.get_type_hints(parameter_type, vars(module)) == {"pet_id": int}
+        assert parameter_type.__required_keys__ == frozenset({"pet_id"})
+        assert "body" not in inspect.signature(module.Client.delete_pet).parameters
         assert (
             inspect.signature(module.Client.get_pet).parameters["parameters"].default
             is inspect.Parameter.empty
@@ -166,7 +173,7 @@ def test_generated_optional_body_and_cli_scalar_serialization(
     ],
 )
 def test_package_names_do_not_shadow_dependencies_or_reserved_devices(name):
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         package_name(name)
     assert package_name("a" * 50) == "a" * 50
 
@@ -194,7 +201,7 @@ def test_nested_output_creation_unicode_and_ownership_validation(tmp_path):
         {**original, "files": {"nested/value.txt": "invalid"}},
     ]:
         manifest.write_text(json.dumps(state), encoding="utf-8")
-        with pytest.raises(CodaError, match="(?i)ownership manifest"):
+        with safe_error(CodaError, match="(?i)ownership manifest"):
             write_project(root, {"nested/value.txt": "café\n"})
         assert (root / "nested/value.txt").read_bytes() == "café\n".encode()
     manifest.write_text(json.dumps(original), encoding="utf-8")
@@ -208,7 +215,7 @@ def test_corrupt_ownership_root_has_safe_diagnostic_and_no_writes(state, tmp_pat
     root = tmp_path / "output"
     root.mkdir()
     (root / ".codapact-manifest.json").write_text(json.dumps(state), encoding="utf-8")
-    with pytest.raises(CodaError, match="(?i)ownership manifest"):
+    with safe_error(CodaError, match="(?i)ownership manifest"):
         write_project(root, {"client.py": "new data"})
     assert not (root / "client.py").exists()
 
@@ -222,7 +229,7 @@ def test_ownership_input_limits_fail_before_writes(tmp_path):
         b'{"version":1,"files":{},"padding":' + b"[" * 1500 + b"0" + b"]" * 1500 + b"}",
     ]:
         path.write_bytes(data)
-        with pytest.raises(CodaError, match="(?i)ownership manifest"):
+        with safe_error(CodaError, match="(?i)ownership manifest"):
             write_project(root, {"client.py": "new data"})
         assert not (root / "client.py").exists()
 
@@ -230,7 +237,7 @@ def test_ownership_input_limits_fail_before_writes(tmp_path):
 def test_generated_ownership_limit_fails_before_creating_unreadable_output(tmp_path):
     files = {f"file_{index:05d}_" + "x" * 180 + ".txt": "value" for index in range(10_000)}
     root = tmp_path / "new-output"
-    with pytest.raises(CodaError, match="(?i)ownership manifest"):
+    with safe_error(CodaError, match="(?i)ownership manifest"):
         write_project(root, files)
     assert not root.exists()
 
@@ -334,7 +341,7 @@ def test_ownership_size_boundary_counts_trailing_data_before_writes(tmp_path):
     root.mkdir()
     manifest = root / ".codapact-manifest.json"
     manifest.write_bytes(minimal + b" " * (2_000_001 - len(minimal)))
-    with pytest.raises(CodaError, match="(?i)ownership manifest"):
+    with safe_error(CodaError, match="(?i)ownership manifest"):
         write_project(root, {"client.py": "new data"})
     assert not (root / "client.py").exists()
     manifest.write_bytes(minimal + b" " * (2_000_000 - len(minimal)))
@@ -365,7 +372,7 @@ def test_cli_definition_rejects_each_independent_constraint(contract, case):
         definition["commands"][0]["name"] = "../escape"
     else:
         definition["commands"][0]["unknown"] = "unexpected"
-    with pytest.raises(CodaError, match="(?i)CLI"):
+    with safe_error(CodaError, match="(?i)CLI"):
         ArgparseGenerator().generate_with_definition(
             OpenAPITranslator().translate(contract), "pets_api", definition
         )
@@ -378,7 +385,7 @@ def test_cli_flags_colliding_after_hyphen_normalization_are_rejected(contract):
             {"name": "X_Trace", "in": "header", "schema": {"type": "string"}},
         ]
     )
-    with pytest.raises(CodaError, match="(?i)flags collide"):
+    with safe_error(CodaError, match="(?i)flags collide"):
         ArgparseGenerator().generate(OpenAPITranslator().translate(contract), "pets_api")
 
 
@@ -600,6 +607,140 @@ def test_ownership_reads_remain_bounded_before_parsing(tmp_path, monkeypatch):
 
     with monkeypatch.context() as patch:
         patch.setattr(Path, "open", opened)
-        with pytest.raises(CodaError, match="(?i)ownership manifest"):
+        with safe_error(CodaError, match="(?i)ownership manifest"):
             write_project(root, {"client.py": "new data"})
     assert not (root / "client.py").exists()
+
+
+def test_generated_cli_directory_override_selects_both_config_and_auth(
+    contract, tmp_path, monkeypatch, capsys
+):
+    root = tmp_path / "chosen"
+    root.mkdir()
+    (root / "config.json").write_text(
+        json.dumps({"base_url": "https://chosen.example/v2", "timeout": 0.75}), encoding="utf-8"
+    )
+    (root / "auth.json").write_text(
+        json.dumps({"version": 1, "credentials": {"token": {"value": "chosen-token"}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "decoy"))
+    seen = []
+
+    class Transport:
+        def send(self, method, url, headers, body):
+            assert url == "https://chosen.example/v2/pets/1"
+            assert headers["Authorization"] == "Bearer chosen-token"
+            return Response(200, {"Content-Type": "application/json"}, b'{"id":1,"name":"Pip"}')
+
+    with generated(contract, tmp_path, monkeypatch) as module:
+        cli = importlib.import_module("behavior_pets.__main__")
+
+        def factory(**kwargs):
+            seen.append(kwargs["settings"])
+            return module.Client(transport=Transport(), **kwargs)
+
+        monkeypatch.setattr(cli, "Client", factory)
+        assert cli.main(["--config-dir", str(root), "get-pet", "--arg-pet-id", "1"]) == 0
+        assert seen[-1]["timeout"] == 0.75
+        assert capsys.readouterr().out.count("\n") == 1
+
+
+@pytest.mark.parametrize(
+    "flags", [["--config-dir", "chosen"], ["--auth-file", "chosen.json"], ["--no-auth-file"]]
+)
+def test_cli_without_discovery_profile_rejects_discovery_flags_before_client(
+    contract, flags, capsys
+):
+    from codapact.cli import run_cli
+
+    ir = OpenAPITranslator().translate(contract)
+    definition = {"version": 1, "commands": [{"name": "get", "operation": "get_pet"}]}
+
+    def factory(**kwargs):
+        pytest.fail("unsupported discovery must not construct a client")
+
+    assert run_cli(factory, ir.to_dict(), definition, [*flags, "get", "--arg-pet-id", "1"]) == 2
+    output = capsys.readouterr()
+    assert output.out == "" and "profile" in output.err.casefold()
+
+
+@pytest.mark.parametrize("source", ["http://example.com/config", "https://example.com/config"])
+def test_cli_local_configuration_rule_precedes_any_loading(contract, source, monkeypatch, capsys):
+    from codapact.cli import run_cli
+
+    ir = OpenAPITranslator().translate(contract)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("remote runtime configuration must not be loaded")
+
+    monkeypatch.setattr("codapact.cli.load", forbidden)
+    definition = {"version": 1, "commands": [{"name": "get", "operation": "get_pet"}]}
+    assert (
+        run_cli(
+            forbidden, ir.to_dict(), definition, ["--config", source, "get", "--arg-pet-id", "1"]
+        )
+        == 2
+    )
+    assert "local" in capsys.readouterr().err.casefold()
+
+
+@pytest.mark.parametrize("value", [None, 1, True, [], {}])
+def test_ownership_hash_values_require_text_before_hash_validation(value, tmp_path):
+    root = tmp_path / "output"
+    root.mkdir()
+    (root / ".codapact-manifest.json").write_text(
+        json.dumps({"version": 1, "files": {"old.txt": value}}), encoding="utf-8"
+    )
+    with safe_error(CodaError, match="(?i)ownership manifest"):
+        write_project(root, {"new.txt": "new"})
+    assert not (root / "new.txt").exists()
+
+
+def test_regeneration_tolerates_missing_owned_files_removed_from_output(tmp_path):
+    root = tmp_path / "output"
+    write_project(root, {"old.txt": "old"})
+    (root / "old.txt").unlink()
+    write_project(root, {"new.txt": "new"})
+    assert (root / "new.txt").read_text() == "new"
+    state = json.loads((root / ".codapact-manifest.json").read_text())
+    assert set(state["files"]) == {"new.txt"}
+
+
+@pytest.mark.parametrize("arguments", [[], ["create-pet"]])
+def test_missing_generated_command_or_required_body_fails_before_client_construction(
+    contract, tmp_path, monkeypatch, arguments
+):
+    with generated(contract, tmp_path, monkeypatch):
+        cli = importlib.import_module("behavior_pets.__main__")
+
+        def forbidden(**kwargs):
+            pytest.fail("usage errors must precede client and credential initialization")
+
+        monkeypatch.setattr(cli, "Client", forbidden)
+        with pytest.raises(SystemExit) as caught:
+            cli.main(arguments)
+        assert caught.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "failure", [ValueError("sensitive transport detail"), OSError("sensitive transport detail")]
+)
+def test_generated_cli_redacts_untyped_adapter_failures(
+    contract, tmp_path, monkeypatch, capsys, failure
+):
+    contract["security"] = []
+
+    class Transport:
+        def send(self, method, url, headers, body):
+            raise failure
+
+    with generated(contract, tmp_path, monkeypatch) as module:
+        cli = importlib.import_module("behavior_pets.__main__")
+        monkeypatch.setattr(
+            cli, "Client", lambda **kwargs: module.Client(transport=Transport(), **kwargs)
+        )
+        assert cli.main(["get-pet", "--arg-pet-id", "1"]) == 2
+        output = capsys.readouterr()
+        assert output.out == "" and output.err.strip()
+        assert "sensitive transport detail" not in output.err
