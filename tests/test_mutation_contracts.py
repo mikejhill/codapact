@@ -1035,3 +1035,29 @@ def test_manifest_urls_relative_inputs_and_empty_runtime_values(source, tmp_path
         )
     with pytest.raises(CodaError):
         resolve_generation(path.name, {}, ["invalid-field=1"], cwd=tmp_path)
+
+
+@pytest.mark.parametrize("control", [chr(value) for value in range(32)] + ["\x7f"])
+@pytest.mark.parametrize("origin", ["parameter", "auth"])
+def test_all_ascii_header_controls_fail_before_transport(contract, control, origin):
+    class Auth:
+        def headers(self, name, scheme):
+            return {"Authorization": "Bearer synthetic" + control + "value"}
+
+    class NeverTransport:
+        def send(self, method, url, headers, body):
+            pytest.fail("header controls must not reach transport")
+
+    values: dict[str, Any] = {"pet_id": 1}
+    if origin == "parameter":
+        contract["security"] = []
+        contract["paths"]["/pets/{pet_id}"]["get"]["parameters"].append(
+            {"name": "X-Trace", "in": "header", "schema": {"type": "string"}}
+        )
+        values["X-Trace"] = "synthetic" + control + "value"
+    instance = ClientBase(
+        OpenAPITranslator().translate(contract).to_dict(), auth=Auth(), transport=NeverTransport()
+    )
+    with pytest.raises(CodaError, match="(?i)header") as error:
+        instance._execute("get_pet", values)
+    assert "synthetic" not in str(error.value)
