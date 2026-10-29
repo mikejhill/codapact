@@ -14,7 +14,7 @@ The runtime version also determines generated dependencies and manifests.
 
 ## Publisher and bot setup
 
-The public source destination is `mikejhill/codapact`. The approved PyPI pending
+The public source destination is `mikejhill/codapact`. The approved PyPI
 publisher binds project `codapact` to that repository, workflow `release.yml`,
 and environment `pypi`. `RELEASES_ENABLED=true` enables the version workflow.
 

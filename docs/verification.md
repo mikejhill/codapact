@@ -41,8 +41,9 @@ killed, 941 survived, 2,763 total), below the unchanged 90% floor. Its durable
 triage. Named mutant details and source snapshots are retained as workflow
 artifacts. [Asynchronous full runs and alerts](mutation.md) provide continuing
 evidence without blocking release.
-Fuzzing beyond the included Hypothesis properties has not been run. No package
-release or registry publication has occurred.
+Fuzzing beyond the included Hypothesis properties has not been run. Package
+publication is verified separately through the release workflow and official
+PyPI metadata.
 
 The second adversarial pass first reproduced 15 failures, then added regressions
 for canonical JSON Pointers, strict configuration/plugin versions, stable
