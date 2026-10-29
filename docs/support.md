@@ -73,3 +73,8 @@ version 1 and validated file hashes. Malformed roots, unknown fields, and
 excessive input fail before writes. Generation also rejects ownership inventories
 that would exceed that bound, so it cannot create an unreadable regeneration
 manifest. Literal operation paths reject whitespace and control characters.
+
+Reference resolution limits expanded string keys and values to eight million
+characters, counting repeated references each time. This complements the node
+and depth budgets and stops small contracts from producing oversized serialized
+payloads through repeated large strings. The input document limit remains 2 MB.

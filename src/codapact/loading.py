@@ -11,6 +11,8 @@ from yaml.tokens import AliasToken, AnchorToken
 from codapact.errors import CodaError
 from codapact.net import MAX_BYTES, HttpTransport, Transport
 
+MAX_EXPANDED_TEXT = 8_000_000
+
 
 class UniqueLoader(yaml.SafeLoader):
     """Reject ambiguous duplicate keys instead of accepting the last one."""
@@ -85,6 +87,13 @@ def load(source: str, *, transport: Transport | None = None) -> dict[str, Any]:
 def resolve(document: dict[str, Any]) -> dict[str, Any]:
     """Resolve internal refs only; refuse recursion, siblings, and external fetches."""
     budget = 0
+    expanded_text = 0
+
+    def charge_text(text: str) -> None:
+        nonlocal expanded_text
+        expanded_text += len(text)
+        if expanded_text > MAX_EXPANDED_TEXT:
+            raise CodaError("reference expansion text limit exceeded")
 
     def walk(node: Any, stack: tuple[str, ...] = (), depth: int = 0) -> Any:
         nonlocal budget
@@ -94,6 +103,8 @@ def resolve(document: dict[str, Any]) -> dict[str, Any]:
         if isinstance(node, list):
             return [walk(child, stack, depth + 1) for child in node]
         if not isinstance(node, dict):
+            if isinstance(node, str):
+                charge_text(node)
             return node
         if "$ref" in node:
             ref = node["$ref"]
@@ -116,6 +127,9 @@ def resolve(document: dict[str, Any]) -> dict[str, Any]:
             except (KeyError, IndexError, TypeError, ValueError):
                 raise CodaError("unresolved internal reference") from None
             return walk(target, (*stack, ref), depth + 1)
+        for key in node:
+            if isinstance(key, str):
+                charge_text(key)
         return {key: walk(child, stack, depth + 1) for key, child in node.items()}
 
     return walk(document)
