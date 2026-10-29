@@ -152,7 +152,7 @@ class OpenAPITranslator:
                 or "#" in path
                 or "\\" in path
                 or "%" in path
-                or any(ord(c) < 32 for c in path)
+                or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in path)
                 or not path.isascii()
                 or "{" in re.sub(r"\{[A-Za-z][A-Za-z0-9_-]*\}", "", path)
                 or "}" in re.sub(r"\{[A-Za-z][A-Za-z0-9_-]*\}", "", path)

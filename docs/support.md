@@ -67,3 +67,9 @@ characters; literal non-ASCII path/query text must be URI-encoded.
 Use contracts only when you intend to call their declared server. A public
 server is still an external destination; inspect contracts and override the base
 URL when needed. Custom plugins are trusted executable application code.
+
+Ownership manifests are bounded JSON objects of at most 2 MB with integer schema
+version 1 and validated file hashes. Malformed roots, excessive input, and deeply
+nested JSON fail before writes. Generation also rejects ownership inventories
+that would exceed that bound, so it cannot create an unreadable regeneration
+manifest. Literal operation paths reject whitespace and control characters.

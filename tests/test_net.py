@@ -190,3 +190,70 @@ def test_public_plaintext_requires_opt_in_before_connection(monkeypatch):
     monkeypatch.setattr(net.socket, "create_connection", unexpected_connection)
     with pytest.raises(CodaError, match="plaintext HTTP"):
         net.HttpTransport().send("GET", "http://api.example.com", {}, None)
+
+
+@pytest.mark.parametrize(
+    ("status", "size", "failure"),
+    [
+        (299, 2_000_000, None),
+        (400, 0, None),
+        (300, 0, "redirect"),
+        (399, 0, "redirect"),
+        (200, 2_000_001, "limit"),
+    ],
+)
+def test_transport_response_boundaries_and_cleanup(monkeypatch, status, size, failure):
+    closed = []
+    payload = b"x" * size
+
+    class Socket:
+        def close(self):
+            closed.append("socket")
+
+    sock = Socket()
+
+    class Reply:
+        def __init__(self):
+            self.status = status
+
+        def read(self, limit):
+            assert limit == 2_000_001
+            return payload
+
+        def getheaders(self):
+            return [("X-Result", "retained")]
+
+    class Connection:
+        def __init__(self, hostname, port, timeout):
+            assert (hostname, port, timeout) == ("api.example.com", 8080, 120)
+
+        def request(self, method, target, body, headers):
+            assert (method, target, body, headers) == ("GET", "/", None, {})
+
+        def getresponse(self):
+            return Reply()
+
+        def close(self):
+            closed.append("connection")
+
+    monkeypatch.setattr(
+        net.socket,
+        "getaddrinfo",
+        lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8080))],
+    )
+
+    def connect(address, timeout):
+        assert address == ("127.0.0.1", 8080) and timeout == 120
+        return sock
+
+    monkeypatch.setattr(net.socket, "create_connection", connect)
+    monkeypatch.setattr(net.http.client, "HTTPConnection", Connection)
+    transport = net.HttpTransport(allow_private=True, timeout=120)
+    if failure:
+        with pytest.raises(TransportError, match="(?i)" + failure):
+            transport.send("GET", "http://api.example.com:8080", {}, None)
+    else:
+        response = transport.send("GET", "http://api.example.com:8080", {}, None)
+        assert response.status == status and response.body == payload
+        assert response.headers == {"X-Result": "retained"}
+    assert closed == ["connection", "socket"]

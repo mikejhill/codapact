@@ -14,7 +14,7 @@ from codapact.errors import CodaError
 from codapact.generation import ArgparseGenerator, PythonGenerator, canonical, package_name
 from codapact.loading import load
 from codapact.model import Registry
-from codapact.net import Transport
+from codapact.net import MAX_BYTES, Transport
 from codapact.openapi import OpenAPITranslator
 
 MANIFEST = ".codapact-manifest.json"
@@ -68,9 +68,18 @@ def write_project(root: Path, files: dict[str, str]) -> None:
     previous = {}
     if manifest.exists():
         try:
-            state = json.loads(manifest.read_text("utf-8"))
+            if not manifest.is_file():
+                raise ValueError
+            with manifest.open("rb") as handle:
+                content = handle.read(MAX_BYTES + 1)
+            if len(content) > MAX_BYTES:
+                raise ValueError
+            state = json.loads(content)
             if (
-                state["version"] != 1
+                not isinstance(state, dict)
+                or set(state) - {"version", "generator", "files"}
+                or type(state.get("version")) is not int
+                or state["version"] != 1
                 or not isinstance(state["files"], dict)
                 or any(
                     not isinstance(k, str)
@@ -81,9 +90,18 @@ def write_project(root: Path, files: dict[str, str]) -> None:
             ):
                 raise ValueError
             previous = state["files"]
-        except (ValueError, KeyError, OSError):
+        except (ValueError, KeyError, OSError, RecursionError):
             raise CodaError("invalid ownership manifest") from None
     encoded = {name: value.encode("utf-8") for name, value in files.items()}
+    ownership = canonical(
+        {
+            "version": 1,
+            "generator": f"codapact/{__version__}",
+            "files": {name: digest(data) for name, data in encoded.items()},
+        }
+    ).encode()
+    if len(ownership) > MAX_BYTES:
+        raise CodaError("generated ownership manifest exceeds 2 MB limit")
     names = {name.casefold() for name in encoded}
     if len(names) != len(encoded) or any(
         parent.as_posix().casefold() in names
@@ -109,16 +127,7 @@ def write_project(root: Path, files: dict[str, str]) -> None:
         _atomic(path, data)
     for name in previous.keys() - encoded.keys():
         _safe_path(root, name).unlink(missing_ok=True)
-    _atomic(
-        manifest,
-        canonical(
-            {
-                "version": 1,
-                "generator": f"codapact/{__version__}",
-                "files": {name: digest(data) for name, data in encoded.items()},
-            }
-        ).encode(),
-    )
+    _atomic(manifest, ownership)
 
 
 def _atomic(path: Path, data: bytes) -> None:
