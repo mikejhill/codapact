@@ -20,7 +20,7 @@ jobs:
     needs: validate-ref
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,7 +34,7 @@ jobs:
         run: |
           mkdir -p mutation-report
           set +e
-          timeout --signal=TERM --kill-after=10s 18m uv run --group mutation mutmut run --max-children 2 > mutation-report/run.log 2>&1
+          timeout --signal=TERM --kill-after=10s 30m uv run --group mutation mutmut run --max-children 2 > mutation-report/run.log 2>&1
           code=$?
           uv run --group mutation mutmut export-cicd-stats >> mutation-report/run.log 2>&1
           uv run --group mutation mutmut results --all true > mutation-report/results.txt 2>&1

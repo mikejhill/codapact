@@ -3,7 +3,7 @@ import socket
 import pytest
 
 from codapact.errors import CodaError, TransportError
-from codapact.net import HttpTransport
+from codapact.net import HttpTransport, validate_url
 
 
 @pytest.mark.parametrize("timeout", [0, -1, 121])
@@ -27,7 +27,15 @@ def test_invalid_url(url):
         HttpTransport().send("GET", url, {}, None)
 
 
-def test_pinned_dns_and_hostname_verification(monkeypatch):
+@pytest.mark.parametrize(
+    ("url", "target"),
+    [
+        ("https://api.example.com/v1?x=1", "/v1?x=1"),
+        ("https://api.example.com", "/"),
+        ("https://api.example.com?x=1", "/?x=1"),
+    ],
+)
+def test_pinned_dns_and_hostname_verification(monkeypatch, url, target):
     import codapact.net as net
 
     calls = []
@@ -50,11 +58,15 @@ def test_pinned_dns_and_hostname_verification(monkeypatch):
         def __init__(self, hostname, port, timeout):
             assert hostname == "api.example.com"
             assert port == 443
+            assert timeout == 7.5
             self.sock = None
 
-        def request(self, method, target, body, headers):
+        def request(self, method, request_target, body, headers):
             assert self.sock is sock
-            assert target == "/v1?x=1"
+            assert request_target == target
+            assert method == "POST"
+            assert body == b'{"test":true}'
+            assert headers == {"X-Test": "value"}
 
         def getresponse(self):
             return Reply()
@@ -78,13 +90,17 @@ def test_pinned_dns_and_hostname_verification(monkeypatch):
 
     def connect(address, timeout):
         assert address == ("93.184.216.34", 443)
+        assert timeout == 7.5
         calls.append("pinned connect")
         return sock
 
     monkeypatch.setattr(net.socket, "create_connection", connect)
     monkeypatch.setattr(net.http.client, "HTTPConnection", Connection)
     monkeypatch.setattr(net.ssl, "create_default_context", Context)
-    assert HttpTransport().send("GET", "https://api.example.com/v1?x=1", {}, None).body == b"{}"
+    response = HttpTransport(timeout=7.5).send("POST", url, {"X-Test": "value"}, b'{"test":true}')
+    assert response.status == 200
+    assert response.headers == {"Content-Type": "application/json"}
+    assert response.body == b"{}"
     assert calls == ["pinned connect", "verified context", "connection closed", "socket closed"]
 
 
@@ -98,3 +114,69 @@ def test_network_failure_redacted(monkeypatch):
     with pytest.raises(TransportError) as error:
         HttpTransport().send("GET", "https://example.com", {}, None)
     assert "sensitive" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://user@example.com",
+        "https://example.com:0",
+        "ftp://example.com",
+        "https://example.com/path?name=é",
+        "https://example.com/é",
+        "https://example.com/path\x00tail",
+        "https://example.com/path\x7ftail",
+    ],
+)
+def test_url_boundaries_before_network(url):
+    with pytest.raises(CodaError, match="URL"):
+        validate_url(url)
+
+
+def test_base_url_query_rejected_and_encoded_query_preserved():
+    with pytest.raises(CodaError, match="URL"):
+        validate_url("https://example.com?x=1", allow_query=False)
+    assert validate_url("https://example.com/?name=%C3%A9").query == "name=%C3%A9"
+    assert validate_url("https://example.com:1/").port == 1
+
+
+@pytest.mark.parametrize(
+    "addresses", [[], ["93.184.216.34", "127.0.0.1"], ["127.0.0.1", "93.184.216.34"]]
+)
+def test_empty_or_mixed_private_dns_fails_before_connection(monkeypatch, addresses):
+    import codapact.net as net
+
+    monkeypatch.setattr(
+        net.socket,
+        "getaddrinfo",
+        lambda *a, **k: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, 443)) for address in addresses
+        ],
+    )
+
+    def unexpected_connection(*args, **kwargs):
+        pytest.fail("rejected DNS results must never reach the network")
+
+    monkeypatch.setattr(net.socket, "create_connection", unexpected_connection)
+    with pytest.raises(CodaError, match="private"):
+        HttpTransport().send("GET", "https://api.example.com", {}, None)
+    if not addresses:
+        with pytest.raises(CodaError, match="private"):
+            HttpTransport(allow_private=True).send("GET", "https://api.example.com", {}, None)
+
+
+def test_public_plaintext_requires_opt_in_before_connection(monkeypatch):
+    import codapact.net as net
+
+    monkeypatch.setattr(
+        net.socket,
+        "getaddrinfo",
+        lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 80))],
+    )
+
+    def unexpected_connection(*args, **kwargs):
+        pytest.fail("plaintext HTTP without opt-in must never connect")
+
+    monkeypatch.setattr(net.socket, "create_connection", unexpected_connection)
+    with pytest.raises(CodaError, match="plaintext HTTP"):
+        HttpTransport().send("GET", "http://api.example.com", {}, None)

@@ -9,14 +9,17 @@ manual dispatch. It never runs as a PR check, is not part of `CI passed`, and is
 not a merge or release prerequisite. This is a retained project setup preference.
 Other formatting, lint, typing, test, coverage, and package checks remain gates.
 
-The Linux job runs mutmut with two workers and an eighteen-minute process budget.
+The Linux job runs mutmut with two workers and a thirty-minute process budget.
 The normal suite includes fresh package installation; mutation selection omits
 that expensive distribution test while retaining the runtime/generation tests.
 Runs start clean; source, test, dependency, and configuration changes cannot reuse
 stale cached mutation verdicts. Evidence is retained as a thirty-day artifact.
 The artifact includes named mutant verdicts and an archive of generated source
 and metadata for inspection. Survivor details are retained even when the complete
-score passes. Missing required evidence is an execution failure, not a pass.
+score passes. Missing required evidence is an execution failure, not a pass. The bounded
+budget was increased after the manifest slice reached 3,845 mutants: an actual
+eighteen-minute run completed only 3,271. Worker count remains two; the job has a
+forty-minute outer limit so it can preserve evidence after a process timeout.
 
 ## Durable alerts
 
@@ -37,6 +40,11 @@ Each active class has one deduplicated issue assigned to `mikejhill`:
   timeouts, suspicious outcomes, skipped mutants, or crashed workers.
   Infrastructure means tool/baseline/setup failure, missing or malformed evidence.
   The subtype remains explicit in the report and issue. Neither subtype passes.
+  The producer workflow conclusion is checked even when
+  its artifact is valid: cancelled, timed-out, skipped, and unknown conclusions
+  override artifact claims as incomplete. A failed producer cannot establish a
+  passing recovery. A complete below-floor report is still valid regression
+  evidence when its producer fails because the score is below the floor.
 
 Issues contain first/last seen, commit and run links, recent evidence, the score
 and floor, completion state, and triage instructions. Repeated observations update
@@ -69,3 +77,30 @@ recovery. No deliberately broken production code is required.
 For a local Linux or WSL run: `uv run --group mutation mutmut run`. Native Windows
 does not provide mutmut's required fork support. A partial local experiment is
 reported as partial evidence, not a complete project score.
+
+## Bounded first triage
+
+The complete run at commit `d9679f3622f0e14caa3c0dfb65c8fac7a654dced`
+reported 1,822 killed and 941 surviving mutants (65.94%). This is historical
+evidence for that revision, not a score for the later manifest/runtime changes.
+The manifest run `40808278696` timed out after 3,271 of 3,845 mutants and has no
+complete score. Neither result establishes a current-main passing score.
+
+A bounded review selected network and portable-path boundaries. Regression
+tests now cover username-only URLs, port zero, control/DEL characters, raw Unicode
+queries, query-free base URLs, mixed public/private DNS answers, empty DNS,
+public plaintext HTTP, socket/connection timeout propagation, root request paths,
+and trailing-dot/reserved output names. These were assertion gaps; the original
+production behavior already rejected or handled the cases correctly.
+
+Some survivors remove a guard already covered by another guard. For example,
+`project.x__safe_path__mutmut_6` weakens the backslash/colon predicate while the
+path allowlist still rejects both characters. No threshold or exclusion is
+changed to hide these survivors. New tests are not claimed to improve the full
+mutation score until a complete comparable asynchronous run measures it.
+
+Separately, entry-point tests reproduced an alert recovery defect: a valid
+passing artifact could close incidents after a cancelled producer. Producer
+conclusion now overrides such artifact claims. Tests invoke production `main()`
+with an in-memory GitHub adapter and assert incident states; they perform no
+network writes and create no synthetic production alerts.

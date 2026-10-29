@@ -218,3 +218,11 @@ def test_generation_budget(contract):
     generated = PythonGenerator().generate(ir, "large_api")
     compile(generated["src/large_api/client.py"], "client.py", "exec")
     assert time.monotonic() - start < 10
+
+
+@pytest.mark.parametrize("name", ["trailing.", "nested/trailing.", "con.txt"])
+def test_portable_output_names_fail_before_writes(name, tmp_path):
+    root = tmp_path / "new-output"
+    with pytest.raises(CodaError, match="unsafe generated path"):
+        write_project(root, {name: "untrusted content"})
+    assert not root.exists()

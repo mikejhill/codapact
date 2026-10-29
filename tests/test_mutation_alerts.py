@@ -1,6 +1,7 @@
 """Mutation evidence and alert lifecycle tests use a fake GitHub issue store."""
 
 import importlib.util
+import json
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -275,3 +276,88 @@ def test_passing_score_with_survivors_does_not_create_findings_issue():
     passing.update(score=90.0, counts=counts(killed=90, survived=10))
     assert alerts.reconcile(api, passing) == []
     assert api.creations == 0
+
+
+@pytest.mark.parametrize(
+    "conclusion",
+    [
+        "cancelled",
+        "timed_out",
+        "skipped",
+        "neutral",
+        "action_required",
+        "stale",
+        "startup_failure",
+        "unknown",
+        "",
+        None,
+        "failure",
+    ],
+)
+@pytest.mark.parametrize("artifact_status", ["pass", "regression"])
+def test_production_entrypoint_producer_failure_cannot_fake_recovery(
+    conclusion, artifact_status, tmp_path, monkeypatch
+):
+    class ProductionIssues(Issues):
+        def request(self, method, path):
+            if path == "commits/main":
+                return {"sha": "f" * 40}
+            return {"workflow_runs": []}
+
+    api = ProductionIssues()
+    alerts.reconcile(api, report("regression"))
+    alerts.reconcile(api, report("incomplete", day=1))
+    artifact = report(artifact_status, day=2)
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+    monkeypatch.setattr(alerts, "GitHub", lambda repository: api)
+    monkeypatch.setattr(sys, "argv", ["mutation_alerts.py", "--report", str(path)])
+    for key, value in {
+        "GITHUB_REPOSITORY": "mikejhill/codapact",
+        "MUTATION_SHA": artifact["sha"],
+        "MUTATION_RUN_URL": artifact["run_url"],
+        "MUTATION_RUN_ATTEMPT": "1",
+    }.items():
+        monkeypatch.setenv(key, value)
+    if conclusion is None:
+        monkeypatch.delenv("MUTATION_CONCLUSION", raising=False)
+    else:
+        monkeypatch.setenv("MUTATION_CONCLUSION", conclusion)
+    alerts.main()
+    assert api.issues[0]["state"] == "open"
+    if conclusion == "failure" and artifact_status == "regression":
+        # The producer exits nonzero for a complete below-floor analysis.
+        assert api.issues[1]["state"] == "closed"
+        assert artifact["run_url"] in api.issues[0]["body"]
+    else:
+        assert api.issues[1]["state"] == "open"
+        assert not any("Recovered" in text for _, text in api.comments)
+        assert "- Score: not established" in api.issues[1]["body"]
+        assert "- Complete: False" in api.issues[1]["body"]
+        assert artifact["run_url"] in api.issues[1]["body"]
+
+
+def test_production_entrypoint_successful_complete_recovery(tmp_path, monkeypatch):
+    class ProductionIssues(Issues):
+        def request(self, method, path):
+            return {"sha": "f" * 40} if path == "commits/main" else {"workflow_runs": []}
+
+    api = ProductionIssues()
+    alerts.reconcile(api, report("regression"))
+    alerts.reconcile(api, report("incomplete", day=1))
+    artifact = report("pass", day=2)
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+    monkeypatch.setattr(alerts, "GitHub", lambda repository: api)
+    monkeypatch.setattr(sys, "argv", ["mutation_alerts.py", "--report", str(path)])
+    for key, value in {
+        "GITHUB_REPOSITORY": "mikejhill/codapact",
+        "MUTATION_SHA": artifact["sha"],
+        "MUTATION_RUN_URL": artifact["run_url"],
+        "MUTATION_RUN_ATTEMPT": "1",
+        "MUTATION_CONCLUSION": "success",
+    }.items():
+        monkeypatch.setenv(key, value)
+    alerts.main()
+    assert all(issue["state"] == "closed" for issue in api.issues)
+    assert len(api.comments) == 2
