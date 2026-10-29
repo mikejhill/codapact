@@ -82,3 +82,11 @@ payloads through repeated large strings. The input document limit remains 2 MB.
 First-party `CodaError` subclasses carry nonempty textual diagnostics. Error
 classes and the documented CLI exit codes support programmatic handling;
 diagnostic wording can evolve.
+
+CLI help describes commands, inputs, and configuration-directory discovery;
+generation help shows assignment syntax for `--set`. Descriptions can evolve
+without preserving exact wording, case, decoration, or column widths.
+
+The [46-item mutation review](mutation-review-ab121cb.json) records behavior
+counterexamples, presentation differences, and equivalence candidates against
+the referenced baseline. It does not exclude mutants or adjust the raw score.
