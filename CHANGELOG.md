@@ -1,11 +1,20 @@
 # Changelog
 
-## [0.1.1](https://github.com/mikejhill/codapact/compare/v0.1.0...v0.1.1) (2026-10-29)
+<!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.1.1](https://github.com/mikejhill/codapact/compare/v0.1.0...v0.1.1) (2026-10-29)
 
 ### Bug Fixes
 
-* enforce generation and runtime safety boundaries ([3e21fd7](https://github.com/mikejhill/codapact/commit/3e21fd7b42dc370e27bfa7617c6ed9174d2cb284))
+* Reject whitespace and DEL in literal OpenAPI operation paths during translation.
+* Validate and bound ownership manifests before regeneration writes, including malformed roots,
+  non-integer versions, and oversized inventories.
+* Honor explicit base URL, timeout, and private-network flags in wrappers without discovery profiles;
+  preserve configured values when flags are omitted.
+* Reject all ASCII control characters and DEL in parameter and custom-auth request headers before
+  transport, with redacted diagnostics.
+
+These fixes are included in [3e21fd7](https://github.com/mikejhill/codapact/commit/3e21fd7b42dc370e27bfa7617c6ed9174d2cb284).
 
 ## 0.1.0 (2026-10-29)
 
