@@ -73,7 +73,6 @@ generate into a new directory to recover. Concurrent generation into the same
 directory is unsupported. Local plugins and users able to race filesystem
 mutations are trusted; this is not an operating-system sandbox.
 
-
 Authentication and policy contracts live in `auth.py`; data-only JSON/runtime
 validation lives in `validation.py`. Neither depends on execution or filesystem
 credential discovery. `profiles.py` composes these services without importing
