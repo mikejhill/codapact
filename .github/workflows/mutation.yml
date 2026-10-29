@@ -37,6 +37,13 @@ jobs:
           timeout --signal=TERM --kill-after=10s 18m uv run --group mutation mutmut run --max-children 2 > mutation-report/run.log 2>&1
           code=$?
           uv run --group mutation mutmut export-cicd-stats >> mutation-report/run.log 2>&1
+          uv run --group mutation mutmut results --all true > mutation-report/results.txt 2>&1
+          results_code=$?
+          tar -czf mutation-report/mutants.tar.gz -C mutants/src codapact
+          archive_code=$?
+          if test "$code" -eq 0 && { test "$results_code" -ne 0 || test "$archive_code" -ne 0; }; then
+            code=1
+          fi
           uv run python scripts/mutation_report.py --exit-code "$code" --stats mutants/mutmut-cicd-stats.json --output mutation-report/report.json
       - name: Preserve evidence on failure or incomplete run
         if: always()

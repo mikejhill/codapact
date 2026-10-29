@@ -14,6 +14,9 @@ The normal suite includes fresh package installation; mutation selection omits
 that expensive distribution test while retaining the runtime/generation tests.
 Runs start clean; source, test, dependency, and configuration changes cannot reuse
 stale cached mutation verdicts. Evidence is retained as a thirty-day artifact.
+The artifact includes named mutant verdicts and an archive of generated source
+and metadata for inspection. Survivor details are retained even when the complete
+score passes. Missing required evidence is an execution failure, not a pass.
 
 ## Durable alerts
 
