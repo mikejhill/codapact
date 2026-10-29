@@ -78,3 +78,7 @@ Reference resolution limits expanded string keys and values to eight million
 characters, counting repeated references each time. This complements the node
 and depth budgets and stops small contracts from producing oversized serialized
 payloads through repeated large strings. The input document limit remains 2 MB.
+
+First-party `CodaError` subclasses carry nonempty textual diagnostics. Error
+classes and the documented CLI exit codes support programmatic handling;
+diagnostic wording can evolve.
