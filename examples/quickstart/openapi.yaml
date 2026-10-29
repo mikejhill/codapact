@@ -1,0 +1,32 @@
+openapi: 3.0.3
+info:
+  title: Local quickstart pets
+  version: 1.0.0
+servers:
+  - url: http://127.0.0.1:8765
+paths:
+  /pets/{pet_id}:
+    get:
+      operationId: get_pet
+      summary: Retrieve a demo pet
+      parameters:
+        - name: pet_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Demo pet
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, name]
+                additionalProperties: false
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string

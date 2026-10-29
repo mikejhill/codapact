@@ -1,3 +1,12 @@
+---
+type: architecture
+status: active
+authority: informative
+criticality: low
+review:
+  status: unreviewed
+---
+
 # Architecture
 
 Python 3.13 is the initial implementation and generated language. It fits the
@@ -75,10 +84,32 @@ generate into a new directory to recover. Concurrent generation into the same
 directory is unsupported. Local plugins and users able to race filesystem
 mutations are trusted; this is not an operating-system sandbox.
 
-Authentication and policy contracts live in `auth.py`; data-only JSON/runtime
-validation lives in `validation.py`. Neither depends on execution or filesystem
-credential discovery. `profiles.py` composes these services without importing
-`runtime.py`; the execution layer can therefore validate profiles without an
+Authentication and policy contracts live in `execution/auth.py`; data-only JSON/runtime
+validation lives in `infrastructure/validation.py`. Neither depends on execution or filesystem
+credential discovery. `execution/profiles.py` composes these services without importing
+`execution/client.py`; the execution layer can therefore validate profiles without an
 import cycle. Existing runtime imports of the auth/policy/validation services
 remain available for compatibility. Protocol methods are explicit abstract
 contracts; incomplete nominal implementations cannot silently satisfy them.
+
+## Source ownership
+
+| Package | Responsibility |
+| --- | --- |
+| `contracts/` | Frozen IR records, translator/generator/selector protocols, OpenAPI adapter, and selection |
+| `codegen/` | Generation configuration, Python/argparse emitters, orchestration, and ownership-aware writes |
+| `execution/` | Generated-client execution, command application, profiles, authentication, and policy |
+| `infrastructure/` | Bounded document loading, references, HTTP transport, validation, and naming/merge rules |
+
+Legacy modules at `codapact.*` explicitly re-export the published API. New internal
+code imports the defining module. Stateless services own cohesive operations;
+stateful collaborators use constructor injection. `exceptions.py` owns the
+`AppError` hierarchy and `errors.py` preserves existing exception imports.
+
+Generation and runtime parsers convert argparse values into frozen, slotted
+request records. Typed data contracts describe the validated IR, schemas,
+configuration, and command definitions. Each reference-resolution invocation
+owns its expansion budget; imports perform no schema-resource reads.
+
+- [Security analysis](security.md): threat boundaries and known limits.
+- [Configuration reference](../reference/configuration.md): XDG and credentials.

@@ -114,13 +114,17 @@ def test_reference_resolution_preserves_lists_scalars_and_independent_values():
         "number": 7,
         "nil": None,
     }
+    assert isinstance(resolved["selected"], dict)
+    assert isinstance(resolved["items"], list)
     resolved["selected"]["value"] = "changed"
     assert source["items"][1]["value"] == "second"
     assert resolved["items"][1]["value"] == "second"
 
 
 def test_reference_expansion_budget_and_depth_boundaries():
-    assert len(resolve({"values": [0] * 99_998})["values"]) == 99_998
+    values = resolve({"values": [0] * 99_998})["values"]
+    assert isinstance(values, list)
+    assert len(values) == 99_998
     with safe_error(CodaError, match="(?i)expansion limit"):
         resolve({"values": [0] * 99_999})
     shallow = {"value": 0}

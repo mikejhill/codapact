@@ -1,3 +1,12 @@
+---
+type: reference
+status: active
+authority: informative
+criticality: normal
+review:
+  status: unreviewed
+---
+
 # Asynchronous mutation testing
 
 [Mutation workflow](https://github.com/mikejhill/codapact/actions/workflows/mutation.yml)

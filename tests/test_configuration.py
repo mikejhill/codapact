@@ -341,7 +341,10 @@ def test_generated_manifest_xdg_auth_flow(contract, server, tmp_path, monkeypatc
     assert main(["generate", "--manifest", str(manifest)]) == 0
     capsys.readouterr()
     output = tmp_path / "generated"
-    assert '\npets = "manifest_pets.__main__:main"' in (output / "pyproject.toml").read_text()
+    assert (
+        '\npets = "manifest_pets.__main__:Application.main"'
+        in (output / "pyproject.toml").read_text()
+    )
     assert str(tmp_path) not in (output / "src/manifest_pets/contract.json").read_text()
     assert "Run `pets --help`" in (output / "README.md").read_text()
     monkeypatch.syspath_prepend(str(output / "src"))

@@ -1,3 +1,12 @@
+---
+type: reference
+status: active
+authority: informative
+criticality: normal
+review:
+  status: unreviewed
+---
+
 # Generation manifests and runtime configuration
 
 CodaPact separates generation settings, the generated command definition, and
@@ -35,7 +44,7 @@ codapact generate --manifest pets.codapact.yaml --output builds/pets --runtime-t
 codapact generate --manifest pets.codapact.yaml --set 'runtime.defaults.policy.allow=["get_pet"]'
 ```
 
-The [generation schema](../src/codapact/schemas/generation.v1.json) rejects unknown
+The [generation schema](../../src/codapact/schemas/generation.v1.json) rejects unknown
 keys, unsupported source/client/CLI types, unsafe YAML tags, aliases, duplicate
 keys, and non-JSON values. Only local manifests are supported. The original
 `codapact generate api.yaml --output generated --package pets_client` still works.
@@ -74,7 +83,7 @@ An empty map at the root adds no overrides. `--set` accepts JSON, not YAML.
 | selection.exclude | `--exclude JSON` | Empty list: remove none |
 
 All fields, including whole maps and explicit nulls, also support `--set`.
-See [endpoint selection](selection.md) for rule composition, domain/read profiles,
+See [endpoint selection](../guides/endpoint-selection.md) for rule composition, domain/read profiles,
 strict unmatched-selector handling, and the inspectable dry-run report.
 Relative source, output, and CLI-definition paths are anchored to the manifest
 folder, including relative flag overrides. Without a manifest they use the
@@ -152,7 +161,7 @@ Client policy is a local guard; the server remains the authorization authority.
 
 ## Commands and scriptable results
 
-The [CLI definition v1](../schemas/cli.v1.schema.json) assigns stable command names:
+The [CLI definition v1](../../schemas/cli.v1.schema.json) assigns stable command names:
 
 ```json
 {"version":1,"commands":[{"name":"show-pet","operation":"get_pet"}]}

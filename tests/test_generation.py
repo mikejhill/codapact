@@ -237,7 +237,7 @@ def test_default_generated_command_and_runtime_profile_validation(contract):
     generator = PythonGenerator()
     files = generator.generate(ir, "pet_client")
     project = tomllib.loads(files["pyproject.toml"])
-    assert project["project"]["scripts"] == {"pet-client": "pet_client.__main__:main"}
+    assert project["project"]["scripts"] == {"pet-client": "pet_client.__main__:Application.main"}
     for profile in [
         None,
         {},

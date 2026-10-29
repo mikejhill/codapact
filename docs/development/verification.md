@@ -1,4 +1,16 @@
-# First iteration verification
+---
+type: reference
+status: active
+authority: informative
+criticality: normal
+review:
+  status: unreviewed
+---
+
+# Verification evidence
+
+The results below are historical checkpoints. They do not verify later refactors.
+Run `uv run poe check` against the revision under review for current evidence.
 
 Verified on Windows with Python 3.13.15 and uv 0.11.32. Tests use synthetic
 contracts, loopback HTTP servers, temporary output directories, and fixture-only
@@ -39,7 +51,7 @@ a project score. The first complete hosted main run measured 65.94% (1,822
 killed, 941 survived, 2,763 total), below the unchanged 90% floor. Its durable
 [regression issue](https://github.com/mikejhill/codapact/issues/5) is assigned for
 triage. Named mutant details and source snapshots are retained as workflow
-artifacts. [Asynchronous full runs and alerts](mutation.md) provide continuing
+artifacts. [Asynchronous full runs and alerts](../operations/mutation-testing.md) provide continuing
 evidence without blocking release.
 Fuzzing beyond the included Hypothesis properties has not been run. Package
 publication is verified separately through the release workflow and official

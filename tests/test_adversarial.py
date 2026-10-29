@@ -101,6 +101,7 @@ def test_integral_json_float_maps_to_declared_python_integer(contract):
     transport = FixedTransport(b'{"id":1.0,"name":"Miso"}')
     client = ClientBase(OpenAPITranslator().translate(contract).to_dict(), transport=transport)
     value = client._execute("get_pet", {"pet_id": 1.0})
+    assert isinstance(value, dict)
     assert type(value["id"]) is int
     assert transport.calls[0][1].endswith("/pets/1")
 

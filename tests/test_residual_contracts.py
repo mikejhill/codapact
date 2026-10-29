@@ -6,7 +6,7 @@ from typing import Any, override
 
 import pytest
 
-import codapact.project as project
+import codapact.codegen.project as project
 from codapact.__main__ import main
 from codapact.cli import run_cli
 from codapact.configuration import resolve_generation
@@ -33,7 +33,7 @@ def test_object_depth_counts_each_container_edge(mixed):
 def test_ownership_read_and_write_agree_at_exact_size(tmp_path, monkeypatch, offset):
     files = {"record.txt": "unchanged payload"}
     reference = tmp_path / "reference"
-    project.write_project(reference, files)
+    project.ProjectWriter.write_project(reference, files)
     manifest = (reference / project.MANIFEST).read_bytes()
     # Exercise the full file workflow with a small temporary cap, rather than
     # creating tens of thousands of files just to reach the production 2 MB cap.
@@ -41,13 +41,13 @@ def test_ownership_read_and_write_agree_at_exact_size(tmp_path, monkeypatch, off
     output = tmp_path / "new"
     if offset < 0:
         with safe_error(CodaError):
-            project.write_project(output, files)
+            project.ProjectWriter.write_project(output, files)
         assert not output.exists()
         with safe_error(CodaError):
-            project.write_project(reference, files)
+            project.ProjectWriter.write_project(reference, files)
     else:
-        project.write_project(output, files)
-        project.write_project(reference, files)
+        project.ProjectWriter.write_project(output, files)
+        project.ProjectWriter.write_project(reference, files)
         assert (output / project.MANIFEST).read_bytes() == manifest
         assert (output / "record.txt").read_text() == files["record.txt"]
     assert (reference / project.MANIFEST).read_bytes() == manifest
@@ -61,7 +61,9 @@ def test_manifest_rejects_unsupported_source_scheme_before_local_path_resolution
     def no_local_lookup(*args, **kwargs):
         pytest.fail("unsupported contract URLs must not be interpreted as local files")
 
-    monkeypatch.setattr("codapact.configuration.local_path", no_local_lookup)
+    monkeypatch.setattr(
+        "codapact.codegen.configuration.GenerationConfiguration.local_path", no_local_lookup
+    )
     with safe_error(CodaError):
         resolve_generation(None, {"contract": {"source": source}}, [], cwd=tmp_path)
 
@@ -127,11 +129,11 @@ def test_generated_cli_help_has_description_and_config_directory_guidance(contra
 
 def test_ownership_limit_rejects_one_extra_serialized_byte_before_writes(tmp_path, monkeypatch):
     root = tmp_path / "reference"
-    project.write_project(root, {"a": "payload"})
+    project.ProjectWriter.write_project(root, {"a": "payload"})
     size = (root / project.MANIFEST).stat().st_size
     monkeypatch.setattr(project, "MAX_BYTES", size)
     output = tmp_path / "rejected"
     with safe_error(CodaError):
-        project.write_project(output, {"aa": "payload"})
+        project.ProjectWriter.write_project(output, {"aa": "payload"})
     assert not output.exists()
     assert json.loads((root / project.MANIFEST).read_bytes())["files"].keys() == {"a"}

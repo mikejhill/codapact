@@ -92,7 +92,7 @@ def test_generated_types_and_call_signatures_are_usable(contract, tmp_path, monk
         assert project["project"]["requires-python"] == ">=3.13"
         assert (tmp_path / "generated/.python-version").read_text().strip() == "3.13"
         assert project["project"]["dependencies"] == [f"codapact=={__version__}"]
-        assert project["project"]["scripts"] == {"pets": "behavior_pets.__main__:main"}
+        assert project["project"]["scripts"] == {"pets": "behavior_pets.__main__:Application.main"}
         assert (tmp_path / "generated/src/behavior_pets/py.typed").is_file()
 
 
@@ -497,7 +497,7 @@ def test_cli_without_discovery_profile_still_honors_explicit_runtime_flags(
         assert (
             run_cli(
                 factory,
-                module.DOCUMENT,
+                module.ContractResource.load(),
                 definition,
                 [
                     "--config",
@@ -522,7 +522,7 @@ def test_cli_without_discovery_profile_still_honors_explicit_runtime_flags(
         assert (
             run_cli(
                 factory,
-                module.DOCUMENT,
+                module.ContractResource.load(),
                 definition,
                 ["--config", str(ordinary), "get-pet", "--arg-pet-id", "1"],
             )
@@ -570,13 +570,13 @@ def test_nested_generated_container_types_have_stable_usable_public_names(
             assert nested.__required_keys__ == frozenset({"enabled"})
 
 
-def test_generated_unconstrained_dictionary_uses_any_value_type(contract, tmp_path, monkeypatch):
+def test_generated_unconstrained_dictionary_uses_object_value_type(contract, tmp_path, monkeypatch):
     operation = contract["paths"]["/pets"]["post"]
     operation["requestBody"]["content"]["application/json"]["schema"] = {"type": "object"}
     with generated(contract, tmp_path, monkeypatch) as module:
         assert (
             typing.get_type_hints(module.Client.create_pet, vars(module))["body"]
-            == dict[str, typing.Any]
+            == dict[str, object]
         )
 
 
@@ -674,7 +674,7 @@ def test_cli_local_configuration_rule_precedes_any_loading(contract, source, mon
     def forbidden(*args, **kwargs):
         pytest.fail("remote runtime configuration must not be loaded")
 
-    monkeypatch.setattr("codapact.cli.load", forbidden)
+    monkeypatch.setattr("codapact.execution.cli.DocumentLoader.load", forbidden)
     definition = {"version": 1, "commands": [{"name": "get", "operation": "get_pet"}]}
     assert (
         run_cli(

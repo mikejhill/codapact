@@ -35,7 +35,9 @@ def test_real_calls(contract, server, monkeypatch):
     )
     assert instance._execute("get_pet", {"pet_id": 7}) == {"id": 7, "name": "Miso"}
     assert instance._execute("list_pets", {"page": 2}) == [{"id": 2, "name": "Miso"}]
-    assert instance._execute("create_pet", body={"id": 3, "name": "Pip"})["name"] == "Pip"
+    result = instance._execute("create_pet", body={"id": 3, "name": "Pip"})
+    assert isinstance(result, dict)
+    assert result["name"] == "Pip"
     assert instance._execute("delete_pet") is None
     with safe_error(ApiError, match="HTTP 404") as error:
         instance._execute("get_pet", {"pet_id": 404})

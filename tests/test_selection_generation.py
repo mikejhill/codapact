@@ -50,6 +50,7 @@ def test_local_and_remote_generation_agree_and_auth_is_retained(
         transport=HttpTransport(allow_private=True),
     )
     assert snapshot(local) == snapshot(remote)
+    assert isinstance(report["operations"], list)
     assert [row["id"] for row in report["operations"]] == ["get_pet"]
     assert inert_tag in report["operations"][0]["tags"]
     assert report == json.loads((remote / "codapact-selection.json").read_bytes())
@@ -312,6 +313,7 @@ def test_alternate_source_and_selector_plugins_use_only_normalized_ir(contract, 
         selection={"plugin": "domain"},
     )
     assert report["selector"] == "domain"
+    assert isinstance(report["operations"], list)
     assert [row["id"] for row in report["operations"]] == ["get_pet", "list_pets"]
     with safe_error(CodaError, match="duplicate"):
         registry.selector("domain", DomainSelector())
