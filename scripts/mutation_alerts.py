@@ -6,6 +6,7 @@ import math
 import os
 import re
 import subprocess
+from abc import abstractmethod
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
@@ -17,10 +18,21 @@ RESULT_STATUSES = ("regression", "incomplete", "infrastructure", "pass")
 
 
 class IssueAPI(Protocol):
-    def list(self) -> list[dict[str, Any]]: ...
-    def create(self, title: str, body: str) -> dict[str, Any]: ...
-    def update(self, number: int, body: str, state: str) -> None: ...
-    def comment(self, number: int, body: str) -> None: ...
+    @abstractmethod
+    def list(self) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def create(self, title: str, body: str) -> dict[str, Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def update(self, number: int, body: str, state: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def comment(self, number: int, body: str) -> None:
+        raise NotImplementedError
 
 
 class GitHub:

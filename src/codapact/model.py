@@ -1,5 +1,6 @@
 """Versioned source-neutral intermediate representation and plugin contracts."""
 
+from abc import abstractmethod
 from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol
 
@@ -40,14 +41,18 @@ class Translator(Protocol):
     api_version: int
     capabilities: frozenset[str]
 
-    def translate(self, document: dict[str, Any]) -> Contract: ...
+    @abstractmethod
+    def translate(self, document: dict[str, Any]) -> Contract:
+        raise NotImplementedError
 
 
 class Generator(Protocol):
     api_version: int
     requires: frozenset[str]
 
-    def generate(self, contract: Contract, package: str) -> dict[str, str]: ...
+    @abstractmethod
+    def generate(self, contract: Contract, package: str) -> dict[str, str]:
+        raise NotImplementedError
 
 
 class Registry:

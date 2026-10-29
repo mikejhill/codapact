@@ -72,3 +72,12 @@ the next run fails closed on mismatched ownership. Preserve edited files and
 generate into a new directory to recover. Concurrent generation into the same
 directory is unsupported. Local plugins and users able to race filesystem
 mutations are trusted; this is not an operating-system sandbox.
+
+
+Authentication and policy contracts live in `auth.py`; data-only JSON/runtime
+validation lives in `validation.py`. Neither depends on execution or filesystem
+credential discovery. `profiles.py` composes these services without importing
+`runtime.py`; the execution layer can therefore validate profiles without an
+import cycle. Existing runtime imports of the auth/policy/validation services
+remain available for compatibility. Protocol methods are explicit abstract
+contracts; incomplete nominal implementations cannot silently satisfy them.

@@ -1,18 +1,17 @@
 """Reusable execution, authentication, policy, and response validation layers."""
 
-import base64
 import json
-import math
-import os
 import re
 from collections.abc import Mapping
-from typing import Any, Protocol
+from typing import Any
 from urllib.parse import quote, urlencode
 
-from jsonschema import Draft7Validator
-
-from codapact.errors import ApiError, AuthError, CodaError, PolicyError, ResponseError
+from codapact.auth import AuthorizationPolicy, AuthProvider, EnvironmentAuth, OperationPolicy
+from codapact.errors import ApiError, AuthError, CodaError, ResponseError
+from codapact.errors import PolicyError as PolicyError
 from codapact.net import HttpTransport, Transport, validate_url
+from codapact.profiles import validate_profile
+from codapact.validation import config, validate
 from codapact.values import merge
 
 
@@ -21,32 +20,6 @@ class Unset:
 
 
 UNSET = Unset()
-
-
-def validate(value: Any, schema: dict[str, Any], message: str) -> None:
-    visited = 0
-
-    def json_value(node: Any, depth: int = 0) -> None:
-        nonlocal visited
-        visited += 1
-        if depth > 48 or visited > 50_000:
-            raise CodaError(message)
-        if isinstance(node, dict):
-            if any(not isinstance(key, str) for key in node):
-                raise CodaError(message)
-            for child in node.values():
-                json_value(child, depth + 1)
-        elif isinstance(node, list):
-            for child in node:
-                json_value(child, depth + 1)
-        elif isinstance(node, float) and not math.isfinite(node):
-            raise CodaError(message)
-        elif node is not None and not isinstance(node, (str, int, float, bool)):
-            raise CodaError(message)
-
-    json_value(value)
-    if not Draft7Validator(schema).is_valid(value):
-        raise CodaError(message)
 
 
 def map_types(value: Any, schema: dict[str, Any]) -> Any:
@@ -72,93 +45,6 @@ def map_types(value: Any, schema: dict[str, Any]) -> Any:
     return value
 
 
-class AuthProvider(Protocol):
-    """Return scheme-specific headers or raise AuthError if unavailable."""
-
-    def headers(self, name: str, scheme: dict[str, Any]) -> dict[str, str]: ...
-
-
-class AuthorizationPolicy(Protocol):
-    """Client-side guard only. The server remains the authorization authority."""
-
-    def authorize(self, operation: Mapping[str, Any]) -> None: ...
-
-
-class OperationPolicy:
-    def __init__(self, *, allow: list[str] | None = None, deny: list[str] | None = None) -> None:
-        self.allow = None if allow is None else frozenset(allow)
-        self.deny = frozenset(deny or [])
-
-    def authorize(self, operation: Mapping[str, Any]) -> None:
-        name = operation["id"]
-        if name in self.deny or (self.allow is not None and name not in self.allow):
-            raise PolicyError(f"client policy denies operation {name}")
-
-
-class EnvironmentAuth:
-    """Credentials are resolved at execution time, never written into generated files."""
-
-    def __init__(self, settings: dict[str, dict[str, str]] | None = None) -> None:
-        self.settings = settings or {}
-
-    @staticmethod
-    def _secret(entry: dict[str, str], key: str) -> str:
-        reference = entry.get(key, "")
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", reference):
-            raise AuthError("auth requires an environment variable reference")
-        value = os.environ.get(reference)
-        if value is None or value == "" or any(ord(c) < 32 or ord(c) == 127 for c in value):
-            raise AuthError("required credential is missing or invalid")
-        return value
-
-    def headers(self, name: str, scheme: dict[str, Any]) -> dict[str, str]:
-        entry = self.settings.get(name, {})
-        if scheme["type"] == "apiKey":
-            return {scheme["name"]: self._secret(entry, "env")}
-        if scheme["scheme"] == "bearer":
-            return {"Authorization": "Bearer " + self._secret(entry, "env")}
-        username = self._secret(entry, "username_env")
-        if ":" in username:
-            raise AuthError("basic auth username cannot contain a colon")
-        token = base64.b64encode(
-            (username + ":" + self._secret(entry, "password_env")).encode()
-        ).decode()
-        return {"Authorization": "Basic " + token}
-
-
-def config(settings: dict[str, Any] | None) -> dict[str, Any]:
-    settings = {} if settings is None else settings
-    schema = {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "version": {"const": 1},
-            "base_url": {"type": "string"},
-            "allow_private": {"type": "boolean"},
-            "timeout": {"type": "number", "exclusiveMinimum": 0, "maximum": 120},
-            "auth": {
-                "type": "object",
-                "additionalProperties": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        key: {"type": "string"} for key in ("env", "username_env", "password_env")
-                    },
-                },
-            },
-            "policy": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    key: {"type": "array", "items": {"type": "string"}} for key in ("allow", "deny")
-                },
-            },
-        },
-    }
-    validate(settings, schema, "invalid runtime configuration")
-    return settings
-
-
 class ClientBase:
     """Base for generated clients; use explicit objects to install custom hooks."""
 
@@ -173,8 +59,6 @@ class ClientBase:
     ) -> None:
         profile = document.get("metadata", {}).get("codapact.runtime")
         if profile is not None:
-            from codapact.profiles import validate_profile
-
             validate_profile(profile)
             settings = merge(profile["defaults"], settings or {})
         settings = config(settings)
