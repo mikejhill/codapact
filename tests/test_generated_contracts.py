@@ -705,3 +705,19 @@ def test_regeneration_tolerates_missing_owned_files_removed_from_output(tmp_path
     assert (root / "new.txt").read_text() == "new"
     state = json.loads((root / ".codapact-manifest.json").read_text())
     assert set(state["files"]) == {"new.txt"}
+
+
+@pytest.mark.parametrize("arguments", [[], ["create-pet"]])
+def test_missing_generated_command_or_required_body_fails_before_client_construction(
+    contract, tmp_path, monkeypatch, arguments
+):
+    with generated(contract, tmp_path, monkeypatch):
+        cli = importlib.import_module("behavior_pets.__main__")
+
+        def forbidden(**kwargs):
+            pytest.fail("usage errors must precede client and credential initialization")
+
+        monkeypatch.setattr(cli, "Client", forbidden)
+        with pytest.raises(SystemExit) as caught:
+            cli.main(arguments)
+        assert caught.value.code == 2

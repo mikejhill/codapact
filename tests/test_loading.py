@@ -215,3 +215,30 @@ def test_local_document_reads_are_bounded_and_include_overflow_detection(tmp_pat
             load(str(path))
     path.write_bytes(payload + b" " * (2_000_000 - len(payload)))
     assert load(str(path)) == {"value": 1}
+
+
+def test_reference_depth_budget_applies_to_lists_and_reference_hops():
+    nested = 0
+    for _ in range(47):
+        nested = [nested]
+    assert resolve({"value": nested}) == {"value": nested}
+    with safe_error(CodaError, match="(?i)expansion limit"):
+        resolve({"value": [nested]})
+    chain = {"leaf": 42, "r0": {"$ref": "#/leaf"}}
+    for index in range(1, 47):
+        chain[f"r{index}"] = {"$ref": f"#/r{index - 1}"}
+    assert resolve(chain)["r46"] == 42
+    with safe_error(CodaError, match="(?i)expansion limit"):
+        resolve({**chain, "r47": {"$ref": "#/r46"}})
+
+
+@pytest.mark.parametrize("reference", ["./value", "..value", "a:value", "//value"])
+def test_external_reference_syntax_cannot_accidentally_resolve_an_internal_key(reference):
+    with safe_error(CodaError, match="(?i)document-local"):
+        resolve({"value": 42, "selected": {"$ref": reference}})
+
+
+@pytest.mark.parametrize("reference", [None, 1, []])
+def test_reference_type_errors_have_safe_diagnostics(reference):
+    with safe_error(CodaError, match="(?i)reference"):
+        resolve({"selected": {"$ref": reference}})

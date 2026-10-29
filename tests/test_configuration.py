@@ -179,7 +179,7 @@ def test_each_named_override(flag, value, key, expected, tmp_path, monkeypatch):
         assert captured["profile"]["defaults"][key] == expected
 
 
-def test_boolean_source_definition_and_set_flags(tmp_path, monkeypatch):
+def test_boolean_source_definition_and_set_flags(tmp_path, monkeypatch, capsys):
     manifest = write(
         tmp_path / "manifest.yaml",
         {
@@ -215,7 +215,10 @@ def test_boolean_source_definition_and_set_flags(tmp_path, monkeypatch):
     assert captured["profile"]["defaults"]["allow_private"] is False
     assert captured["profile"]["slug"] == "final"
     assert captured["cli_definition"]["commands"] == []
+    capsys.readouterr()
     assert main(["generate", "api", "--runtime-policy-allow", "invalid"]) == 2
+    diagnostic = capsys.readouterr().err.casefold()
+    assert "policy" in diagnostic and "json" in diagnostic
     assert main(["generate", "api", "--allow-private", "--runtime-allow-private"]) == 0
     assert captured["transport"].allow_private is True
 
@@ -354,10 +357,12 @@ def test_generated_manifest_xdg_auth_flow(contract, server, tmp_path, monkeypatc
     assert cli.main(["--no-auth-file", "get-pet", "--arg-pet-id", "12"]) == 3
     assert "fixture-secret" not in capsys.readouterr().err
     assert cli.main(["--auth-file", "https://bad", "get-pet", "--arg-pet-id", "12"]) == 2
+    assert "local" in capsys.readouterr().err.casefold()
     assert (
         cli.main(["--auth-file", str(authfile), "--no-auth-file", "get-pet", "--arg-pet-id", "12"])
         == 2
     )
+    assert "conflict" in capsys.readouterr().err.casefold()
     assert (
         cli.main(
             [
@@ -420,3 +425,17 @@ def test_generator_metadata_cannot_inject(contract, value):
     document = replace(OpenAPITranslator().translate(contract), metadata={"codapact.cli": value})
     with safe_error(CodaError):
         PythonGenerator().generate(document, "pets_client")
+
+
+def test_manifest_only_contract_boolean_override_does_not_require_positional_source(
+    tmp_path, monkeypatch
+):
+    manifest = write(
+        tmp_path / "generation.json",
+        {"version": 1, "contract": {"source": "api.json", "allow_private": False}},
+    )
+    captured = {}
+    monkeypatch.setattr("codapact.__main__.generate", lambda **kwargs: captured.update(kwargs))
+    assert main(["generate", "--manifest", str(manifest), "--allow-private"]) == 0
+    assert captured["source"] == str(tmp_path / "api.json")
+    assert captured["transport"].allow_private is True
