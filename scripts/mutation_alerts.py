@@ -12,7 +12,8 @@ from typing import Any, Protocol
 
 from mutation_report import SCOPE, classify
 
-CLASSES = ("regression", "incomplete", "infrastructure")
+CLASSES = ("regression", "execution")
+RESULT_STATUSES = ("regression", "incomplete", "infrastructure", "pass")
 
 
 class IssueAPI(Protocol):
@@ -27,9 +28,18 @@ class GitHub:
         if repository != "mikejhill/codapact":
             raise ValueError("mutation alerts are restricted to the configured CodaPact repository")
         self.repository = repository
+        self.known: dict[int, dict[str, Any]] = {}
 
     def request(self, method: str, path: str, data: dict[str, Any] | None = None) -> Any:
-        command = ["gh", "api", "--method", method, f"repos/{self.repository}/{path}"]
+        command = [
+            "gh",
+            "api",
+            "--method",
+            method,
+            "-H",
+            "Cache-Control: no-cache",
+            f"repos/{self.repository}/{path}",
+        ]
         if data is not None:
             command.extend(["--input", "-"])
         result = subprocess.run(  # noqa: S603 -- fixed gh executable; repo allowlist; JSON goes through stdin
@@ -50,16 +60,21 @@ class GitHub:
             batch = self.request("GET", f"issues?state=all&per_page=100&page={page}")
             issues.extend(item for item in batch if "pull_request" not in item)
             if len(batch) < 100:
-                return issues
+                combined = {issue["number"]: issue for issue in issues}
+                combined.update(self.known)
+                return list(combined.values())
         raise RuntimeError("issue enumeration exceeded its safety limit")
 
     def create(self, title: str, body: str) -> dict[str, Any]:
-        return self.request(
+        issue = self.request(
             "POST", "issues", {"title": title, "body": body, "assignees": ["mikejhill"]}
         )
+        self.known[issue["number"]] = issue
+        return issue
 
     def update(self, number: int, body: str, state: str) -> None:
-        self.request("PATCH", f"issues/{number}", {"body": body, "state": state})
+        issue = self.request("PATCH", f"issues/{number}", {"body": body, "state": state})
+        self.known[number] = issue
 
     def comment(self, number: int, body: str) -> None:
         self.request("POST", f"issues/{number}/comments", {"body": body})
@@ -102,7 +117,7 @@ def sequence(evidence: dict[str, Any]) -> tuple[int, int]:
 
 def validate_report(report: dict[str, Any]) -> None:
     if (
-        report.get("status") not in {*CLASSES, "pass"}
+        report.get("status") not in RESULT_STATUSES
         or type(report.get("complete")) is not bool
         or report.get("floor") != 90
         or not isinstance(report.get("scope"), str)
@@ -131,13 +146,20 @@ def validate_report(report: dict[str, Any]) -> None:
         raise ValueError("nonfinite mutation score")
 
 
-def body_for(kind: str, report: dict[str, Any], state: dict[str, Any], namespace: str) -> str:
+def body_for(
+    kind: str,
+    report: dict[str, Any],
+    state: dict[str, Any],
+    namespace: str,
+    *,
+    recovered: bool = False,
+) -> str:
     score = "not established" if report["score"] is None else f"{report['score']:.2f}%"
     history = "\n".join(
         f"- [{item['sha'][:12]}]({item['run_url']}) — {item['observed_at']}"
         for item in state["history"]
     )
-    status = "RECOVERED" if report["status"] == "pass" else "ACTION REQUIRED"
+    status = "RECOVERED" if recovered else "ACTION REQUIRED"
     return (
         f"{marker(kind, namespace)}\n"
         f"<!-- codapact-mutation-state:{json.dumps(state, separators=(',', ':'))} -->\n\n"
@@ -147,6 +169,7 @@ def body_for(kind: str, report: dict[str, Any], state: dict[str, Any], namespace
         f"- Evidence: [workflow run]({report['run_url']}) (download `mutation-report`)\n"
         f"- Score: {score}; floor: {report['floor']}%\n"
         f"- Complete: {report['complete']}\n- Reason: {report['reason']}\n\n"
+        f"- Result classification: {report['status']}\n"
         f"- Scope: `{report['scope']}`\n"
         f"- Counts: `{json.dumps(report.get('counts', {}), sort_keys=True)}`\n\n"
         "Triage within one working day; review all open mutation alerts weekly. "
@@ -181,9 +204,20 @@ def reconcile(api: IssueAPI, report: dict[str, Any], *, namespace: str = "produc
             and marker(kind, namespace) in (issue.get("body") or "")
         ]
         if len(active) > 1:
-            raise RuntimeError("duplicate active mutation incidents require manual reconciliation")
+            active.sort(key=lambda issue: issue["number"])
+            for duplicate in active[1:]:
+                api.comment(
+                    duplicate["number"],
+                    f"Duplicate of #{active[0]['number']}; continuing the incident there.",
+                )
+                api.update(duplicate["number"], duplicate["body"], "closed")
+            active = active[:1]
         incident = active[0] if active else None
-        failing = report["status"] == kind
+        failing = (
+            report["status"] == "regression"
+            if kind == "regression"
+            else report["status"] in {"infrastructure", "incomplete"}
+        )
         if incident is None and failing:
             closed = [
                 issue
@@ -212,8 +246,7 @@ def reconcile(api: IssueAPI, report: dict[str, Any], *, namespace: str = "produc
         ) >= timedelta(days=7)
         if reminder:
             state["last_reminded"] = now
-        rendered_report = {**report, "status": "pass"} if recovered and not failing else report
-        body = body_for(kind, rendered_report, state, namespace)
+        body = body_for(kind, report, state, namespace, recovered=recovered and not failing)
         if incident is not None:
             was_closed = incident["state"] == "closed"
             api.update(incident["number"], body, "open" if failing else "closed")

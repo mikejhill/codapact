@@ -60,13 +60,13 @@ def classify(stats: dict[str, Any] | None, exit_code: int, *, floor: float = 90)
             "reason": "unresolved, untested, or interrupted mutants",
         }
     score = 100 * stats["killed"] / stats["total"]
-    if score < floor or stats["no_tests"]:
+    if score < floor:
         return {
             **result,
             "status": "regression",
             "complete": True,
             "score": score,
-            "reason": "score below floor or mutants have no associated tests",
+            "reason": "complete mutation score is below the required floor",
         }
     return {
         **result,
