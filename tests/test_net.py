@@ -4,11 +4,12 @@ import pytest
 
 import codapact.net as net
 from codapact.errors import CodaError, TransportError
+from tests.assertions import safe_error
 
 
 @pytest.mark.parametrize("timeout", [0, -1, 121])
 def test_timeout_validation(timeout):
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         net.HttpTransport(timeout=timeout)
 
 
@@ -23,7 +24,7 @@ def test_timeout_validation(timeout):
     ],
 )
 def test_invalid_url(url):
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         net.HttpTransport().send("GET", url, {}, None)
 
 
@@ -124,7 +125,7 @@ def test_network_failure_redacted(monkeypatch):
         raise OSError("sensitive infrastructure detail")
 
     monkeypatch.setattr(net.socket, "getaddrinfo", unavailable)
-    with pytest.raises(TransportError) as error:
+    with safe_error(TransportError) as error:
         net.HttpTransport().send("GET", "https://example.com", {}, None)
     assert "sensitive" not in str(error.value)
 
@@ -142,12 +143,12 @@ def test_network_failure_redacted(monkeypatch):
     ],
 )
 def test_url_boundaries_before_network(url):
-    with pytest.raises(CodaError, match="URL"):
+    with safe_error(CodaError, match="URL"):
         net.validate_url(url)
 
 
 def test_base_url_query_rejected_and_encoded_query_preserved():
-    with pytest.raises(CodaError, match="URL"):
+    with safe_error(CodaError, match="URL"):
         net.validate_url("https://example.com?x=1", allow_query=False)
     assert net.validate_url("https://example.com/?name=%C3%A9").query == "name=%C3%A9"
     assert net.validate_url("https://example.com:1/").port == 1
@@ -170,10 +171,10 @@ def test_empty_or_mixed_private_dns_fails_before_connection(monkeypatch, address
         pytest.fail("rejected DNS results must never reach the network")
 
     monkeypatch.setattr(net.socket, "create_connection", unexpected_connection)
-    with pytest.raises(CodaError, match="private"):
+    with safe_error(CodaError, match="private"):
         net.HttpTransport().send("GET", "https://api.example.com", {}, None)
     if not addresses:
-        with pytest.raises(CodaError, match="private"):
+        with safe_error(CodaError, match="private"):
             net.HttpTransport(allow_private=True).send("GET", "https://api.example.com", {}, None)
 
 
@@ -189,7 +190,7 @@ def test_public_plaintext_requires_opt_in_before_connection(monkeypatch):
         pytest.fail("plaintext HTTP without opt-in must never connect")
 
     monkeypatch.setattr(net.socket, "create_connection", unexpected_connection)
-    with pytest.raises(CodaError, match="plaintext HTTP"):
+    with safe_error(CodaError, match="plaintext HTTP"):
         net.HttpTransport().send("GET", "http://api.example.com", {}, None)
 
 
@@ -257,7 +258,7 @@ def test_transport_response_boundaries_and_cleanup(
     monkeypatch.setattr(net.http.client, "HTTPConnection", Connection)
     transport = net.HttpTransport(allow_private=True, timeout=120)
     if failure:
-        with pytest.raises(TransportError, match="(?i)" + failure):
+        with safe_error(TransportError, match="(?i)" + failure):
             transport.send("GET", url, {}, None)
     else:
         response = transport.send("GET", url, {}, None)

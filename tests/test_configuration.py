@@ -19,6 +19,7 @@ from codapact.profiles import (
     validate_profile,
 )
 from codapact.values import merge
+from tests.assertions import safe_error
 
 PROFILE = {"version": 1, "slug": "pets", "config_directory": None, "defaults": {}}
 
@@ -90,7 +91,7 @@ def test_manifest_precedence_paths_and_resets(tmp_path):
     ],
 )
 def test_manifest_rejects(document, tmp_path):
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         resolve_generation(str(write(tmp_path / "bad.yaml", document)), {})
 
 
@@ -111,14 +112,14 @@ def test_manifest_rejects(document, tmp_path):
     ],
 )
 def test_bad_overrides(setting, tmp_path):
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         resolve_generation(None, {"contract": {"source": "api.json"}}, [setting], cwd=tmp_path)
 
 
 def test_unsafe_yaml_and_definitions(tmp_path):
     path = tmp_path / "manifest.yaml"
     path.write_text("!!python/object/apply:os.system [echo bad]", encoding="utf-8")
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         resolve_generation(str(path), {})
     write(tmp_path / "cli.json", {"version": 1, "commands": []})
     result = resolve_generation(
@@ -132,9 +133,9 @@ def test_unsafe_yaml_and_definitions(tmp_path):
     )
     assert result["profile"]["slug"] == "pets-lib"
     assert result["cli_definition"] == {"version": 1, "commands": []}
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         resolve_generation(None, {})
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         resolve_generation(
             None, {"contract": {"source": "api"}, "cli": {"definition": "https://example.com/cli"}}
         )
@@ -235,9 +236,9 @@ def test_discovery_and_precedence(tmp_path, monkeypatch):
     assert directory == root
     assert settings == {"timeout": 9, "policy": {"deny": ["x"]}}
     write(root / "config.json", {"auth": {}})
-    with pytest.raises(CodaError, match="auth.json"):
+    with safe_error(CodaError, match="auth.json"):
         runtime_settings(profile, None, None, {})
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         runtime_settings(profile, None, "https://example.com", {})
     for bad in (
         {**PROFILE, "slug": "../bad"},
@@ -245,7 +246,7 @@ def test_discovery_and_precedence(tmp_path, monkeypatch):
         {**PROFILE, "defaults": {"auth": {}}},
         {**PROFILE, "version": 2},
     ):
-        with pytest.raises(CodaError):
+        with safe_error(CodaError):
             validate_profile(bad)
 
 
@@ -284,7 +285,7 @@ def test_file_store_and_custom_provider(tmp_path, monkeypatch):
         == "Bearer memory"
     )
     assert JsonFileStore(tmp_path / "absent", optional=True).get("x") is None
-    with pytest.raises(AuthError):
+    with safe_error(AuthError):
         auth.headers("absent", {"type": "http", "scheme": "bearer"})
 
 
@@ -300,7 +301,7 @@ def test_file_store_and_custom_provider(tmp_path, monkeypatch):
 )
 def test_bad_credentials_redacted(entry, tmp_path):
     path = write(tmp_path / "auth.json", {"version": 1, "credentials": {"token": entry}})
-    with pytest.raises(CodaError) as error:
+    with safe_error(CodaError) as error:
         StoredAuth(JsonFileStore(path)).headers("token", {"type": "http", "scheme": "basic"})
     assert "secret" not in str(error.value)
 
@@ -308,15 +309,15 @@ def test_bad_credentials_redacted(entry, tmp_path):
 def test_file_limits_and_malformed(tmp_path):
     path = tmp_path / "auth.json"
     assert read_file(path, optional=True) == {}
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         read_file(path)
     path.write_text("x" * 65_537)
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         read_file(path)
     path.write_text('{"version":1}')
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         JsonFileStore(path)
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         read_file(tmp_path)
 
 
@@ -381,13 +382,13 @@ def test_generated_manifest_xdg_auth_flow(contract, server, tmp_path, monkeypatc
 def test_additional_fail_closed_boundaries(tmp_path, monkeypatch):
     path = tmp_path / "auth.json"
     path.write_text("version: 1\ncredentials: {}")
-    with pytest.raises(CodaError, match="JSON"):
+    with safe_error(CodaError, match="JSON"):
         JsonFileStore(path)
     path.write_bytes(b"\xff")
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         JsonFileStore(path)
     monkeypatch.setattr(Path, "is_symlink", lambda self: True)
-    with pytest.raises(CodaError, match="links"):
+    with safe_error(CodaError, match="links"):
         read_file(path)
 
 
@@ -399,7 +400,7 @@ def test_runtime_directory_and_nullable_policy(tmp_path):
         cwd=tmp_path,
     )
     assert options["profile"]["defaults"] == {"policy": {}}
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         resolve_generation(
             None,
             {"contract": {"source": "api.json"}},
@@ -417,5 +418,5 @@ def test_generator_metadata_cannot_inject(contract, value):
     from codapact.openapi import OpenAPITranslator
 
     document = replace(OpenAPITranslator().translate(contract), metadata={"codapact.cli": value})
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         PythonGenerator().generate(document, "pets_client")

@@ -12,11 +12,12 @@ from codapact.model import Registry
 from codapact.net import Response
 from codapact.openapi import OpenAPITranslator
 from codapact.runtime import ClientBase, config
+from tests.assertions import safe_error
 
 
 @pytest.mark.parametrize("token", ["-1", "01", "+0", " 0"])
 def test_noncanonical_reference_index_rejected(token):
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         resolve(
             {
                 "items": [{"type": "string"}, {"type": "integer"}],
@@ -26,27 +27,27 @@ def test_noncanonical_reference_index_rejected(token):
 
 
 def test_invalid_pointer_escape_rejected():
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         resolve({"a~2b": {"type": "string"}, "target": {"$ref": "#/a~2b"}})
 
 
 @pytest.mark.parametrize("definition", [{}, {"version": True, "commands": []}])
 def test_invalid_cli_definition_is_not_defaulted(contract, definition):
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         ArgparseGenerator().generate_with_definition(
             OpenAPITranslator().translate(contract), "pets_api", definition
         )
 
 
 def test_falsy_invalid_runtime_configuration_rejected():
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         config(cast(Any, []))
 
 
 def test_boolean_plugin_version_rejected():
     translator = OpenAPITranslator()
     translator.api_version = True
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         Registry().translator("bad", translator)
 
 
@@ -72,7 +73,7 @@ def test_generated_type_names_stay_stable_when_unrelated_operation_added(contrac
 
 def test_head_response_body_is_explicitly_rejected(contract):
     contract["paths"]["/pets/{pet_id}"]["head"] = contract["paths"]["/pets/{pet_id}"].pop("get")
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         OpenAPITranslator().translate(contract)
 
 
@@ -81,7 +82,7 @@ def test_head_response_body_is_explicitly_rejected(contract):
 )
 def test_ambiguous_server_urls_rejected(contract, url):
     contract["servers"] = [{"url": url}]
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         OpenAPITranslator().translate(contract)
 
 
@@ -111,7 +112,7 @@ def test_nonfinite_json_exponent_is_rejected(contract):
         OpenAPITranslator().translate(contract).to_dict(),
         transport=FixedTransport(b'{"id":1e999,"name":"Miso"}'),
     )
-    with pytest.raises(ResponseError):
+    with safe_error(ResponseError):
         client._execute("get_pet", {"pet_id": 1})
 
 
@@ -121,7 +122,7 @@ def test_json_body_nonstring_keys_rejected(contract):
     operation["requestBody"]["content"]["application/json"]["schema"] = {"type": "object"}
     transport = FixedTransport(b'{"id":1,"name":"Miso"}')
     client = ClientBase(OpenAPITranslator().translate(contract).to_dict(), transport=transport)
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         client._execute("create_pet", body={1: "silently changed key"})
     assert transport.calls == []
 
@@ -135,6 +136,6 @@ def test_empty_auth_hook_does_not_satisfy_a_required_scheme(contract):
     client = ClientBase(
         OpenAPITranslator().translate(contract).to_dict(), transport=transport, auth=EmptyProvider()
     )
-    with pytest.raises(AuthError):
+    with safe_error(AuthError):
         client._execute("get_pet", {"pet_id": 1})
     assert transport.calls == []

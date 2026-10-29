@@ -4,6 +4,7 @@ from codapact.errors import ApiError, AuthError, CodaError, PolicyError, Respons
 from codapact.net import Response
 from codapact.openapi import OpenAPITranslator
 from codapact.runtime import ClientBase, EnvironmentAuth, OperationPolicy, config
+from tests.assertions import safe_error
 
 
 class RecordingTransport:
@@ -36,10 +37,10 @@ def test_real_calls(contract, server, monkeypatch):
     assert instance._execute("list_pets", {"page": 2}) == [{"id": 2, "name": "Miso"}]
     assert instance._execute("create_pet", body={"id": 3, "name": "Pip"})["name"] == "Pip"
     assert instance._execute("delete_pet") is None
-    with pytest.raises(ApiError, match="HTTP 404") as error:
+    with safe_error(ApiError, match="HTTP 404") as error:
         instance._execute("get_pet", {"pet_id": 404})
     assert "fixture-secret" not in str(error.value)
-    with pytest.raises(ResponseError):
+    with safe_error(ResponseError):
         instance._execute("get_pet", {"pet_id": 999})
     assert len(server[1]) == 6
 
@@ -76,13 +77,13 @@ def test_auth_or_and(contract, monkeypatch):
 
 
 def test_auth_missing_conflict_and_anonymous(contract, monkeypatch):
-    with pytest.raises(AuthError):
+    with safe_error(AuthError):
         client(contract)._execute("get_pet", {"pet_id": 1})
     contract["security"] = [{"token": [], "basic": []}]
     monkeypatch.setenv("TOKEN", "abc")
     monkeypatch.setenv("USER", "mike")
     monkeypatch.setenv("PASS", "secret")
-    with pytest.raises(AuthError):
+    with safe_error(AuthError):
         client(
             contract,
             settings={
@@ -113,7 +114,7 @@ def test_custom_auth_and_policy_hooks(contract):
     instance = client(contract, transport=transport, auth=CustomAuth(), policy=ReadOnly())
     instance._execute("get_pet", {"pet_id": 1})
     assert transport.calls[0][2]["Authorization"] == "Bearer custom"
-    with pytest.raises(PolicyError):
+    with safe_error(PolicyError):
         instance._execute("create_pet", body={"id": 1, "name": "Miso"})
     assert len(transport.calls) == 1
 
@@ -129,7 +130,7 @@ def test_custom_auth_and_policy_hooks(contract):
     ],
 )
 def test_bad_config(settings):
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         config(settings)
 
 
@@ -140,7 +141,7 @@ def test_bad_config(settings):
 def test_invalid_request_before_transport(contract, values, body):
     contract["security"] = []
     transport = RecordingTransport()
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         client(contract, transport=transport)._execute("get_pet", values, body)
     assert transport.calls == []
 
@@ -148,7 +149,7 @@ def test_invalid_request_before_transport(contract, values, body):
 def test_body_validation(contract):
     contract["security"] = []
     for body in [None, {"id": "bad", "name": "Miso"}]:
-        with pytest.raises(CodaError):
+        with safe_error(CodaError):
             client(contract)._execute("create_pet", body=body)
 
 
@@ -163,22 +164,22 @@ def test_body_validation(contract):
 )
 def test_bad_responses(contract, response):
     contract["security"] = []
-    with pytest.raises(ResponseError):
+    with safe_error(ResponseError):
         client(contract, transport=RecordingTransport(response))._execute("get_pet", {"pet_id": 1})
 
 
 def test_policies_and_secrets(monkeypatch):
     for policy in [OperationPolicy(allow=[]), OperationPolicy(deny=["get_pet"])]:
-        with pytest.raises(PolicyError, match="get_pet"):
+        with safe_error(PolicyError, match="get_pet"):
             policy.authorize({"id": "get_pet"})
     auth = EnvironmentAuth(
         {"basic": {"username_env": "USER", "password_env": "PASS"}, "token": {"env": "TOKEN"}}
     )
     monkeypatch.setenv("USER", "bad:user")
-    with pytest.raises(AuthError):
+    with safe_error(AuthError):
         auth.headers("basic", {"type": "http", "scheme": "basic"})
     monkeypatch.setenv("TOKEN", "secret\r\nInjected: value")
-    with pytest.raises(AuthError) as error:
+    with safe_error(AuthError) as error:
         auth.headers("token", {"type": "http", "scheme": "bearer"})
     assert "secret" not in str(error.value)
 
@@ -191,16 +192,16 @@ def test_path_header_encoding(contract):
     instance = client(contract, transport=transport)
     instance._execute("get_pet", {"pet_id": "a/b?x=y"})
     assert transport.calls[0][1].endswith("/pets/a%2Fb%3Fx%3Dy")
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         instance._execute("get_pet", {"pet_id": ".."})
 
 
 def test_bad_ir_and_base_url(contract):
     document = OpenAPITranslator().translate(contract).to_dict()
     document["version"] = 2
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         ClientBase(document)
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         client(contract, settings={"base_url": "https://user:secret@example.com"})
 
 
@@ -217,14 +218,14 @@ def test_explicit_null_body_and_missing_body(contract):
     instance = client(contract, transport=transport)
     instance._execute("create_pet", body=None)
     assert transport.calls[0][3] == b"null"
-    with pytest.raises(CodaError, match="required"):
+    with safe_error(CodaError, match="required"):
         instance._execute("create_pet")
 
 
 def test_default_response_does_not_widen_success_types(contract):
     contract["security"] = []
     contract["paths"]["/pets/{pet_id}"]["get"]["responses"]["default"] = {"description": "failure"}
-    with pytest.raises(ResponseError):
+    with safe_error(ResponseError):
         client(contract, transport=RecordingTransport(Response(201, {}, b"")))._execute(
             "get_pet", {"pet_id": 1}
         )

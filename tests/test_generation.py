@@ -2,6 +2,9 @@ import copy
 import importlib
 import json
 import time
+import tomllib
+import typing
+from dataclasses import replace
 
 import pytest
 from hypothesis import given
@@ -12,6 +15,7 @@ from codapact.generation import ArgparseGenerator, PythonGenerator, TypeEmitter,
 from codapact.model import Registry
 from codapact.openapi import OpenAPITranslator
 from codapact.project import default_registry, generate, write_project
+from tests.assertions import safe_error
 
 
 def test_generated_library_and_cli(contract, server, tmp_path, monkeypatch, capsys):
@@ -57,7 +61,7 @@ def test_determinism_conflicts_stale_and_preservation(contract, tmp_path):
     assert user.read_text() == "keep me"
     edited = output / "src/renamed_api/client.py"
     edited.write_text("user edits")
-    with pytest.raises(CodaError, match="modified"):
+    with safe_error(CodaError, match="modified"):
         generate(str(source), output, package="renamed_api")
     assert edited.read_text() == "user edits"
 
@@ -78,7 +82,7 @@ def test_determinism_conflicts_stale_and_preservation(contract, tmp_path):
     ],
 )
 def test_invalid_package(name):
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         package_name(name)
 
 
@@ -87,16 +91,16 @@ def test_invalid_package(name):
     ["../escape", "/absolute", "C:/evil", "a\\b", ".codapact-manifest.json", "CON", "a/NUL.txt"],
 )
 def test_plugin_path_traversal(tmp_path, path):
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         write_project(tmp_path, {path: "bad"})
 
 
 def test_unowned_and_bad_manifest(tmp_path):
     (tmp_path / "file").write_text("user")
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         write_project(tmp_path, {"file": "generated"})
     (tmp_path / ".codapact-manifest.json").write_text("{}")
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         write_project(tmp_path, {"another": "generated"})
 
 
@@ -110,7 +114,7 @@ def test_unowned_and_bad_manifest(tmp_path):
     ],
 )
 def test_conflicting_file_paths(tmp_path, files):
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         write_project(tmp_path / "output", files)
     assert not (tmp_path / "output").exists()
 
@@ -136,7 +140,7 @@ def test_cli_definition(contract):
         {"version": 1, "commands": [{"name": "../evil", "operation": "get_pet"}]},
         {"version": 1, "commands": [None]},
     ]:
-        with pytest.raises(CodaError):
+        with safe_error(CodaError):
             ArgparseGenerator().generate_with_definition(ir, "pet_api", invalid)
 
 
@@ -174,18 +178,18 @@ def test_real_alternate_plugins(contract, tmp_path):
         "get_pet",
         "list_pets",
     ]
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         registry.translator("fixture", FixtureTranslator())
     plugin = JsonIndex()
     plugin.api_version = 2
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         registry.generator("bad", plugin)
     plugin.api_version = 1
     plugin.requires = frozenset({"streaming"})
     registry.generator("streaming", plugin)
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         registry.negotiate("openapi", ("streaming",))
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         Registry().negotiate("missing", ())
 
 
@@ -223,6 +227,43 @@ def test_generation_budget(contract):
 @pytest.mark.parametrize("name", ["trailing.", "nested/trailing.", "con.txt"])
 def test_portable_output_names_fail_before_writes(name, tmp_path):
     root = tmp_path / "new-output"
-    with pytest.raises(CodaError, match="unsafe generated path"):
+    with safe_error(CodaError, match="unsafe generated path"):
         write_project(root, {name: "untrusted content"})
     assert not root.exists()
+
+
+def test_default_generated_command_and_runtime_profile_validation(contract):
+    ir = OpenAPITranslator().translate(contract)
+    generator = PythonGenerator()
+    files = generator.generate(ir, "pet_client")
+    project = tomllib.loads(files["pyproject.toml"])
+    assert project["project"]["scripts"] == {"pet-client": "pet_client.__main__:main"}
+    for profile in [
+        None,
+        {},
+        {"version": 1, "slug": "pets", "config_directory": "relative", "defaults": {}},
+    ]:
+        with safe_error(CodaError):
+            generator.generate(replace(ir, metadata={"codapact.runtime": profile}), "pet_client")
+
+
+def test_generator_registry_rejects_duplicate_and_noninteger_versions():
+    registry = default_registry()
+    original = registry.generators["python"]
+    with safe_error(CodaError, match="(?i)(duplicate|plugin)"):
+        registry.generator("python", PythonGenerator())
+    assert registry.generators["python"] is original
+    for version in [True, 1.0]:
+        plugin = typing.cast(typing.Any, PythonGenerator())
+        plugin.api_version = version
+        with safe_error(CodaError, match="(?i)version"):
+            registry.generator("alternate", plugin)
+
+
+def test_nullable_ir_type_order_does_not_change_generated_meaning():
+    annotation = TypeEmitter().emit({"type": ["null", "string"]}, "Value")
+
+    class Shape:
+        __annotations__ = {"value": annotation}
+
+    assert typing.get_type_hints(Shape)["value"] == str | None

@@ -15,7 +15,8 @@ from codapact.errors import AuthError, CodaError, ResponseError
 from codapact.net import Response
 from codapact.openapi import OpenAPITranslator
 from codapact.runtime import ClientBase, map_types
-from codapact.values import merge
+from codapact.values import default_slug, merge, slug_name
+from tests.assertions import safe_error
 
 PROFILE = {"version": 1, "slug": "pets", "config_directory": None, "defaults": {}}
 
@@ -50,7 +51,7 @@ PROFILE = {"version": 1, "slug": "pets", "config_directory": None, "defaults": {
     ],
 )
 def test_ordinary_configuration_rejects_unsupported_data(settings):
-    with pytest.raises(CodaError, match="(?i)runtime configuration"):
+    with safe_error(CodaError, match="(?i)runtime configuration"):
         validation.config(settings)
 
 
@@ -75,7 +76,7 @@ def test_all_supported_ordinary_settings_are_preserved():
 def test_profile_requires_every_declared_field(field):
     value = copy.deepcopy(PROFILE)
     value.pop(field)
-    with pytest.raises(CodaError, match="(?i)runtime profile"):
+    with safe_error(CodaError, match="(?i)runtime profile"):
         profiles.validate_profile(value)
 
 
@@ -102,12 +103,12 @@ def test_profile_requires_every_declared_field(field):
     ],
 )
 def test_profile_rejects_invalid_field_values(field, value):
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         profiles.validate_profile({**PROFILE, field: value})
 
 
 def test_profile_unknowns_and_independent_credential_free_defaults(tmp_path):
-    with pytest.raises(CodaError, match="(?i)runtime profile"):
+    with safe_error(CodaError, match="(?i)runtime profile"):
         profiles.validate_profile({**PROFILE, "unknown": True})
     root = tmp_path / "config with spaces"
     for directory in (str(root), "~", "~/pets with spaces"):
@@ -117,7 +118,7 @@ def test_profile_unknowns_and_independent_credential_free_defaults(tmp_path):
     assert local_path(str(root), tmp_path / "other") == root
     assert local_path("~/pets", tmp_path).is_absolute()
     assert local_path("pets", tmp_path) == tmp_path / "pets"
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         local_path("file://secret", tmp_path)
 
 
@@ -158,16 +159,16 @@ def test_merge_precedence_deep_copy_and_null_resets(tmp_path):
 def test_json_complexity_and_type_boundaries():
     # The documented budget counts the root as a node, and depth starts at zero.
     validation.validate([0] * 49_999, {}, "budget")
-    with pytest.raises(CodaError, match="(?i)budget"):
+    with safe_error(CodaError, match="(?i)budget"):
         validation.validate([0] * 50_000, {}, "budget")
     value: Any = 0
     for _ in range(48):
         value = [value]
     validation.validate(value, {}, "depth")
-    with pytest.raises(CodaError, match="(?i)depth"):
+    with safe_error(CodaError, match="(?i)depth"):
         validation.validate([value], {}, "depth")
     for invalid in ({1: "secret"}, b"secret", object(), float("inf"), float("nan")):
-        with pytest.raises(CodaError, match="(?i)invalid JSON") as error:
+        with safe_error(CodaError, match="(?i)invalid JSON") as error:
             validation.validate(invalid, {}, "invalid JSON")
         assert "secret" not in str(error.value)
     validation.validate({"text": " é ", "array": [None, True, 2, 1.5]}, {}, "valid")
@@ -179,7 +180,7 @@ def test_missing_auth_configuration_has_actionable_reference_error():
         {"type": "http", "scheme": "basic"},
         {"type": "apiKey", "name": "X-Key"},
     ):
-        with pytest.raises(AuthError, match="(?i)reference"):
+        with safe_error(AuthError, match="(?i)reference"):
             auth.EnvironmentAuth().headers("token", scheme)
 
 
@@ -189,7 +190,7 @@ def test_environment_credentials_reject_missing_empty_and_control_values(value, 
         monkeypatch.delenv("pets_token", raising=False)
     else:
         monkeypatch.setenv("pets_token", value)
-    with pytest.raises(AuthError) as error:
+    with safe_error(AuthError) as error:
         auth.EnvironmentAuth({"token": {"env": "pets_token"}}).headers(
             "token", {"type": "http", "scheme": "bearer"}
         )
@@ -214,7 +215,7 @@ def test_auth_lowercase_refs_spaces_and_live_resolution(monkeypatch):
         "Authorization": "Basic dXNlcjpwYXNzd29yZC12YWx1ZQ=="
     }
     monkeypatch.setenv("pets_user", "user:invalid")
-    with pytest.raises(AuthError, match="(?i)username"):
+    with safe_error(AuthError, match="(?i)username"):
         basic.headers("basic", {"type": "http", "scheme": "basic"})
 
 
@@ -250,7 +251,7 @@ def test_auth_lowercase_refs_spaces_and_live_resolution(monkeypatch):
 def test_auth_file_schema_rejects_unsupported_inputs(document, tmp_path):
     path = tmp_path / "auth.json"
     path.write_text(json.dumps(document), encoding="utf-8")
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         profiles.JsonFileStore(path)
 
 
@@ -264,7 +265,7 @@ def test_no_discovery_writes_and_exact_file_size_limit(tmp_path):
     path.write_bytes(b"{}" + b" " * 65_534)
     assert profiles.read_file(path, json_only=True) == {}
     path.write_bytes(b"{}" + b" " * 65_535)
-    with pytest.raises(CodaError, match="(?i)size"):
+    with safe_error(CodaError, match="(?i)size"):
         profiles.read_file(path, json_only=True)
 
 
@@ -336,11 +337,11 @@ def test_contract_constraints_apply_to_requests_and_responses(contract, schema, 
     assert instance._execute("create_pet", body=valid) == valid
     assert transport.calls[0][0] == "POST"
     assert json.loads(cast(bytes, transport.calls[0][3])) == valid
-    with pytest.raises(CodaError, match="(?i)request"):
+    with safe_error(CodaError, match="(?i)request"):
         instance._execute("create_pet", body=invalid)
     assert len(transport.calls) == 1
     transport.value = invalid
-    with pytest.raises(ResponseError):
+    with safe_error(ResponseError):
         instance._execute("create_pet", body=valid)
 
 
@@ -381,7 +382,7 @@ def test_each_supported_contract_version_preserves_ir_metadata(contract, version
 )
 def test_security_schemes_cannot_control_protocol_headers(contract, header):
     contract["components"]["securitySchemes"]["key"]["name"] = header
-    with pytest.raises(CodaError, match="(?i)header"):
+    with safe_error(CodaError, match="(?i)header"):
         OpenAPITranslator().translate(contract)
 
 
@@ -402,7 +403,7 @@ def test_operation_parameters_cannot_override_auth_or_protocol_headers(contract,
     contract["paths"]["/pets"]["get"]["parameters"] = [
         {"name": name, "in": "header", "schema": {"type": "string"}}
     ]
-    with pytest.raises(CodaError, match="(?i)headers"):
+    with safe_error(CodaError, match="(?i)headers"):
         OpenAPITranslator().translate(contract)
 
 
@@ -433,7 +434,7 @@ def test_operation_names_must_be_safe_python_identifiers(contract, invalid):
     if invalid == "bad":
         invalid = "for"
     contract["paths"]["/pets"]["get"]["operationId"] = invalid
-    with pytest.raises(CodaError, match="(?i)operationId"):
+    with safe_error(CodaError, match="(?i)operationId"):
         OpenAPITranslator().translate(contract)
 
 
@@ -537,21 +538,21 @@ def test_unsupported_contract_shapes_fail_closed(contract, case):
         item["head"] = item.pop("get")
     elif case == "unknown_media_feature":
         op["responses"]["200"]["content"]["application/json"]["encoding"] = {}
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         OpenAPITranslator().translate(contract)
 
 
 @pytest.mark.parametrize("path", ["/has space", "/has\x7fdelete"])
 def test_literal_paths_reject_whitespace_and_delete_control(contract, path):
     contract["paths"][path] = contract["paths"].pop("/empty")
-    with pytest.raises(CodaError, match="(?i)path"):
+    with safe_error(CodaError, match="(?i)path"):
         OpenAPITranslator().translate(contract)
 
 
 @pytest.mark.parametrize("status", ["099", "600", "20", "2000", "2xx", "DEFAULT"])
 def test_response_status_keys_are_exact_supported_http_codes(contract, status):
     contract["paths"]["/pets"]["get"]["responses"][status] = {"description": "unsupported"}
-    with pytest.raises(CodaError, match="(?i)response"):
+    with safe_error(CodaError, match="(?i)response"):
         OpenAPITranslator().translate(contract)
 
 
@@ -601,7 +602,7 @@ def test_precise_request_serialization_and_untrusted_response_errors(contract):
         {"pet_id": "ok", "query": 2},
         {"pet_id": "ok", "X-Count": "secret"},
     ):
-        with pytest.raises(CodaError):
+        with safe_error(CodaError):
             instance._execute("get_pet", parameters)
     assert len(transport.calls) == before
     for response in [
@@ -612,7 +613,7 @@ def test_precise_request_serialization_and_untrusted_response_errors(contract):
         Response(200, {"Content-Type": "application/json"}, b'{"id":NaN,"name":"secret"}'),
     ]:
         transport.response = response
-        with pytest.raises(ResponseError) as error:
+        with safe_error(ResponseError) as error:
             instance._execute("get_pet", {"pet_id": "ok"})
         assert "secret" not in str(error.value)
 
@@ -644,7 +645,7 @@ def test_runtime_defaults_explicit_overrides_and_default_transport_policy(contra
     }
     instance = ClientBase(document)
     assert factory_calls[-1] == {"allow_private": True, "timeout": 3}
-    with pytest.raises(CodaError, match="(?i)policy"):
+    with safe_error(CodaError, match="(?i)policy"):
         instance._execute("get_pet", {"pet_id": 1})
     assert instance._execute("delete_pet") is None
     assert cast(Transport, instance._transport).calls == [
@@ -669,7 +670,7 @@ def test_runtime_defaults_explicit_overrides_and_default_transport_policy(contra
     instance = ClientBase(document)
     assert factory_calls[-1] == {"allow_private": False, "timeout": 15}
     assert instance._execute("delete_pet") is None
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         ClientBase(document, settings={"base_url": "https://example.com?secret=hidden"})
 
 
@@ -694,7 +695,7 @@ def test_custom_auth_headers_cannot_inject_or_escape_validation(contract, header
     instance = ClientBase(
         OpenAPITranslator().translate(contract).to_dict(), auth=Auth(), transport=NeverTransport()
     )
-    with pytest.raises(CodaError, match="(?i)header") as error:
+    with safe_error(CodaError, match="(?i)header") as error:
         instance._execute("get_pet", {"pet_id": 1})
     assert "synthetic" not in str(error.value)
 
@@ -717,7 +718,7 @@ def test_custom_auth_must_satisfy_every_required_scheme_before_transport(contrac
         def send(self, method, url, headers, body):
             pytest.fail("incomplete auth must fail before transport")
 
-    with pytest.raises(AuthError):
+    with safe_error(AuthError):
         ClientBase(
             OpenAPITranslator().translate(contract).to_dict(),
             auth=Auth(),
@@ -748,7 +749,7 @@ def test_case_insensitive_auth_matching_and_and_conflicts(contract):
     )._execute("get_pet", {"pet_id": 1})
     assert transport.calls[-1][2]["authorization"] == "Bearer custom"
     contract["security"] = [{"token": [], "key": []}]
-    with pytest.raises(AuthError):
+    with safe_error(AuthError):
         ClientBase(
             OpenAPITranslator().translate(contract).to_dict(), auth=Auth(), transport=transport
         )._execute("get_pet", {"pet_id": 1})
@@ -765,7 +766,7 @@ def test_all_non_success_boundaries_are_api_errors_without_response_leaks(contra
         def send(self, method, url, headers, body):
             return Response(status, {}, b"synthetic-private-response")
 
-    with pytest.raises(ApiError) as error:
+    with safe_error(ApiError) as error:
         ClientBase(
             OpenAPITranslator().translate(contract).to_dict(), transport=Transport()
         )._execute("get_pet", {"pet_id": 1})
@@ -898,7 +899,7 @@ def test_plaintext_credentials_cannot_fall_back_or_leak_when_invalid(value, tmp_
     provider = profiles.StoredAuth(
         profiles.JsonFileStore(path), auth.EnvironmentAuth({"token": {"env": "pets_token"}})
     )
-    with pytest.raises(AuthError) as error:
+    with safe_error(AuthError) as error:
         provider.headers("token", {"type": "http", "scheme": "bearer"})
     assert "part" not in str(error.value) and "fallback-value" not in str(error.value)
 
@@ -931,9 +932,9 @@ def test_configuration_and_output_paths_never_follow_symlinks(tmp_path):
         link.symlink_to(target, target_is_directory=True)
     except OSError:
         pytest.skip("platform does not permit an unprivileged directory symlink")
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         profiles.read_file(link / "config.json")
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         write_project(link, {"new.txt": "generated"})
     assert sorted(path.name for path in target.iterdir()) == ["config.json"]
 
@@ -951,22 +952,22 @@ def test_paths_with_spaces_and_equals_are_data_not_override_syntax(tmp_path):
     )
     assert options["source"] == str(tmp_path / "api=one.yaml")
     assert options["output"] == tmp_path / "generated files"
-    with pytest.raises(CodaError, match="(?i)local"):
+    with safe_error(CodaError, match="(?i)local"):
         local_path("https://example.com/file", tmp_path)
-    with pytest.raises(CodaError, match="(?i)URL"):
+    with safe_error(CodaError, match="(?i)URL"):
         clean_defaults({"base_url": "https://example.com?query=1"})
 
 
 @pytest.mark.parametrize("value", [None, [], 1])
 def test_runtime_profile_root_rejection_has_safe_diagnostic(value):
-    with pytest.raises(CodaError, match="(?i)profile"):
+    with safe_error(CodaError, match="(?i)profile"):
         profiles.validate_profile(value)
 
 
 def test_optional_auth_discovery_never_accepts_existing_empty_document(tmp_path):
     path = tmp_path / "auth.json"
     path.write_text("{}", encoding="utf-8")
-    with pytest.raises(CodaError, match="(?i)auth file"):
+    with safe_error(CodaError, match="(?i)auth file"):
         profiles.JsonFileStore(path, optional=True)
 
 
@@ -998,7 +999,7 @@ def test_runtime_configuration_read_is_bounded_before_validation(tmp_path, monke
 
     with monkeypatch.context() as patch:
         patch.setattr(Path, "open", opened)
-        with pytest.raises(CodaError, match="(?i)size limit"):
+        with safe_error(CodaError, match="(?i)size limit"):
             profiles.read_file(path)
 
 
@@ -1008,7 +1009,7 @@ def test_manifest_schema_version_requires_integer_even_if_numerically_equal(vers
     path.write_text(
         json.dumps({"version": version, "contract": {"source": "api.yaml"}}), encoding="utf-8"
     )
-    with pytest.raises(CodaError, match="(?i)version"):
+    with safe_error(CodaError, match="(?i)version"):
         resolve_generation(path.name, {}, cwd=tmp_path)
 
 
@@ -1030,11 +1031,11 @@ def test_manifest_urls_relative_inputs_and_empty_runtime_values(source, tmp_path
         "config_directory": None,
         "defaults": {},
     }
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         resolve_generation(
             path.name, {}, ['contract.source="unknown://example.com/api"'], cwd=tmp_path
         )
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         resolve_generation(path.name, {}, ["invalid-field=1"], cwd=tmp_path)
 
 
@@ -1059,7 +1060,7 @@ def test_all_ascii_header_controls_fail_before_transport(contract, control, orig
     instance = ClientBase(
         OpenAPITranslator().translate(contract).to_dict(), auth=Auth(), transport=NeverTransport()
     )
-    with pytest.raises(CodaError, match="(?i)header") as error:
+    with safe_error(CodaError, match="(?i)header") as error:
         instance._execute("get_pet", values)
     assert "synthetic" not in str(error.value)
 
@@ -1133,7 +1134,7 @@ def test_independent_openapi_rejections_cannot_hide_behind_other_invalid_fields(
         "head_request_body": "bodies",
         "null_schema": "type",
     }[case]
-    with pytest.raises(CodaError, match="(?i)" + category):
+    with safe_error(CodaError, match="(?i)" + category):
         OpenAPITranslator().translate(contract)
 
 
@@ -1215,3 +1216,15 @@ def test_media_examples_are_accepted_as_data_without_changing_runtime_schema(con
     body = next(o.body for o in ir.operations if o.id == "create_pet")
     assert body is not None and body["type"] == "object"
     assert field not in body
+
+
+def test_maximum_slug_and_repeated_separator_defaults():
+    assert slug_name("a" * 50) == "a" * 50
+    assert default_slug("pets__client_") == "pets-client"
+
+
+def test_contract_base_url_cannot_include_a_query(contract):
+    contract["servers"][0]["url"] = "https://example.com/v1?private=value"
+    with safe_error(CodaError, match="(?i)URL") as caught:
+        OpenAPITranslator().translate(contract)
+    assert "private" not in str(caught.value)

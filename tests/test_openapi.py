@@ -4,6 +4,7 @@ import pytest
 
 from codapact.errors import CodaError
 from codapact.openapi import OpenAPITranslator, normalized_schema
+from tests.assertions import safe_error
 
 
 def test_contract_ir(contract):
@@ -56,7 +57,7 @@ def test_contract_ir(contract):
 def test_unsupported_rejected(contract, mutate):
     document = copy.deepcopy(contract)
     mutate(document)
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         OpenAPITranslator().translate(document)
 
 
@@ -73,7 +74,7 @@ def test_unsupported_rejected(contract, mutate):
     ],
 )
 def test_bad_schemas(schema):
-    with pytest.raises(CodaError):
+    with safe_error(CodaError):
         normalized_schema(schema)
 
 

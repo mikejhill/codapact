@@ -55,3 +55,21 @@ def test_generator_identity_and_version_are_discoverable(capsys):
     assert help_exit.value.code == 0
     output = capsys.readouterr().out.casefold()
     assert "contracts into callable tools" in output and "generate" in output
+
+
+def test_missing_generator_command_has_normal_usage_exit(capsys):
+    with pytest.raises(SystemExit) as caught:
+        main([])
+    assert caught.value.code == 2
+    assert "generate" in capsys.readouterr().err
+
+
+def test_generation_os_failures_have_safe_diagnostics(monkeypatch, capsys):
+    def denied(**kwargs):
+        raise OSError("sensitive filesystem detail")
+
+    monkeypatch.setattr("codapact.__main__.generate", denied)
+    assert main(["generate", "api.yaml"]) == 2
+    output = capsys.readouterr()
+    assert output.out == "" and "generated project" in output.err.casefold()
+    assert "sensitive" not in output.err
