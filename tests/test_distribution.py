@@ -8,12 +8,15 @@ import tarfile
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from codapact import __version__
 from codapact.net import HttpTransport
 from codapact.project import generate
 
 
-def test_fresh_installed_wheels(server, tmp_path):
+@pytest.mark.parametrize("preset", ["all", "read"])
+def test_fresh_installed_wheels(server, tmp_path, preset):
     url, requests = server
     root = Path(__file__).resolve().parents[1]
     generated = tmp_path / "generated"
@@ -22,6 +25,7 @@ def test_fresh_installed_wheels(server, tmp_path):
         generated,
         package="installed_pets",
         transport=HttpTransport(allow_private=True),
+        selection={"preset": preset},
         profile={
             "version": 1,
             "slug": "installed-pets",
@@ -69,6 +73,7 @@ def test_fresh_installed_wheels(server, tmp_path):
     config.write_text(json.dumps(settings), encoding="utf-8")
     script = (
         "import json; from installed_pets import Client; "
+        f"assert hasattr(Client, 'create_pet') is {preset == 'all'}; "
         f"c=Client(settings={settings!r}); "
         "print(json.dumps(c.get_pet(parameters={'pet_id': 8})))"
     )
@@ -87,6 +92,8 @@ def test_fresh_installed_wheels(server, tmp_path):
         "9",
     )
     assert json.loads(result)["id"] == 9
+    help_output = run("run", "--no-project", "--python", python, "installed-pets", "--help")
+    assert ("create-pet" in help_output) is (preset == "all")
     discovery = Path(environment["XDG_CONFIG_HOME"]) / "installed-pets"
     discovery.mkdir(parents=True)
     (discovery / "config.json").write_text(json.dumps({"base_url": url}), encoding="utf-8")

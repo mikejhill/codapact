@@ -787,6 +787,8 @@ def test_complete_generation_values_and_builtin_defaults(tmp_path):
         "targets": ("python", "argparse"),
         "cli_definition": None,
         "allow_private": False,
+        "selection": {},
+        "dry_run": False,
         "profile": PROFILE | {"slug": "api"},
     }
     definition = {"version": 1, "commands": []}
@@ -826,6 +828,8 @@ def test_complete_generation_values_and_builtin_defaults(tmp_path):
         "targets": ("python", "argparse"),
         "cli_definition": definition,
         "allow_private": True,
+        "selection": {},
+        "dry_run": False,
         "profile": {
             "version": 1,
             "slug": "custom",

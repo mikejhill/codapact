@@ -34,9 +34,20 @@ Reusable generation values are supported with `uv run codapact generate
 Override its directory with `pets --config-dir PATH ...`. See the configuration
 guide for precedence, credential-file permissions, and every generation override.
 
+Generate a specialized surface with `--preset read` and operation ID, path,
+method, or domain-tag rules. Preview the selected operations without writes:
+
+```console
+uv run codapact generate --manifest examples/pets-read.codapact.yaml --dry-run
+```
+
+The read preset selects GET/HEAD/OPTIONS by name; it is not a safety or
+authorization guarantee. The generated library and CLI share the same selection.
+
 - [Architecture and extension contracts](docs/architecture.md)
 - [Supported features and safety boundaries](docs/support.md)
 - [CLI definition and runtime configuration](docs/configuration.md)
+- [Endpoint selection and domain profiles](docs/selection.md)
 - [Release process](docs/releasing.md)
 - [Security analysis](docs/security.md)
 - [Verification evidence and limits](docs/verification.md)

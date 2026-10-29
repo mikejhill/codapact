@@ -21,6 +21,7 @@ class Operation:
     responses: dict[str, dict[str, Any] | None]
     security: tuple[dict[str, list[str]], ...]
     summary: str = ""
+    tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -55,12 +56,28 @@ class Generator(Protocol):
         raise NotImplementedError
 
 
+@dataclass(frozen=True)
+class SelectionResult:
+    contract: Contract
+    report: dict[str, Any]
+
+
+class Selector(Protocol):
+    api_version: int
+    requires: frozenset[str]
+
+    @abstractmethod
+    def select(self, contract: Contract, definition: dict[str, Any] | None) -> SelectionResult:
+        raise NotImplementedError
+
+
 class Registry:
     """Explicit registration only. Config never imports or executes Python."""
 
     def __init__(self) -> None:
         self.translators: dict[str, Translator] = {}
         self.generators: dict[str, Generator] = {}
+        self.selectors: dict[str, Selector] = {}
 
     def translator(self, name: str, plugin: Translator) -> None:
         self._check(name, plugin.api_version, self.translators)
@@ -69,6 +86,20 @@ class Registry:
     def generator(self, name: str, plugin: Generator) -> None:
         self._check(name, plugin.api_version, self.generators)
         self.generators[name] = plugin
+
+    def selector(self, name: str, plugin: Selector) -> None:
+        self._check(name, plugin.api_version, self.selectors)
+        self.selectors[name] = plugin
+
+    def selection(self, source: str, name: str) -> Selector:
+        try:
+            selector = self.selectors[name]
+            translator = self.translators[source]
+        except KeyError:
+            raise CodaError("unknown source or selection plugin") from None
+        if not selector.requires <= translator.capabilities:
+            raise CodaError("selection plugin capabilities are incompatible")
+        return selector
 
     @staticmethod
     def _check(name: str, version: int, existing: dict[str, Any]) -> None:

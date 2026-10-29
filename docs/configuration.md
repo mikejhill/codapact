@@ -55,6 +55,7 @@ An empty map at the root adds no overrides. `--set` accepts JSON, not YAML.
 | contract.type | `--contract-type` | openapi |
 | contract.allow_private | `--allow-private` / `--no-allow-private` | false |
 | output.directory | `--output` | generated |
+| output.dry_run | `--dry-run` / `--no-dry-run` | false |
 | client.language | `--client-language` | python |
 | client.package | `--package` | slug with underscores, plus _client |
 | cli.style | `--cli-style` | argparse |
@@ -66,8 +67,15 @@ An empty map at the root adds no overrides. `--set` accepts JSON, not YAML.
 | runtime.defaults.allow_private | `--runtime-allow-private` / `--no-runtime-allow-private` | false |
 | runtime.defaults.policy.allow | `--runtime-policy-allow JSON` | All except denied operations |
 | runtime.defaults.policy.deny | `--runtime-policy-deny JSON` | Empty list |
+| selection.version | `--selection-version` | 1 |
+| selection.plugin | `--selection-plugin` | operations |
+| selection.preset | `--preset` | all |
+| selection.include | `--include JSON` | Empty list: include all |
+| selection.exclude | `--exclude JSON` | Empty list: remove none |
 
 All fields, including whole maps and explicit nulls, also support `--set`.
+See [endpoint selection](selection.md) for rule composition, domain/read profiles,
+strict unmatched-selector handling, and the inspectable dry-run report.
 Relative source, output, and CLI-definition paths are anchored to the manifest
 folder, including relative flag overrides. Without a manifest they use the
 invocation directory. Absolute paths stay absolute. Contract HTTP(S) URLs remain

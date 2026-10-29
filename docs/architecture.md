@@ -9,8 +9,9 @@ of static annotations. TypeScript remains a future target.
 flowchart LR
   A[Bounded JSON/YAML loader] --> B[Contract translator plugin]
   B --> C[Version 1 shared IR]
-  C --> D[Python generator plugin]
-  C --> E[CLI generator plugin]
+  C --> S[Selection plugin and audit report]
+  S --> D[Python generator plugin]
+  S --> E[CLI generator plugin]
   D --> F[Ownership manifest]
   E --> F
   F --> G[Generated client and CLI]
@@ -26,6 +27,7 @@ flowchart LR
 | Loading | Bounded JSON/YAML; local files and HTTP(S) | Explicit transport injection |
 | Translation | OpenAPI 3.0 JSON HTTP subset | `Translator.translate(document) -> Contract` |
 | Shared model | Frozen contract and operation records; schema dictionaries | IR major version, metadata, capability identifiers |
+| Selection | Operation IDs, methods, path globs, tags, read method preset | `Selector.select(contract, definition) -> SelectionResult` |
 | Library generation | Typed dictionaries, typed methods, JSON IR resource | `Generator.generate(contract, package) -> files` |
 | CLI generation | Version 1 definition, argparse commands | Independent generator and CLI runtime |
 | Execution | Schema validation and JSON serialization | Generated client inherits `ClientBase` |

@@ -16,6 +16,7 @@ from codapact.loading import load
 from codapact.model import Registry
 from codapact.net import MAX_BYTES, Transport
 from codapact.openapi import OpenAPITranslator
+from codapact.selection import OperationSelector, validate_result
 
 MANIFEST = ".codapact-manifest.json"
 
@@ -25,6 +26,7 @@ def default_registry() -> Registry:
     registry.translator("openapi", OpenAPITranslator())
     registry.generator("python", PythonGenerator())
     registry.generator("argparse", ArgparseGenerator())
+    registry.selector("operations", OperationSelector())
     return registry
 
 
@@ -57,7 +59,7 @@ def _safe_path(root: Path, relative: str) -> Path:
     return path
 
 
-def write_project(root: Path, files: dict[str, str]) -> None:
+def write_project(root: Path, files: dict[str, str], *, dry_run: bool = False) -> None:
     root = root.absolute()
     _safe_path(root, "probe")
     if root.exists() and not root.is_dir():
@@ -118,6 +120,8 @@ def write_project(root: Path, files: dict[str, str]) -> None:
                 or digest(path.read_bytes()) != previous[name]
             ):
                 raise CodaError("regeneration refused: existing file is unowned or modified")
+    if dry_run:
+        return
     root.mkdir(parents=True, exist_ok=True)
     # Each file is atomically replaced. Manifest commits last; interrupted multi-file
     # updates fail closed on the next attempt instead of claiming transactional safety.
@@ -151,12 +155,31 @@ def generate(
     cli_definition: dict[str, Any] | None = None,
     transport: Transport | None = None,
     profile: dict[str, Any] | None = None,
-) -> None:
+    selection: dict[str, Any] | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
     package_name(package)
-    translator, generators = (registry or default_registry()).negotiate(source_plugin, targets)
+    registry = registry or default_registry()
+    translator, generators = registry.negotiate(source_plugin, targets)
+    if selection is not None and not isinstance(selection, dict):
+        raise CodaError("selection must be a versioned definition object")
+    selector_name = (selection or {}).get("plugin", "operations")
+    if not isinstance(selector_name, str):
+        raise CodaError("selection plugin must be a registered name")
+    if selector_name == "operations" and selector_name not in registry.selectors:
+        # Preserve existing programmatic registries that predate selection.
+        registry_selector = OperationSelector()
+        if not registry_selector.requires <= translator.capabilities:
+            raise CodaError("selection plugin capabilities are incompatible")
+    else:
+        registry_selector = registry.selection(source_plugin, selector_name)
     contract = translator.translate(load(source, transport=transport))
-    if contract.version != 1:
+    if type(contract.version) is not int or contract.version != 1:
         raise CodaError("unsupported IR version")
+    available_operations = {operation.id for operation in contract.operations}
+    result = registry_selector.select(contract, selection)
+    validate_result(contract, result.contract)
+    contract = result.contract
     if profile is not None:
         from codapact.profiles import validate_profile
 
@@ -169,14 +192,18 @@ def generate(
                 "codapact.cli": profile["slug"],
             },
         )
-    files: dict[str, str] = {}
+    report = {**result.report, "selector": selector_name}
+    files: dict[str, str] = {"codapact-selection.json": canonical(report)}
     for generator in generators:
         generated = (
-            generator.generate_with_definition(contract, package, cli_definition)
+            generator.generate_with_definition(
+                contract, package, cli_definition, available_operations=available_operations
+            )
             if isinstance(generator, ArgparseGenerator)
             else generator.generate(contract, package)
         )
         if files.keys() & generated.keys():
             raise CodaError("generators have conflicting file ownership")
         files.update(generated)
-    write_project(output, files)
+    write_project(output, files, dry_run=dry_run)
+    return report

@@ -259,6 +259,15 @@ class OpenAPITranslator:
                     ):
                         raise CodaError("invalid security requirement or unsupported OAuth scopes")
                 body = operation.get("requestBody", {})
+                tags = operation.get("tags", [])
+                if not isinstance(tags, list) or any(
+                    not isinstance(tag, str)
+                    or not tag
+                    or len(tag) > 128
+                    or any(ord(character) < 32 or ord(character) == 127 for character in tag)
+                    for tag in tags
+                ):
+                    raise CodaError("operation tags must be nonempty strings without controls")
                 if not isinstance(body.get("required", False), bool):
                     raise CodaError("request body required must be boolean")
                 if "requestBody" in operation and content_schema(body) is None:
@@ -276,6 +285,7 @@ class OpenAPITranslator:
                         responses,
                         tuple(security),
                         str(operation.get("summary", "")),
+                        tuple(sorted(set(tags))),
                     )
                 )
         if not operations:

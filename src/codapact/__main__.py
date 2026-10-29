@@ -1,6 +1,7 @@
 """CodaPact generator entry point."""
 
 import argparse
+import json
 import sys
 
 from codapact import __version__
@@ -31,10 +32,22 @@ def main(argv: list[str] | None = None) -> int:
         "runtime-timeout": ("runtime.defaults.timeout", float),
         "runtime-policy-allow": ("runtime.defaults.policy.allow", str),
         "runtime-policy-deny": ("runtime.defaults.policy.deny", str),
+        "selection-version": ("selection.version", int),
+        "selection-plugin": ("selection.plugin", str),
+        "preset": ("selection.preset", str),
+        "include": ("selection.include", str),
+        "exclude": ("selection.exclude", str),
     }
     for flag, (_, kind) in fields.items():
         aliases = ["--slug", "--prefix"] if flag == "slug" else ["--" + flag]
-        command.add_argument(*aliases, type=kind, default=argparse.SUPPRESS)
+        description = {
+            "include": "JSON array of inclusion rules over normalized operations",
+            "exclude": "JSON array of exclusion rules; exclusions always win",
+            "preset": "all, or read (GET/HEAD/OPTIONS; no safety or authorization claim)",
+            "selection-version": "Selection definition version (integer 1)",
+            "selection-plugin": "Registered selector name (manifest supports operations)",
+        }.get(flag)
+        command.add_argument(*aliases, type=kind, default=argparse.SUPPRESS, help=description)
     command.add_argument(
         "--allow-private", action=argparse.BooleanOptionalAction, default=argparse.SUPPRESS
     )
@@ -42,19 +55,25 @@ def main(argv: list[str] | None = None) -> int:
         "--runtime-allow-private", action=argparse.BooleanOptionalAction, default=argparse.SUPPRESS
     )
     command.add_argument("--set", action="append", default=[], metavar="FIELD=JSON")
+    command.add_argument(
+        "--dry-run",
+        action=argparse.BooleanOptionalAction,
+        default=argparse.SUPPRESS,
+        help="Validate generation and ownership; print a JSON selection report without writes",
+    )
     args = parser.parse_args(argv)
     try:
         overrides = {}
         for flag, (path, _) in fields.items():
             if hasattr(args, flag.replace("-", "_")):
                 value = getattr(args, flag.replace("-", "_"))
-                if flag.startswith("runtime-policy-"):
-                    import json
-
+                if flag.startswith("runtime-policy-") or flag in {"include", "exclude"}:
                     try:
                         value = json.loads(value)
                     except ValueError:
-                        raise CodaError("policy flags require JSON arrays") from None
+                        raise CodaError(
+                            "policy and selection list flags require JSON arrays"
+                        ) from None
                 cursor = overrides
                 parts = path.split(".")
                 for part in parts[:-1]:
@@ -68,14 +87,19 @@ def main(argv: list[str] | None = None) -> int:
             overrides.setdefault("runtime", {}).setdefault("defaults", {})["allow_private"] = (
                 args.runtime_allow_private
             )
+        if hasattr(args, "dry_run"):
+            overrides.setdefault("output", {})["dry_run"] = args.dry_run
         options = resolve_generation(args.manifest, overrides, args.set)
         allow_private = options.pop("allow_private")
-        generate(**options, transport=HttpTransport(allow_private=allow_private))
+        report = generate(**options, transport=HttpTransport(allow_private=allow_private))
     except (CodaError, OSError) as exc:
         message = str(exc) if isinstance(exc, CodaError) else "cannot write generated project"
         print(f"codapact: {message}", file=sys.stderr)
         return 2
-    print(f"Generated {options['package']} in {options['output']}")
+    if options["dry_run"]:
+        print(json.dumps(report, sort_keys=True, indent=2, ensure_ascii=True, allow_nan=False))
+    else:
+        print(f"Generated {options['package']} in {options['output']}")
     return 0
 
 

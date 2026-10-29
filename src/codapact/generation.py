@@ -186,7 +186,12 @@ class ArgparseGenerator:
         return self.generate_with_definition(contract, package, None)
 
     def generate_with_definition(
-        self, contract: Contract, package: str, definition: dict[str, Any] | None
+        self,
+        contract: Contract,
+        package: str,
+        definition: dict[str, Any] | None,
+        *,
+        available_operations: set[str] | None = None,
     ) -> dict[str, str]:
         package = package_name(package)
         definition = (
@@ -209,15 +214,26 @@ class ArgparseGenerator:
                 raise CodaError("unsupported CLI definition schema")
             names = set()
             operations = {op.id for op in contract.operations}
+            available_operations = (
+                operations if available_operations is None else available_operations
+            )
             for command in definition["commands"]:
                 if (
                     set(command) != {"name", "operation"}
                     or not re.fullmatch(r"[a-z][a-z0-9-]{0,79}", command["name"])
                     or command["name"] in names
-                    or command["operation"] not in operations
+                    or command["operation"] not in available_operations
                 ):
                     raise CodaError("invalid or duplicate CLI command")
                 names.add(command["name"])
+            definition = {
+                "version": 1,
+                "commands": [
+                    command
+                    for command in definition["commands"]
+                    if command["operation"] in operations
+                ],
+            }
             if {c["operation"] for c in definition["commands"]} != operations:
                 raise CodaError("CLI definition must cover every operation")
             for operation in contract.operations:

@@ -45,6 +45,16 @@ Fuzzing beyond the included Hypothesis properties has not been run. Package
 publication is verified separately through the release workflow and official
 PyPI metadata.
 
+Endpoint-selection verification covers matching composition, strict unmatched
+terms and empty results, control/size boundaries, method-case and path/tag
+semantics, preserved authentication and nested schema dependencies, and custom
+source/selector plugins. Selector results that rewrite operations or required
+auth are rejected. Filtered and unfiltered wheels are installed in fresh
+environments; the installed library and CLI make authenticated loopback calls.
+Local/remote input produces identical generated files. Dry-run and narrowed
+regeneration preserve user files and refuse modified or unowned output. Inert
+code-like tags remain data, and contract URL query values do not enter reports.
+
 The second adversarial pass first reproduced 15 failures, then added regressions
 for canonical JSON Pointers, strict configuration/plugin versions, stable
 generated type names, ambiguous URLs, integral-number mapping, nonfinite values,
