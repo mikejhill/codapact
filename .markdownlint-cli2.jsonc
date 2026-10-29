@@ -1,0 +1,7 @@
+{
+  "globs": ["*.md", "docs/**/*.md"],
+  "ignores": [".tmp/**", ".venv*/**", "dist/**"],
+  "config": {
+    "MD013": {"line_length": 100, "tables": false, "code_blocks": false}
+  }
+}

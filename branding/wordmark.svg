@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="166" viewBox="0 0 700 166" role="img" aria-labelledby="title desc">
+  <title id="title">CodaPact — Contracts into callable tools</title>
+  <desc id="desc">A teal coda mark and navy wordmark, with an amber central accent.</desc>
+  <g transform="translate(10 19)">
+    <path d="M50 29a37 37 0 0 0 0 70M78 29a37 37 0 0 1 0 70" fill="none" stroke="#15a99b" stroke-width="12" stroke-linecap="round"/>
+    <path d="M64 12v104M13 64h38m26 0h38" fill="none" stroke="#18283e" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="64" cy="64" r="7" fill="#d99732"/>
+  </g>
+  <text x="166" y="88" fill="#18283e" font-family="Segoe UI,Inter,Arial,sans-serif" font-size="67" font-weight="650" letter-spacing="-2">CodaPact</text>
+  <text x="170" y="125" fill="#52627a" font-family="Segoe UI,Inter,Arial,sans-serif" font-size="22">Contracts into callable tools.</text>
+</svg>

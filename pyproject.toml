@@ -1,0 +1,60 @@
+[project]
+name = "codapact"
+version = "0.1.0"
+description = "Contracts into callable tools: pluggable API client and CLI generation."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+dependencies = ["PyYAML>=6.0.3,<7", "jsonschema>=4.25.1,<5"]
+
+[project.scripts]
+codapact = "codapact.__main__:main"
+
+[build-system]
+requires = ["uv_build>=0.11.1,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+source-include = ["tests/**", "docs/**", "examples/**", "schemas/**", "scripts/**", "uv.lock", "CHANGELOG.md", "release-please-config.json", ".release-please-manifest.json", ".github/**", "branding/**"]
+
+[dependency-groups]
+dev = ["pytest>=9", "pytest-cov>=7", "hypothesis>=6", "ruff>=0.14", "ty>=0.0.1", "poethepoet>=0.37", "build>=1.3", "twine>=6"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+extend-exclude = [".tmp", ".venv", ".venv-work", ".venv-clean", ".venv-final", "dist"]
+
+[tool.ty.src]
+include = ["src", "tests", "scripts"]
+
+[tool.ty.rules]
+all = "error"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S603", "S607", "S311"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config", "-ra", "--import-mode=importlib"]
+xfail_strict = true
+
+[tool.coverage.run]
+source = ["codapact"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
+[tool.poe.tasks]
+format = "ruff format ."
+format-check = "ruff format --check ."
+lint = "ruff check ."
+typecheck = "ty check"
+test = "pytest --cov --cov-report=term-missing"
+check = ["format-check", "lint", "typecheck", "test"]

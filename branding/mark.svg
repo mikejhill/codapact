@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">CodaPact</title>
+  <desc id="desc">A coda-inspired open ring with a shared vertical axis and two balanced horizontal strokes.</desc>
+  <path d="M50 29a37 37 0 0 0 0 70M78 29a37 37 0 0 1 0 70" fill="none" stroke="#15a99b" stroke-width="12" stroke-linecap="round"/>
+  <path d="M64 12v104" fill="none" stroke="#18283e" stroke-width="10" stroke-linecap="round"/>
+  <path d="M13 64h38m26 0h38" fill="none" stroke="#18283e" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="64" cy="64" r="7" fill="#d99732"/>
+</svg>

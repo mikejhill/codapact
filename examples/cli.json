@@ -1,0 +1,4 @@
+{
+  "version": 1,
+  "commands": [{"name": "show-pet", "operation": "get_pet"}]
+}
