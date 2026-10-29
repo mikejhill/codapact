@@ -368,6 +368,28 @@ def main() -> None:
                 "scope": SCOPE,
                 "run_attempt": attempt,
             }
+        # Workflow conclusion is independent evidence. A valid artifact cannot
+        # turn a cancelled, skipped, unknown, or failed producer into a pass.
+        conclusion = os.environ.get("MUTATION_CONCLUSION", "unknown")
+        if conclusion not in {"success", "failure"}:
+            report = {
+                **report,
+                "status": "incomplete",
+                "complete": False,
+                "score": None,
+                "counts": {},
+                "reason": "producer workflow was cancelled, timed out, "
+                "skipped, or ended with an unsupported conclusion",
+            }
+        elif conclusion == "failure" and report["status"] == "pass":
+            report = {
+                **report,
+                "status": "infrastructure",
+                "complete": False,
+                "score": None,
+                "counts": {},
+                "reason": "failed producer cannot establish passing recovery",
+            }
         numbers = reconcile(api, report)
     summary = (
         f"Mutation alert lifecycle verified: {numbers}"
