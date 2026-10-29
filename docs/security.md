@@ -29,6 +29,7 @@ triage ownership. Credentials should never be committed; runtime credential
 storage guidance is in [configuration](configuration.md).
 
 The HTTP transport explicitly requires TLS 1.2 or newer while retaining normal
-certificate and hostname verification. This makes the modern Python default
+certificate and hostname verification and preserving a stricter existing minimum.
+This makes the modern Python default
 minimum explicit for both static analysis and future maintainers. Baseline
 quality findings are addressed in code rather than through query suppression.

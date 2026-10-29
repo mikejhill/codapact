@@ -84,7 +84,7 @@ class HttpTransport:
             try:
                 if parts.scheme == "https":
                     context = ssl.create_default_context()
-                    context.minimum_version = ssl.TLSVersion.TLSv1_2
+                    context.minimum_version = max(context.minimum_version, ssl.TLSVersion.TLSv1_2)
                     sock = context.wrap_socket(sock, server_hostname=hostname)
                 connection.sock = sock
                 target = (parts.path or "/") + ("?" + parts.query if parts.query else "")

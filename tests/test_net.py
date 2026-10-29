@@ -35,7 +35,16 @@ def test_invalid_url(url):
         ("https://api.example.com?x=1", "/?x=1"),
     ],
 )
-def test_pinned_dns_and_hostname_verification(monkeypatch, url, target):
+@pytest.mark.parametrize(
+    ("minimum", "expected_minimum"),
+    [
+        (net.ssl.TLSVersion.MINIMUM_SUPPORTED, net.ssl.TLSVersion.TLSv1_2),
+        (net.ssl.TLSVersion.TLSv1_3, net.ssl.TLSVersion.TLSv1_3),
+    ],
+)
+def test_pinned_dns_and_hostname_verification(
+    monkeypatch, url, target, minimum: net.ssl.TLSVersion, expected_minimum: net.ssl.TLSVersion
+):
 
     calls = []
 
@@ -74,10 +83,10 @@ def test_pinned_dns_and_hostname_verification(monkeypatch, url, target):
             calls.append("connection closed")
 
     class Context:
-        minimum_version: net.ssl.TLSVersion = net.ssl.TLSVersion.MINIMUM_SUPPORTED
+        minimum_version: net.ssl.TLSVersion = minimum
 
         def wrap_socket(self, value, *, server_hostname):
-            assert self.minimum_version == net.ssl.TLSVersion.TLSv1_2
+            assert self.minimum_version == expected_minimum
             assert value is sock
             assert server_hostname == "api.example.com"
             calls.append("verified context")
