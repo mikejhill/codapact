@@ -1,0 +1,427 @@
+{
+  "baseline_commit": "ab121cb1f493929926012ed687fabb85e60ad686",
+  "baseline_run": "https://github.com/mikejhill/codapact/actions/runs/40838704218",
+  "scope": "Only the 46 previously unresolved survivors; no score adjustment or exclusion applied.",
+  "counts": {
+    "behavior-asserted": 20,
+    "presentation": 12,
+    "equivalence-candidate": 7,
+    "representation-policy": 7
+  },
+  "review_limit": "Equivalence candidates are reasoned classifications, not universal proofs. Presentation and representation differences remain observable; no arbitrary snapshots were added.",
+  "version_schema_witness": {
+    "jsonschema": "4.26.0",
+    "values": [
+      "null",
+      "false",
+      "true",
+      "0",
+      "1",
+      "1.0",
+      "1.5",
+      "2",
+      "\"1\"",
+      "[]",
+      "{}",
+      "[1]",
+      "{\"version\":1}"
+    ],
+    "accepted_by_both_integer_const_and_const_only": [
+      "1",
+      "1.0"
+    ],
+    "source_observation": "jsonschema._utils.equal uses unbool to keep booleans distinct from integers."
+  },
+  "items": {
+    "codapact.__main__.x_main__mutmut_26": {
+      "classification": "behavior-asserted",
+      "reason": "Help must describe the command, inputs and assignment syntax, without fixed wording.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_generator_help_explains_command_and_inputs_without_fixed_wording"
+      ],
+      "mutated_body_sha256": "00d1acbf3c6f0f5bcb0f2805d0730b07ee017def65e57e8ea997f2c9bbc04a51"
+    },
+    "codapact.__main__.x_main__mutmut_28": {
+      "classification": "behavior-asserted",
+      "reason": "Help must describe the command, inputs and assignment syntax, without fixed wording.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_generator_help_explains_command_and_inputs_without_fixed_wording"
+      ],
+      "mutated_body_sha256": "916c430e811aebf75cb36d475b580d0cb31b185f90ee441d2b8ac6cd51e83af6"
+    },
+    "codapact.__main__.x_main__mutmut_36": {
+      "classification": "behavior-asserted",
+      "reason": "Help must describe the command, inputs and assignment syntax, without fixed wording.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_generator_help_explains_command_and_inputs_without_fixed_wording"
+      ],
+      "mutated_body_sha256": "359bfce2a5ddb453f1225591c91ad8ad1aedb8062c85cd784bac3047fec8fa9c"
+    },
+    "codapact.__main__.x_main__mutmut_39": {
+      "classification": "behavior-asserted",
+      "reason": "Help must describe the command, inputs and assignment syntax, without fixed wording.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_generator_help_explains_command_and_inputs_without_fixed_wording"
+      ],
+      "mutated_body_sha256": "d2e3bf2e05a1c0d7c1b779b0edf18431dd13c2db498a12fdfbb20c199ca783a1"
+    },
+    "codapact.__main__.x_main__mutmut_47": {
+      "classification": "behavior-asserted",
+      "reason": "Help must describe the command, inputs and assignment syntax, without fixed wording.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_generator_help_explains_command_and_inputs_without_fixed_wording"
+      ],
+      "mutated_body_sha256": "09d574268782dc50a15b3bd27a67eb1fe826c06b70b558a08fc292109af12a84"
+    },
+    "codapact.__main__.x_main__mutmut_49": {
+      "classification": "behavior-asserted",
+      "reason": "Help must describe the command, inputs and assignment syntax, without fixed wording.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_generator_help_explains_command_and_inputs_without_fixed_wording"
+      ],
+      "mutated_body_sha256": "277c83a9aae4d862abf008887d54de7b76dc10f5f44d4b1bbf126b1a22d365e4"
+    },
+    "codapact.__main__.x_main__mutmut_144": {
+      "classification": "behavior-asserted",
+      "reason": "Help must describe the command, inputs and assignment syntax, without fixed wording.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_generator_help_explains_command_and_inputs_without_fixed_wording"
+      ],
+      "mutated_body_sha256": "6a759af7dbee6607515f0209c44c5a5bea10359e4eeb41a08d59a7af9be95f7d"
+    },
+    "codapact.__main__.x_main__mutmut_148": {
+      "classification": "behavior-asserted",
+      "reason": "Help must describe the command, inputs and assignment syntax, without fixed wording.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_generator_help_explains_command_and_inputs_without_fixed_wording"
+      ],
+      "mutated_body_sha256": "f6a7bbb420293e6832165f923a6a5892b43f141b19726e81c4845c93fd5fd0e7"
+    },
+    "codapact.__main__.x_main__mutmut_267": {
+      "classification": "presentation",
+      "reason": "Safe nonempty OS diagnostic changes only casing or decoration.",
+      "evidence": [
+        "tests/test_entrypoint.py::test_generation_os_failures_have_safe_diagnostics"
+      ],
+      "mutated_body_sha256": "1ecc90d84eb15b63c2e99394c6d861b071c892f78f5e6f8749f82ceab079678e"
+    },
+    "codapact.__main__.x_main__mutmut_268": {
+      "classification": "presentation",
+      "reason": "Safe nonempty OS diagnostic changes only casing or decoration.",
+      "evidence": [
+        "tests/test_entrypoint.py::test_generation_os_failures_have_safe_diagnostics"
+      ],
+      "mutated_body_sha256": "c62afc050e03ee47bd718366ab9c30eb06c0420812f4866f694bddd5c4bc0051"
+    },
+    "codapact.cli.x_run_cli__mutmut_2": {
+      "classification": "behavior-asserted",
+      "reason": "Help must retain a CLI description and configuration-directory guidance.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_generated_cli_help_has_description_and_config_directory_guidance"
+      ],
+      "mutated_body_sha256": "c124457f303034f985e4cbd1f4b009601ce4fadc8abf2905f2a0fdcd4d17a936"
+    },
+    "codapact.cli.x_run_cli__mutmut_16": {
+      "classification": "behavior-asserted",
+      "reason": "Help must retain a CLI description and configuration-directory guidance.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_generated_cli_help_has_description_and_config_directory_guidance"
+      ],
+      "mutated_body_sha256": "1b0c85cb4735a60fc4a8337a70e5c9d4472b4c76bee93297a5ee82cdd327134a"
+    },
+    "codapact.cli.x_run_cli__mutmut_18": {
+      "classification": "behavior-asserted",
+      "reason": "Help must retain a CLI description and configuration-directory guidance.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_generated_cli_help_has_description_and_config_directory_guidance"
+      ],
+      "mutated_body_sha256": "537267a68b66b1059e3b2559aa6a76f9f8662490f34b4c5c04a83c90daa87b7c"
+    },
+    "codapact.cli.x_run_cli__mutmut_294": {
+      "classification": "behavior-asserted",
+      "reason": "Custom factories are an execution boundary; the CLI must reject nonfinite output independently.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_cli_factory_output_must_still_be_json"
+      ],
+      "mutated_body_sha256": "afc631d5bc8e275080b573ceeaa1fdcefe8bbb7ecc2f663acdce8ff3085b2ba7"
+    },
+    "codapact.cli.x_run_cli__mutmut_299": {
+      "classification": "behavior-asserted",
+      "reason": "Custom factories are an execution boundary; the CLI must reject nonfinite output independently.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_cli_factory_output_must_still_be_json"
+      ],
+      "mutated_body_sha256": "5c6be66b1c099855349381b63ddbcd039f8424c35622c78804925e7a97017aa2"
+    },
+    "codapact.cli.x_run_cli__mutmut_297": {
+      "classification": "presentation",
+      "reason": "Three-space instead of two-space pretty JSON preserves valid indented JSON. Exact width is not declared compatible.",
+      "evidence": [
+        "src/codapact/cli.py"
+      ],
+      "mutated_body_sha256": "738f12f445428e8b341b21016d386c3286b8cf098051a0e16e5a4b60fa7ca512"
+    },
+    "codapact.cli.x_run_cli__mutmut_319": {
+      "classification": "presentation",
+      "reason": "Safe nonempty JSON diagnostic changes only casing or decoration.",
+      "evidence": [
+        "tests/test_generated_contracts.py",
+        "docs/support.md"
+      ],
+      "mutated_body_sha256": "d04ab495b21ea319d7fb7ee17f31ac78c4576f42a672e795dfc474dbd74caf05"
+    },
+    "codapact.cli.x_run_cli__mutmut_320": {
+      "classification": "presentation",
+      "reason": "Safe nonempty JSON diagnostic changes only casing or decoration.",
+      "evidence": [
+        "tests/test_generated_contracts.py",
+        "docs/support.md"
+      ],
+      "mutated_body_sha256": "eb6d6faa36a4bdfbb705923d7da01662851f4488ef1c3ee33239097c5a8a82f1"
+    },
+    "codapact.cli.x_run_cli__mutmut_321": {
+      "classification": "presentation",
+      "reason": "Safe nonempty JSON diagnostic changes only casing or decoration.",
+      "evidence": [
+        "tests/test_generated_contracts.py",
+        "docs/support.md"
+      ],
+      "mutated_body_sha256": "dabd8ab95a9a528ff9f8b1a86f92b4765589134c13e703d68b0909a4286eb565"
+    },
+    "codapact.configuration.x_resolve_generation__mutmut_48": {
+      "classification": "equivalence-candidate",
+      "reason": "Missing separators still fail JSON parsing; unsupported dotted keys still fail the closed generation schema. The earlier safe diagnostic can differ.",
+      "evidence": [
+        "src/codapact/configuration.py",
+        "src/codapact/schemas/generation.v1.json"
+      ],
+      "mutated_body_sha256": "b31531fc9037a8fe4ff51b6e5d213b12077ef8c5d561a93db4201d75bb0a330b"
+    },
+    "codapact.configuration.x_resolve_generation__mutmut_147": {
+      "classification": "behavior-asserted",
+      "reason": "Unsupported URL schemes must fail before local-path resolution.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_manifest_rejects_unsupported_source_scheme_before_local_path_resolution"
+      ],
+      "mutated_body_sha256": "4628d8d639025093a2cd1b57dc4a10a2c194d37f5233ecacb67e0e334172f4db"
+    },
+    "codapact.generation.x_canonical__mutmut_4": {
+      "classification": "presentation",
+      "reason": "Changed indentation changes serialized bytes while retaining deterministic valid JSON. Exact indentation is not declared compatible.",
+      "evidence": [
+        "src/codapact/generation.py::canonical"
+      ],
+      "mutated_body_sha256": "1498294f286a49001b6ddb8e9b169527f4728896511e0e372f814c22e8e22443"
+    },
+    "codapact.generation.x_canonical__mutmut_9": {
+      "classification": "presentation",
+      "reason": "Changed indentation changes serialized bytes while retaining deterministic valid JSON. Exact indentation is not declared compatible.",
+      "evidence": [
+        "src/codapact/generation.py::canonical"
+      ],
+      "mutated_body_sha256": "ecf75bcdfee53a9bb3d03d239b50206bb0754cfc80cb66287c18c4de6bd1e238"
+    },
+    "codapact.generation.x_canonical__mutmut_13": {
+      "classification": "presentation",
+      "reason": "Changed indentation changes serialized bytes while retaining deterministic valid JSON. Exact indentation is not declared compatible.",
+      "evidence": [
+        "src/codapact/generation.py::canonical"
+      ],
+      "mutated_body_sha256": "c9dc9a237afd7bd89e5799f1a9c4513c1a06318b79d1f6825c7c09055e4a371a"
+    },
+    "codapact.generation.x\u01c1PythonGenerator\u01c1generate__mutmut_136": {
+      "classification": "representation-policy",
+      "reason": "The py.typed marker still exists but its contents differ. Marker discovery is tested; universal typing-tool equivalence is not established.",
+      "evidence": [
+        "tests/test_generated_contracts.py::test_generated_types_and_call_signatures_are_usable"
+      ],
+      "mutated_body_sha256": "8cdf6554c20508c61d0a6743080af9be919ee547bf62e0e43682cd48f85e890a"
+    },
+    "codapact.generation.x\u01c1PythonGenerator\u01c1generate__mutmut_151": {
+      "classification": "presentation",
+      "reason": "Generated README prose changes casing or decoration while retaining installation instructions.",
+      "evidence": [
+        "src/codapact/generation.py::PythonGenerator.generate"
+      ],
+      "mutated_body_sha256": "af40fe0389b2912fb3bec4f574d49f82de09542271febde641c09046a29d9e6b"
+    },
+    "codapact.generation.x\u01c1PythonGenerator\u01c1generate__mutmut_152": {
+      "classification": "presentation",
+      "reason": "Generated README prose changes casing or decoration while retaining installation instructions.",
+      "evidence": [
+        "src/codapact/generation.py::PythonGenerator.generate"
+      ],
+      "mutated_body_sha256": "cf725db676590a1c46a201561b431ee014ab13aa1ef3ea6ccd7bf71fbe5ec6e1"
+    },
+    "codapact.generation.x\u01c1PythonGenerator\u01c1generate__mutmut_153": {
+      "classification": "presentation",
+      "reason": "Generated README prose changes casing or decoration while retaining installation instructions.",
+      "evidence": [
+        "src/codapact/generation.py::PythonGenerator.generate"
+      ],
+      "mutated_body_sha256": "17cdc5fc4f3eea4ffa2823c6b0a0df4803dd8d39035d5bd2088c6f5bc6619722"
+    },
+    "codapact.profiles.x_validate_profile__mutmut_29": {
+      "classification": "equivalence-candidate",
+      "reason": "Version const=1 independently rejects booleans and other JSON values; its accepted numeric values already satisfy JSON Schema integer. See witness matrix.",
+      "evidence": [
+        "src/codapact/profiles.py::validate_profile",
+        "jsonschema._utils.equal"
+      ],
+      "mutated_body_sha256": "5d00dd98573f392f4c43e7e8d05168169f050ddc5241103e85ce31055bc6ab58"
+    },
+    "codapact.profiles.x_validate_profile__mutmut_30": {
+      "classification": "equivalence-candidate",
+      "reason": "Version const=1 independently rejects booleans and other JSON values; its accepted numeric values already satisfy JSON Schema integer. See witness matrix.",
+      "evidence": [
+        "src/codapact/profiles.py::validate_profile",
+        "jsonschema._utils.equal"
+      ],
+      "mutated_body_sha256": "09a570956e80dc9c4b0ca49af0cbc9959ecba62ed29f23feab0b3bbe0419180c"
+    },
+    "codapact.profiles.x_validate_profile__mutmut_52": {
+      "classification": "behavior-asserted",
+      "reason": "Null defaults must yield a safe configuration error before downstream membership checks; other non-object defaults also reject safely.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_profile_defaults_reject_non_objects_with_safe_diagnostics"
+      ],
+      "mutated_body_sha256": "24ce71557255bbe75372391d91263d0077d738f699df2032c9e0c4915e1fee31"
+    },
+    "codapact.profiles.x_validate_profile__mutmut_53": {
+      "classification": "behavior-asserted",
+      "reason": "Null defaults must yield a safe configuration error before downstream membership checks; other non-object defaults also reject safely.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_profile_defaults_reject_non_objects_with_safe_diagnostics"
+      ],
+      "mutated_body_sha256": "7ea36f05e178e9bb31cb507d83ab41b0f296c37881da329c779a1edab771bf0c"
+    },
+    "codapact.profiles.x\u01c1JsonFileStore\u01c1__init____mutmut_21": {
+      "classification": "equivalence-candidate",
+      "reason": "The preceding read_file -> loading.parse pipeline already rejects non-object roots. This constructor accepts a path, not an independent document object.",
+      "evidence": [
+        "src/codapact/profiles.py::read_file",
+        "src/codapact/loading.py::parse"
+      ],
+      "mutated_body_sha256": "a1cb1029d63e78b4ce92edb99f544041dfdfbe00fefec1f02db11f3a3068916c"
+    },
+    "codapact.profiles.x\u01c1JsonFileStore\u01c1__init____mutmut_22": {
+      "classification": "equivalence-candidate",
+      "reason": "The preceding read_file -> loading.parse pipeline already rejects non-object roots. This constructor accepts a path, not an independent document object.",
+      "evidence": [
+        "src/codapact/profiles.py::read_file",
+        "src/codapact/loading.py::parse"
+      ],
+      "mutated_body_sha256": "67721ef35bbe7a59bbce52a1c2f57b06ae61a1e3fd0d417c7ed5a86f60907ccd"
+    },
+    "codapact.profiles.x\u01c1JsonFileStore\u01c1__init____mutmut_39": {
+      "classification": "equivalence-candidate",
+      "reason": "Version const=1 independently enforces the same accepted numeric values. See witness matrix.",
+      "evidence": [
+        "src/codapact/profiles.py::JsonFileStore.__init__",
+        "jsonschema._utils.equal"
+      ],
+      "mutated_body_sha256": "a0e8816a4c0668168dcf85fbf8a3b3b51d5ba214bd946dc54a773a12983c4209"
+    },
+    "codapact.profiles.x\u01c1JsonFileStore\u01c1__init____mutmut_40": {
+      "classification": "equivalence-candidate",
+      "reason": "Version const=1 independently enforces the same accepted numeric values. See witness matrix.",
+      "evidence": [
+        "src/codapact/profiles.py::JsonFileStore.__init__",
+        "jsonschema._utils.equal"
+      ],
+      "mutated_body_sha256": "b793817700c4f1459fe6f0ac6df340889f55f65794ecbdd14309804077e33f4d"
+    },
+    "codapact.project.x_write_project__mutmut_6": {
+      "classification": "representation-policy",
+      "reason": "The probe is an internal name, not a generated output. Changing it can affect collisions with unrelated symlinks, so filesystem equivalence is not claimed. Preserve path safety rather than freeze this incidental name.",
+      "evidence": [
+        "src/codapact/project.py::write_project",
+        "src/codapact/project.py::_safe_path"
+      ],
+      "mutated_body_sha256": "11b551320df3044185c82679052fcd6503ac51308d563430955ba1a0852644c3"
+    },
+    "codapact.project.x_write_project__mutmut_7": {
+      "classification": "representation-policy",
+      "reason": "The probe is an internal name, not a generated output. Changing it can affect collisions with unrelated symlinks, so filesystem equivalence is not claimed. Preserve path safety rather than freeze this incidental name.",
+      "evidence": [
+        "src/codapact/project.py::write_project",
+        "src/codapact/project.py::_safe_path"
+      ],
+      "mutated_body_sha256": "f2fa4244ec43c76ba9f7cb1424ac18a29b0768aa492bddd7694e550082581e70"
+    },
+    "codapact.project.x_write_project__mutmut_82": {
+      "classification": "behavior-asserted",
+      "reason": "Ownership at the exact cap must be accepted; one extra byte must fail before writes. Regeneration must apply the same read limit.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_ownership_read_and_write_agree_at_exact_size",
+        "tests/test_residual_contracts.py::test_ownership_limit_rejects_one_extra_serialized_byte_before_writes"
+      ],
+      "mutated_body_sha256": "beadfe5dc403cc5d98f9190666f95669ef4ada130ceb5946458df119648dc90b"
+    },
+    "codapact.project.x__atomic__mutmut_2": {
+      "classification": "representation-policy",
+      "reason": "Temporary prefixes are observable to filesystem watchers. Secure unique creation in the destination directory and atomic replacement remain the intended contract; no exact prefix is promised.",
+      "evidence": [
+        "src/codapact/project.py::_atomic"
+      ],
+      "mutated_body_sha256": "869fd643db9fa78c2502cb344fc75fcaa69e98f46d848fb7aab9699d95c7d812"
+    },
+    "codapact.project.x__atomic__mutmut_4": {
+      "classification": "representation-policy",
+      "reason": "Temporary prefixes are observable to filesystem watchers. Secure unique creation in the destination directory and atomic replacement remain the intended contract; no exact prefix is promised.",
+      "evidence": [
+        "src/codapact/project.py::_atomic"
+      ],
+      "mutated_body_sha256": "d58718a2611ebc56fa776521e94c1a9751c17a1d888ed5c2e2ee27b34be50267"
+    },
+    "codapact.project.x__atomic__mutmut_6": {
+      "classification": "representation-policy",
+      "reason": "Temporary prefixes are observable to filesystem watchers. Secure unique creation in the destination directory and atomic replacement remain the intended contract; no exact prefix is promised.",
+      "evidence": [
+        "src/codapact/project.py::_atomic"
+      ],
+      "mutated_body_sha256": "711a053ae7323bcee787bd18fdad7d94835a25e758c8b7eb8a6785fd228c67c3"
+    },
+    "codapact.project.x__atomic__mutmut_7": {
+      "classification": "representation-policy",
+      "reason": "Temporary prefixes are observable to filesystem watchers. Secure unique creation in the destination directory and atomic replacement remain the intended contract; no exact prefix is promised.",
+      "evidence": [
+        "src/codapact/project.py::_atomic"
+      ],
+      "mutated_body_sha256": "99f8df359e7ee93c1727fd25f655912f00c6738d405bcf6be7e7d3b864a5dbcf"
+    },
+    "codapact.validation.x_validate__mutmut_19": {
+      "classification": "behavior-asserted",
+      "reason": "Dictionary edges must advance depth once, including mixed dictionary/list nesting; depth48 accepts and depth49 rejects.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_object_depth_counts_each_container_edge"
+      ],
+      "mutated_body_sha256": "86ff6b996c2759d1c40208e6cd9bad6c30336087223c8140dab0a269a22dd51a"
+    },
+    "codapact.validation.x_validate__mutmut_20": {
+      "classification": "behavior-asserted",
+      "reason": "Dictionary edges must advance depth once, including mixed dictionary/list nesting; depth48 accepts and depth49 rejects.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_object_depth_counts_each_container_edge"
+      ],
+      "mutated_body_sha256": "3b625eb1768bc866874b9d1d7c5d32c47e198c4d2c400b19f874f0fd4dda5ef9"
+    },
+    "codapact.validation.x_validate__mutmut_21": {
+      "classification": "behavior-asserted",
+      "reason": "Dictionary edges must advance depth once, including mixed dictionary/list nesting; depth48 accepts and depth49 rejects.",
+      "evidence": [
+        "tests/test_residual_contracts.py::test_object_depth_counts_each_container_edge"
+      ],
+      "mutated_body_sha256": "8e473b65a8a60117ca66b7e57aa31a28b0e4555ff6bbc6568da0dc2e2481df7b"
+    }
+  },
+  "behavior_verification": {
+    "environment": "Local Linux, Python3.13; unchanged production source",
+    "selected_counterexamples": 20,
+    "killed": 20,
+    "survived": 0,
+    "incomplete_results": 0,
+    "identity_check": "Every mutated function-body AST SHA256 matches the baseline artifact; numeric IDs alone were not used.",
+    "limitation": "Focused results are not the full project mutation score."
+  }
+}
