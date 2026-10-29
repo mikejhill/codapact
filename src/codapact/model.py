@@ -67,7 +67,7 @@ class Registry:
 
     @staticmethod
     def _check(name: str, version: int, existing: dict[str, Any]) -> None:
-        if version != API_VERSION or name in existing:
+        if type(version) is not int or version != API_VERSION or name in existing:
             raise CodaError("incompatible plugin API version or duplicate registration")
 
     def negotiate(

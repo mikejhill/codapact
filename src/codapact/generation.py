@@ -82,8 +82,8 @@ class PythonGenerator:
         package = package_name(package)
         emitter = TypeEmitter()
         methods = []
-        for index, operation in enumerate(contract.operations):
-            prefix = f"Op{index}"
+        for operation in contract.operations:
+            prefix = f"Op_{operation.id}"
             parameters = emitter.emit(
                 {
                     "type": "object",
@@ -178,14 +178,23 @@ class ArgparseGenerator:
         self, contract: Contract, package: str, definition: dict[str, Any] | None
     ) -> dict[str, str]:
         package = package_name(package)
-        definition = definition or {
-            "version": 1,
-            "commands": [
-                {"name": op.id.replace("_", "-"), "operation": op.id} for op in contract.operations
-            ],
-        }
+        definition = (
+            {
+                "version": 1,
+                "commands": [
+                    {"name": op.id.replace("_", "-"), "operation": op.id}
+                    for op in contract.operations
+                ],
+            }
+            if definition is None
+            else definition
+        )
         try:
-            if set(definition) != {"version", "commands"} or definition["version"] != 1:
+            if (
+                set(definition) != {"version", "commands"}
+                or type(definition["version"]) is not int
+                or definition["version"] != 1
+            ):
                 raise CodaError("unsupported CLI definition schema")
             names = set()
             operations = {op.id for op in contract.operations}

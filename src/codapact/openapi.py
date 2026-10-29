@@ -3,7 +3,6 @@
 import keyword
 import re
 from typing import Any
-from urllib.parse import urlsplit
 
 from jsonschema import Draft7Validator
 from jsonschema.exceptions import SchemaError
@@ -11,6 +10,7 @@ from jsonschema.exceptions import SchemaError
 from codapact.errors import CodaError
 from codapact.loading import resolve
 from codapact.model import Contract, Operation
+from codapact.net import validate_url
 
 IDENTIFIER = re.compile(r"[a-z][a-z0-9_]{0,79}\Z")
 SCHEMA_KEYS = {
@@ -42,7 +42,14 @@ def normalized_schema(schema: Any) -> dict[str, Any]:
         raise CodaError("unsupported schema keyword; see supported OpenAPI subset")
     result = dict(schema)
     kind = result.get("type")
-    if kind not in {"object", "array", "string", "integer", "number", "boolean"}:
+    if not isinstance(kind, str) or kind not in {
+        "object",
+        "array",
+        "string",
+        "integer",
+        "number",
+        "boolean",
+    }:
         raise CodaError("schemas require an explicit supported type")
     if kind == "object":
         properties = result.get("properties", {})
@@ -109,20 +116,7 @@ class OpenAPITranslator:
         if len(servers) != 1 or servers[0].get("variables"):
             raise CodaError("exactly one server without variables is required")
         base_url = servers[0]["url"].rstrip("/")
-        url = urlsplit(base_url)
-        if (
-            url.scheme not in {"https", "http"}
-            or not url.hostname
-            or url.username is not None
-            or url.password is not None
-            or url.query
-            or url.fragment
-        ):
-            raise CodaError(
-                "server must be an absolute HTTP(S) URL without credentials/query/fragment"
-            )
-        if url.port == 0:
-            raise CodaError("invalid server port")
+        validate_url(base_url, allow_query=False)
         schemes = doc.get("components", {}).get("securitySchemes", {})
         for scheme in schemes.values():
             if scheme.get("type") == "http" and scheme.get("scheme") in {"bearer", "basic"}:
@@ -131,7 +125,20 @@ class OpenAPITranslator:
                 name = scheme.get("name", "")
                 if not re.fullmatch(r"[A-Za-z][A-Za-z0-9-]{0,79}", name):
                     raise CodaError("invalid API key header name")
-                if name.lower() in {"host", "content-length", "transfer-encoding", "connection"}:
+                if name.lower() in {
+                    "host",
+                    "content-length",
+                    "transfer-encoding",
+                    "connection",
+                    "content-type",
+                    "accept",
+                    "expect",
+                    "te",
+                    "trailer",
+                    "upgrade",
+                    "proxy-authorization",
+                    "proxy-connection",
+                }:
                     raise CodaError("unsafe API key header")
                 continue
             raise CodaError("supported security: HTTP bearer/basic and header API key")
@@ -146,6 +153,7 @@ class OpenAPITranslator:
                 or "\\" in path
                 or "%" in path
                 or any(ord(c) < 32 for c in path)
+                or not path.isascii()
                 or "{" in re.sub(r"\{[A-Za-z][A-Za-z0-9_-]*\}", "", path)
                 or "}" in re.sub(r"\{[A-Za-z][A-Za-z0-9_-]*\}", "", path)
             ):
@@ -236,7 +244,10 @@ class OpenAPITranslator:
                         raise CodaError(
                             "response links and declared response headers are unsupported"
                         )
-                    responses[status] = content_schema(response)
+                    schema = content_schema(response)
+                    if schema is not None and (method == "head" or status in {"204", "205"}):
+                        raise CodaError("HEAD, 204, and 205 responses cannot declare a JSON body")
+                    responses[status] = schema
                 if not any(key.startswith("2") for key in responses):
                     raise CodaError("an explicit successful response is required")
                 security = operation.get("security", doc.get("security", []))
@@ -250,8 +261,10 @@ class OpenAPITranslator:
                 body = operation.get("requestBody", {})
                 if not isinstance(body.get("required", False), bool):
                     raise CodaError("request body required must be boolean")
-                if body and content_schema(body) is None:
+                if "requestBody" in operation and content_schema(body) is None:
                     raise CodaError("request body must declare JSON content")
+                if "requestBody" in operation and method in {"get", "head"}:
+                    raise CodaError("GET and HEAD request bodies are unsupported")
                 operations.append(
                     Operation(
                         name,

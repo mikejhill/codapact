@@ -1,6 +1,7 @@
 """Data-only loading and bounded, document-local JSON pointer resolution."""
 
 import json
+import re
 from pathlib import Path
 from typing import Any, override
 
@@ -98,13 +99,20 @@ def resolve(document: dict[str, Any]) -> dict[str, Any]:
             ref = node["$ref"]
             if len(node) != 1 or not isinstance(ref, str) or not ref.startswith("#/"):
                 raise CodaError("only document-local references without siblings are supported")
+            if "%" in ref or re.search(r"~(?:[^01]|$)", ref):
+                raise CodaError("unsupported URI-encoded reference or invalid JSON Pointer escape")
             if ref in stack:
                 raise CodaError("recursive references are unsupported")
             target: Any = document
             try:
                 for token in ref[2:].split("/"):
                     token = token.replace("~1", "/").replace("~0", "~")
-                    target = target[int(token)] if isinstance(target, list) else target[token]
+                    if isinstance(target, list):
+                        if not re.fullmatch(r"0|[1-9][0-9]*", token):
+                            raise ValueError
+                        target = target[int(token)]
+                    else:
+                        target = target[token]
             except (KeyError, IndexError, TypeError, ValueError):
                 raise CodaError("unresolved internal reference") from None
             return walk(target, (*stack, ref), depth + 1)

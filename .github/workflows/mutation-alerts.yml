@@ -1,0 +1,73 @@
+name: Mutation alerts
+on:
+  workflow_run: # zizmor: ignore[dangerous-triggers] -- only same-repo main push/schedule/manual evidence; fixed-main checkout; artifacts parsed as data, never executed
+    workflows: [Mutation]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      selftest:
+        description: Verify issue creation, update, deduplication, and recovery using an isolated test incident
+        type: boolean
+        required: true
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: mutation-alerts
+  cancel-in-progress: false
+jobs:
+  validate-ref:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject non-default manual refs
+        run: test "$GITHUB_REF" = refs/heads/main
+  reconcile:
+    needs: validate-ref
+    # Only trusted main results; never a pull_request or fork write context.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.head_branch == 'main' &&
+        contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event.workflow_run.event)))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: main
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - name: Download evidence from the trusted main run
+        if: github.event_name == 'workflow_run'
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mutation-report
+          path: mutation-report/
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Reconcile durable production alerts
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MUTATION_SHA: ${{ github.event.workflow_run.head_sha }}
+          MUTATION_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          MUTATION_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          MUTATION_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: uv run --no-project python scripts/mutation_alerts.py
+      - name: Verify hosted alert lifecycle
+        if: github.event_name == 'workflow_dispatch' && inputs.selftest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MUTATION_SHA: ${{ github.sha }}
+          MUTATION_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: uv run --no-project python scripts/mutation_alerts.py --selftest

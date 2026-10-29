@@ -9,6 +9,8 @@
   and empty responses. HTTP failures raise `ApiError` with status and operation.
 - Objects, arrays, strings, integers, numbers, booleans, nullable schemas, enums,
   required fields, additional properties, and documented numeric/length bounds.
+  Integral JSON numbers map to Python `int` for declared integer fields;
+  nonfinite numbers and non-string object keys are rejected.
 - Document-local references; security requirement inheritance and overrides.
 - HTTP bearer/basic and header API keys; security alternatives use OR and
   schemes within one alternative use AND. Anonymous alternatives are honored.
@@ -22,6 +24,25 @@ and streaming are rejected. Descriptions and vendor metadata do not become
 executable code. Static types are structural approximations: dictionary extra
 keys and enum/numeric constraints are enforced by runtime schemas.
 
+URI-encoded reference fragments are unsupported. JSON Pointer escapes and array
+indices must be canonical. GET/HEAD request bodies and JSON bodies declared for
+HEAD/204/205 responses are rejected. URLs cannot contain whitespace or control
+characters; literal non-ASCII path/query text must be URI-encoded.
+
+| Capability | First iteration |
+| --- | --- |
+| Contract versions | OpenAPI 3.0.0–3.0.3 |
+| Inputs | Local JSON/YAML; public HTTPS; explicit private/HTTP opt-in |
+| References | Same-document canonical JSON Pointers |
+| Generated library | Typed synchronous Python 3.13+ |
+| CLI | Noninteractive argparse; JSON definition v1; JSON stdout |
+| Authentication | Bearer, basic, header API key, explicit custom Python hooks |
+| Authorization | Client operation policy and custom hooks; server enforces actual permission |
+| Security requirements | Inherited/overridden OR alternatives and AND combinations |
+| Pagination | Manual page/cursor calls |
+| Streaming | Unsupported; bounded buffered responses |
+| Other contracts/languages/CLI styles | Explicit extension interfaces; not implemented |
+
 ## Safety boundaries
 
 - Parse at most 2 MB, reject YAML aliases, custom tags, duplicate keys,
@@ -30,6 +51,8 @@ keys and enum/numeric constraints are enforced by runtime schemas.
 - Resolve DNS once and connect to the checked IP. Remote contract loading and
   runtime requests reject private/reserved destinations unless explicitly
   enabled. TLS verifies the original hostname. Redirects are never followed.
+  Socket operations use the configured timeout; DNS uses platform resolver
+  timing. This is not an absolute end-to-end wall-clock deadline.
 - `allow_private` also enables plaintext HTTP; use it only for trusted local or
   internal endpoints. It is disabled by default and is not inferred from a
   contract. No credentials are sent while downloading a contract.

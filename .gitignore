@@ -2,6 +2,9 @@
 .venv-work/
 .venv-clean/
 .venv-final/
+.venv-linux/
+mutants/
+mutation-report/
 .tmp/
 __pycache__/
 .pytest_cache/

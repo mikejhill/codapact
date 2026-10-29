@@ -6,7 +6,7 @@
 
 This local first iteration generates an installable, typed Python client and a
 scriptable CLI from a local or remote OpenAPI contract. The package, module, and
-generator CLI are named `codapact`. Nothing is published yet.
+generator CLI are named `codapact`. Package registry publication is pending.
 
 ```powershell
 uv sync
@@ -32,6 +32,7 @@ pet = client.get_pet(parameters={"pet_id": 7})
 - [CLI definition and runtime configuration](docs/configuration.md)
 - [Release process](docs/releasing.md)
 - [Verification evidence and limits](docs/verification.md)
+- [Asynchronous mutation testing and open alerts](docs/mutation.md)
 
 Run `uv run poe check` for formatting, lint, type checking, and tests. Generated
 packages depend on this runtime at the exact generator version. Before public

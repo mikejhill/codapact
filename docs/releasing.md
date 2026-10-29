@@ -14,10 +14,13 @@ The runtime version also determines generated dependencies and manifests.
 
 ## Pending setup
 
-Nothing is published. `RELEASES_ENABLED` is unset, so the release workflow is
-disabled until the repository destination/visibility and PyPI publisher are
-established. Create the approved repository, configure the trusted publisher for workflow
+The public source destination is `mikejhill/codapact`. Package registry publication
+is pending. `RELEASES_ENABLED` is unset, so the release workflow remains disabled
+until the PyPI publisher is configured. Configure the trusted publisher for workflow
 `release.yml` and environment `pypi`, and require the `CI passed` check.
+
+Mutation analysis remains asynchronous and is not part of `CI passed` or the
+release dependency chain. Its durable alerts are described in [mutation.md](mutation.md).
 
 The workflow dispatches CI on release PR branches because the default GitHub
 token suppresses follow-on workflow events. An optional `RELEASE_PLEASE_TOKEN`

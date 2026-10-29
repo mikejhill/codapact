@@ -11,6 +11,12 @@ dependencies = ["PyYAML>=6.0.3,<7", "jsonschema>=4.25.1,<5"]
 [project.scripts]
 codapact = "codapact.__main__:main"
 
+[project.urls]
+Homepage = "https://github.com/mikejhill/codapact"
+Documentation = "https://github.com/mikejhill/codapact#readme"
+Changelog = "https://github.com/mikejhill/codapact/blob/main/CHANGELOG.md"
+Issues = "https://github.com/mikejhill/codapact/issues"
+
 [build-system]
 requires = ["uv_build>=0.11.1,<0.13"]
 build-backend = "uv_build"
@@ -19,12 +25,13 @@ build-backend = "uv_build"
 source-include = ["tests/**", "docs/**", "examples/**", "schemas/**", "scripts/**", "uv.lock", "CHANGELOG.md", "release-please-config.json", ".release-please-manifest.json", ".github/**", "branding/**"]
 
 [dependency-groups]
+mutation = ["mutmut>=3.8.0,<4; sys_platform != 'win32'"]
 dev = ["pytest>=9", "pytest-cov>=7", "hypothesis>=6", "ruff>=0.14", "ty>=0.0.1", "poethepoet>=0.37", "build>=1.3", "twine>=6"]
 
 [tool.ruff]
 target-version = "py313"
 line-length = 100
-extend-exclude = [".tmp", ".venv", ".venv-work", ".venv-clean", ".venv-final", "dist"]
+extend-exclude = [".tmp", ".venv*", "dist", "mutants", "mutation-report"]
 
 [tool.ty.src]
 include = ["src", "tests", "scripts"]
@@ -58,3 +65,11 @@ lint = "ruff check ."
 typecheck = "ty check"
 test = "pytest --cov --cov-report=term-missing"
 check = ["format-check", "lint", "typecheck", "test"]
+
+[tool.mutmut]
+source_paths = ["src/codapact/"]
+pytest_add_cli_args_test_selection = ["tests/", "--ignore=tests/test_distribution.py"]
+pytest_add_cli_args = ["-p", "no:cacheprovider"]
+also_copy = ["examples/", "schemas/", "scripts/"]
+mutate_only_covered_lines = true
+process_isolation = "forkserver"

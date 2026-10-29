@@ -2,16 +2,17 @@
 
 import base64
 import json
+import math
 import os
 import re
 from collections.abc import Mapping
 from typing import Any, Protocol
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import quote, urlencode
 
 from jsonschema import Draft7Validator
 
 from codapact.errors import ApiError, AuthError, CodaError, PolicyError, ResponseError
-from codapact.net import HttpTransport, Transport
+from codapact.net import HttpTransport, Transport, validate_url
 
 
 class Unset:
@@ -22,8 +23,52 @@ UNSET = Unset()
 
 
 def validate(value: Any, schema: dict[str, Any], message: str) -> None:
+    visited = 0
+
+    def json_value(node: Any, depth: int = 0) -> None:
+        nonlocal visited
+        visited += 1
+        if depth > 48 or visited > 50_000:
+            raise CodaError(message)
+        if isinstance(node, dict):
+            if any(not isinstance(key, str) for key in node):
+                raise CodaError(message)
+            for child in node.values():
+                json_value(child, depth + 1)
+        elif isinstance(node, list):
+            for child in node:
+                json_value(child, depth + 1)
+        elif isinstance(node, float) and not math.isfinite(node):
+            raise CodaError(message)
+        elif node is not None and not isinstance(node, (str, int, float, bool)):
+            raise CodaError(message)
+
+    json_value(value)
     if not Draft7Validator(schema).is_valid(value):
         raise CodaError(message)
+
+
+def map_types(value: Any, schema: dict[str, Any]) -> Any:
+    """Map validated JSON integer numbers to actual Python integers, recursively."""
+    kind = schema["type"]
+    if value is None:
+        return None
+    if kind == "integer" or kind == ["integer", "null"]:
+        return int(value)
+    if isinstance(value, list):
+        return [map_types(item, schema["items"]) for item in value]
+    if isinstance(value, dict):
+        properties = schema.get("properties", {})
+        additional = schema.get("additionalProperties", True)
+        return {
+            key: map_types(item, properties[key])
+            if key in properties
+            else map_types(item, additional)
+            if isinstance(additional, dict)
+            else item
+            for key, item in value.items()
+        }
+    return value
 
 
 class AuthProvider(Protocol):
@@ -61,7 +106,7 @@ class EnvironmentAuth:
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", reference):
             raise AuthError("auth requires an environment variable reference")
         value = os.environ.get(reference)
-        if value is None or value == "" or "\r" in value or "\n" in value:
+        if value is None or value == "" or any(ord(c) < 32 or ord(c) == 127 for c in value):
             raise AuthError("required credential is missing or invalid")
         return value
 
@@ -81,7 +126,7 @@ class EnvironmentAuth:
 
 
 def config(settings: dict[str, Any] | None) -> dict[str, Any]:
-    settings = settings or {}
+    settings = {} if settings is None else settings
     schema = {
         "type": "object",
         "additionalProperties": False,
@@ -131,21 +176,7 @@ class ClientBase:
         self._operations = {operation["id"]: operation for operation in document["operations"]}
         self._schemes = document["security_schemes"]
         self._base_url = settings.get("base_url", document["base_url"]).rstrip("/")
-        url = urlsplit(self._base_url)
-        if (
-            url.scheme not in {"http", "https"}
-            or not url.hostname
-            or url.username is not None
-            or url.password is not None
-            or url.query
-            or url.fragment
-        ):
-            raise CodaError("invalid runtime base URL")
-        try:
-            if url.port == 0:
-                raise ValueError
-        except ValueError:
-            raise CodaError("invalid runtime base URL port") from None
+        validate_url(self._base_url, allow_query=False)
         self._transport = transport or HttpTransport(
             allow_private=settings.get("allow_private", False), timeout=settings.get("timeout", 15)
         )
@@ -160,7 +191,17 @@ class ClientBase:
             result: dict[str, str] = {}
             try:
                 for name in alternative:
-                    headers = self._auth.headers(name, self._schemes[name])
+                    scheme = self._schemes[name]
+                    headers = self._auth.headers(name, scheme)
+                    expected = scheme["name"] if scheme["type"] == "apiKey" else "Authorization"
+                    if (
+                        not headers
+                        or expected.lower() not in {key.lower() for key in headers}
+                        or any(not value for value in headers.values())
+                    ):
+                        raise AuthError(
+                            "auth provider did not satisfy the required security scheme"
+                        )
                     for key, value in headers.items():
                         if key.lower() in {k.lower() for k in result}:
                             raise AuthError("AND security schemes conflict on a header")
@@ -190,6 +231,7 @@ class ClientBase:
                 continue
             value = values[key]
             validate(value, parameter["schema"], f"invalid parameter {key}")
+            value = map_types(value, parameter["schema"])
             rendered = str(value).lower() if isinstance(value, bool) else str(value)
             if parameter["in"] == "path":
                 # Reject dot-only segments, which intermediaries can normalize even when escaped.
@@ -205,6 +247,7 @@ class ClientBase:
             if operation["body"] is None:
                 raise CodaError("operation does not accept a request body")
             validate(body, operation["body"], "invalid request body")
+            body = map_types(body, operation["body"])
             try:
                 payload = json.dumps(body, allow_nan=False).encode()
             except (ValueError, TypeError):
@@ -243,6 +286,7 @@ class ClientBase:
 
             result = json.loads(response.body, parse_constant=reject_constant)
             validate(result, schema, "response does not match the declared schema")
+            result = map_types(result, schema)
         except (ValueError, UnicodeError, CodaError):
             raise ResponseError("response does not match the declared JSON schema") from None
         return result

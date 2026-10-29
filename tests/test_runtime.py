@@ -169,7 +169,7 @@ def test_bad_responses(contract, response):
 
 def test_policies_and_secrets(monkeypatch):
     for policy in [OperationPolicy(allow=[]), OperationPolicy(deny=["get_pet"])]:
-        with pytest.raises(PolicyError):
+        with pytest.raises(PolicyError, match="get_pet"):
             policy.authorize({"id": "get_pet"})
     auth = EnvironmentAuth(
         {"basic": {"username_env": "USER", "password_env": "PASS"}, "token": {"env": "TOKEN"}}
