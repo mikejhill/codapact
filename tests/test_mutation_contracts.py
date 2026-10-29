@@ -618,8 +618,6 @@ def test_precise_request_serialization_and_untrusted_response_errors(contract):
 
 
 def test_runtime_defaults_explicit_overrides_and_default_transport_policy(contract, monkeypatch):
-    import codapact.runtime as runtime
-
     contract["security"] = []
     document = OpenAPITranslator().translate(contract).to_dict()
     factory_calls = []
@@ -634,7 +632,7 @@ def test_runtime_defaults_explicit_overrides_and_default_transport_policy(contra
             self.calls.append((method, url, headers, body))
             return self.response
 
-    monkeypatch.setattr(runtime, "HttpTransport", Transport)
+    monkeypatch.setattr("codapact.runtime.HttpTransport", Transport)
     document["metadata"]["codapact.runtime"] = {
         **PROFILE,
         "defaults": {

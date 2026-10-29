@@ -3,6 +3,7 @@
 import importlib
 import inspect
 import json
+import os
 import sys
 import tomllib
 import typing
@@ -412,9 +413,7 @@ def test_orchestration_preserves_custom_transport_and_cli_definition(contract, t
 
 
 def test_atomic_replacement_stages_on_destination_filesystem(tmp_path, monkeypatch):
-    import codapact.project as project
-
-    replace = project.os.replace
+    replace = os.replace
     calls = []
 
     def observe(source, destination):
@@ -422,7 +421,7 @@ def test_atomic_replacement_stages_on_destination_filesystem(tmp_path, monkeypat
         calls.append(Path(destination).name)
         replace(source, destination)
 
-    monkeypatch.setattr(project.os, "replace", observe)
+    monkeypatch.setattr(os, "replace", observe)
     write_project(tmp_path / "output", {"nested/client.py": "client"})
     assert calls == ["client.py", ".codapact-manifest.json"]
     assert sorted(p.name for p in (tmp_path / "output/nested").iterdir()) == ["client.py"]
