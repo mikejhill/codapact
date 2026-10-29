@@ -92,6 +92,7 @@ def test_profile_requires_every_declared_field(field):
         ("slug", "pets-"),
         ("slug", "a" * 51),
         ("config_directory", []),
+        ("config_directory", 123),
         ("config_directory", ""),
         ("config_directory", "relative"),
         ("config_directory", "~/bad\x00value"),
@@ -770,6 +771,8 @@ def test_all_non_success_boundaries_are_api_errors_without_response_leaks(contra
         ClientBase(
             OpenAPITranslator().translate(contract).to_dict(), transport=Transport()
         )._execute("get_pet", {"pet_id": 1})
+    assert error.value.status == status
+    assert error.value.operation == "get_pet"
     assert str(status) in str(error.value)
     assert "get_pet" in str(error.value)
     assert "synthetic-private-response" not in str(error.value)
@@ -1061,3 +1064,156 @@ def test_all_ascii_header_controls_fail_before_transport(contract, control, orig
     with pytest.raises(CodaError, match="(?i)header") as error:
         instance._execute("get_pet", values)
     assert "synthetic" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "empty_title",
+        "numeric_title",
+        "empty_version",
+        "numeric_version",
+        "root_callbacks",
+        "query_api_key",
+        "missing_key_header",
+        "unsupported_after_key",
+        "closing_brace",
+        "dot_path",
+        "duplicate_path_parameter",
+        "body_on_204",
+        "head_request_body",
+        "null_schema",
+    ],
+)
+def test_independent_openapi_rejections_cannot_hide_behind_other_invalid_fields(contract, case):
+    operation = contract["paths"]["/pets/{pet_id}"]["get"]
+    if case in {"empty_title", "numeric_title", "empty_version", "numeric_version"}:
+        key = "title" if case.endswith("title") else "version"
+        contract["info"][key] = "" if case.startswith("empty") else 1
+    elif case == "root_callbacks":
+        contract["callbacks"] = {"event": {}}
+    elif case == "query_api_key":
+        contract["components"]["securitySchemes"]["key"]["in"] = "query"
+    elif case == "missing_key_header":
+        contract["components"]["securitySchemes"]["key"].pop("name")
+    elif case == "unsupported_after_key":
+        contract["components"]["securitySchemes"] = {
+            "key": {"type": "apiKey", "in": "header", "name": "X-Key"},
+            "unsupported": {"type": "oauth2", "flows": {}},
+        }
+        contract["security"] = [{"key": []}]
+    elif case == "closing_brace":
+        contract["paths"]["/empty}"] = contract["paths"].pop("/empty")
+    elif case == "dot_path":
+        contract["paths"]["/./empty"] = contract["paths"].pop("/empty")
+    elif case == "duplicate_path_parameter":
+        parameter = {"name": "filter", "in": "query", "schema": {"type": "string"}}
+        contract["paths"]["/pets/{pet_id}"]["parameters"] = [parameter, copy.deepcopy(parameter)]
+    elif case == "body_on_204":
+        operation["responses"]["204"] = operation["responses"]["200"]
+    elif case == "head_request_body":
+        contract["paths"]["/empty"]["head"] = {
+            "operationId": "head_empty",
+            "responses": {"204": {"description": "empty"}},
+            "requestBody": copy.deepcopy(contract["paths"]["/pets"]["post"]["requestBody"]),
+        }
+    elif case == "null_schema":
+        operation["responses"]["200"]["content"]["application/json"]["schema"] = {"type": "null"}
+    category = {
+        "empty_title": "info",
+        "numeric_title": "info",
+        "empty_version": "info",
+        "numeric_version": "info",
+        "root_callbacks": "callbacks",
+        "query_api_key": "security",
+        "missing_key_header": "header",
+        "unsupported_after_key": "security",
+        "closing_brace": "path",
+        "dot_path": "path",
+        "duplicate_path_parameter": "parameter",
+        "body_on_204": "body",
+        "head_request_body": "bodies",
+        "null_schema": "type",
+    }[case]
+    with pytest.raises(CodaError, match="(?i)" + category):
+        OpenAPITranslator().translate(contract)
+
+
+def test_explicit_form_style_case_sensitive_parameters_and_minimal_ir_defaults():
+    document = {
+        "openapi": "3.0.3",
+        "info": {"title": "Minimal", "version": "1"},
+        "servers": [{"url": "https://example.com/prefixX///"}],
+        "paths": {
+            "/values": {
+                "get": {
+                    "operationId": "values",
+                    "parameters": [
+                        {
+                            "name": "Query",
+                            "in": "query",
+                            "schema": {"type": "number"},
+                            "style": "form",
+                            "explode": False,
+                        },
+                        {"name": "query", "in": "query", "schema": {"type": "string"}},
+                    ],
+                    "responses": {"200": {"description": "empty"}},
+                }
+            }
+        },
+    }
+    ir = OpenAPITranslator().translate(document)
+    assert ir.base_url == "https://example.com/prefixX"
+    operation = ir.operations[0]
+    assert operation.summary == "" and operation.body_required is False
+    assert [p["name"] for p in operation.parameters] == ["Query", "query"]
+    assert all(p["required"] is False for p in operation.parameters)
+
+    class Transport:
+        def send(self, method, url, headers, body):
+            assert url == "https://example.com/prefixX/values?Query=1.5&query=MiXeD"
+            return Response(200, {}, b"")
+
+    instance = ClientBase(
+        ir.to_dict(), settings={"base_url": "https://example.com/prefixX///"}, transport=Transport()
+    )
+    assert instance._execute("values", {"Query": 1.5, "query": "MiXeD"}) is None
+
+
+def test_nested_nullable_array_and_dictionary_schemas_are_normalized_and_enforced(contract):
+    contract["security"] = []
+    schema = {
+        "type": "object",
+        "additionalProperties": {"type": "array", "items": {"type": "integer", "nullable": True}},
+    }
+    operation = contract["paths"]["/pets"]["post"]
+    operation["requestBody"]["content"]["application/json"]["schema"] = schema
+    operation["responses"]["201"]["content"]["application/json"]["schema"] = schema
+    ir = OpenAPITranslator().translate(contract)
+    translated = next(o for o in ir.operations if o.id == "create_pet")
+    assert translated.body == {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": {"type": "array", "items": {"type": ["integer", "null"]}},
+    }
+
+    class Transport:
+        def send(self, method, url, headers, body):
+            assert body is not None and json.loads(body) == {"numbers": [None, 2]}
+            return Response(201, {"Content-Type": "application/json"}, b'{"numbers":[null,2.0]}')
+
+    instance = ClientBase(ir.to_dict(), transport=Transport())
+    result = instance._execute("create_pet", body={"numbers": [None, 2.0]})
+    assert result == {"numbers": [None, 2]}
+    assert type(result["numbers"][1]) is int
+
+
+@pytest.mark.parametrize("field", ["example", "examples"])
+def test_media_examples_are_accepted_as_data_without_changing_runtime_schema(contract, field):
+    media = contract["paths"]["/pets"]["post"]["requestBody"]["content"]["application/json"]
+    media[field] = {"value": "__import__('os').system('untrusted')"}
+    ir = OpenAPITranslator().translate(contract)
+    body = next(o.body for o in ir.operations if o.id == "create_pet")
+    assert body is not None and body["type"] == "object"
+    assert field not in body

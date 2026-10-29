@@ -528,3 +528,79 @@ def test_cli_without_discovery_profile_still_honors_explicit_runtime_flags(
             "allow_private": True,
         }
         assert capsys.readouterr().err == ""
+
+
+def test_nested_generated_container_types_have_stable_usable_public_names(
+    contract, tmp_path, monkeypatch
+):
+    contract["security"] = []
+    item = {
+        "type": "object",
+        "properties": {
+            "enabled": {"type": "boolean"},
+            "label": {"type": "string", "nullable": True},
+        },
+        "required": ["enabled"],
+        "additionalProperties": False,
+    }
+    operation = contract["paths"]["/pets"]["post"]
+    operation["requestBody"]["content"]["application/json"]["schema"] = {
+        "type": "object",
+        "additionalProperties": item,
+    }
+    operation["responses"]["201"]["content"]["application/json"]["schema"] = {
+        "type": "array",
+        "items": item,
+    }
+    with generated(contract, tmp_path, monkeypatch) as module:
+        hints = typing.get_type_hints(module.Client.create_pet, vars(module))
+        assert hints["body"] == dict[str, module.Op_create_petBodyValue]
+        assert hints["return"] == list[module.Op_create_petResponse201Item]
+        for nested in [module.Op_create_petBodyValue, module.Op_create_petResponse201Item]:
+            assert typing.get_type_hints(nested, vars(module), include_extras=True) == {
+                "enabled": bool,
+                "label": typing.NotRequired[str | None],
+            }
+            assert nested.__required_keys__ == frozenset({"enabled"})
+
+
+def test_generated_unconstrained_dictionary_uses_any_value_type(contract, tmp_path, monkeypatch):
+    operation = contract["paths"]["/pets"]["post"]
+    operation["requestBody"]["content"]["application/json"]["schema"] = {"type": "object"}
+    with generated(contract, tmp_path, monkeypatch) as module:
+        assert (
+            typing.get_type_hints(module.Client.create_pet, vars(module))["body"]
+            == dict[str, typing.Any]
+        )
+
+
+def test_ownership_reads_remain_bounded_before_parsing(tmp_path, monkeypatch):
+    root = tmp_path / "output"
+    root.mkdir()
+    path = root / ".codapact-manifest.json"
+    path.write_bytes(b" " * 2_000_001)
+    original = Path.open
+
+    class Reader:
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.handle.close()
+
+        def read(self, size=-1):
+            assert 0 < size < 2_100_000, "ownership reads must remain bounded"
+            return self.handle.read(size)
+
+    def opened(target, *args, **kwargs):
+        handle = original(target, *args, **kwargs)
+        return Reader(handle) if target == path else handle
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "open", opened)
+        with pytest.raises(CodaError, match="(?i)ownership manifest"):
+            write_project(root, {"client.py": "new data"})
+    assert not (root / "client.py").exists()

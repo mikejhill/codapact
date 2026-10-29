@@ -93,11 +93,12 @@ def test_pinned_dns_and_hostname_verification(
             return value
 
     sock = Socket()
-    monkeypatch.setattr(
-        net.socket,
-        "getaddrinfo",
-        lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
-    )
+
+    def resolve(hostname, port, *, type):
+        assert (hostname, port, type) == ("api.example.com", 443, socket.SOCK_STREAM)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+
+    monkeypatch.setattr(net.socket, "getaddrinfo", resolve)
 
     def connect(address, timeout):
         assert address == ("93.184.216.34", 443)
@@ -202,7 +203,13 @@ def test_public_plaintext_requires_opt_in_before_connection(monkeypatch):
         (200, 2_000_001, "limit"),
     ],
 )
-def test_transport_response_boundaries_and_cleanup(monkeypatch, status, size, failure):
+@pytest.mark.parametrize(
+    ("url", "expected_port"),
+    [("http://api.example.com:8080", 8080), ("http://api.example.com", 80)],
+)
+def test_transport_response_boundaries_and_cleanup(
+    monkeypatch, status, size, failure, url, expected_port
+):
     closed = []
     payload = b"x" * size
 
@@ -225,7 +232,7 @@ def test_transport_response_boundaries_and_cleanup(monkeypatch, status, size, fa
 
     class Connection:
         def __init__(self, hostname, port, timeout):
-            assert (hostname, port, timeout) == ("api.example.com", 8080, 120)
+            assert (hostname, port, timeout) == ("api.example.com", expected_port, 120)
 
         def request(self, method, target, body, headers):
             assert (method, target, body, headers) == ("GET", "/", None, {})
@@ -239,11 +246,11 @@ def test_transport_response_boundaries_and_cleanup(monkeypatch, status, size, fa
     monkeypatch.setattr(
         net.socket,
         "getaddrinfo",
-        lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8080))],
+        lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", expected_port))],
     )
 
     def connect(address, timeout):
-        assert address == ("127.0.0.1", 8080) and timeout == 120
+        assert address == ("127.0.0.1", expected_port) and timeout == 120
         return sock
 
     monkeypatch.setattr(net.socket, "create_connection", connect)
@@ -251,9 +258,14 @@ def test_transport_response_boundaries_and_cleanup(monkeypatch, status, size, fa
     transport = net.HttpTransport(allow_private=True, timeout=120)
     if failure:
         with pytest.raises(TransportError, match="(?i)" + failure):
-            transport.send("GET", "http://api.example.com:8080", {}, None)
+            transport.send("GET", url, {}, None)
     else:
-        response = transport.send("GET", "http://api.example.com:8080", {}, None)
+        response = transport.send("GET", url, {}, None)
         assert response.status == status and response.body == payload
         assert response.headers == {"X-Result": "retained"}
     assert closed == ["connection", "socket"]
+
+
+@pytest.mark.parametrize("timeout", [0.01, 1, 120])
+def test_transport_accepts_entire_documented_positive_timeout_range(timeout):
+    assert net.HttpTransport(timeout=timeout).timeout == timeout
