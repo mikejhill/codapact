@@ -172,7 +172,7 @@ build-backend = "uv_build"
             "README.md": (
                 "# Generated API client\n\nGenerated with CodaPact. "
                 "Install the matching CodaPact runtime first, then `uv pip install .`.\n\n"
-                f"Run `{package.replace('_', '-')} --help` or import `{package}.Client`.\n"
+                f"Run `{command_name} --help` or import `{package}.Client`.\n"
                 "Runtime config accepts environment references; never embed credentials.\n"
             ),
         }

@@ -12,12 +12,19 @@ Squash-merge PRs using Conventional Commit titles. `fix:` and `perf:` bump patch
 The release PR updates project/runtime/lockfile versions and `CHANGELOG.md`.
 The runtime version also determines generated dependencies and manifests.
 
-## Pending setup
+## Publisher and bot setup
 
-The public source destination is `mikejhill/codapact`. Package registry publication
-is pending. `RELEASES_ENABLED` is unset, so the release workflow remains disabled
-until the PyPI publisher is configured. Configure the trusted publisher for workflow
-`release.yml` and environment `pypi`, and require the `CI passed` check.
+The public source destination is `mikejhill/codapact`. The approved PyPI pending
+publisher binds project `codapact` to that repository, workflow `release.yml`,
+and environment `pypi`. `RELEASES_ENABLED=true` enables the version workflow.
+
+GitHub currently forbids its Actions bot from creating PRs. Release-please can
+still prepare the release branch; an authorized maintainer can open that branch
+as a PR and add `autorelease: pending`. After checks pass, squash-merge it using
+the generated Conventional Commit release title. The next main workflow creates
+the tag/release and publishes through OIDC. No token or expanded bot permission
+is required for this manual PR step. Confirm only intended version/changelog/
+lockfile changes are included and that `CI passed` succeeds.
 
 Mutation analysis remains asynchronous and is not part of `CI passed` or the
 release dependency chain. Its durable alerts are described in [mutation.md](mutation.md).
@@ -25,10 +32,10 @@ release dependency chain. Its durable alerts are described in [mutation.md](muta
 The workflow dispatches CI on release PR branches because the default GitHub
 token suppresses follow-on workflow events. An optional `RELEASE_PLEASE_TOKEN`
 can also trigger normal PR checks. Review the repository's bot-run policy before
-enabling releases. No PR-approving review,
-credential provisioning, or repository security setting was changed here.
+changing bot permissions. No PR-approving review, API token, or repository
+security setting is needed for the manual PR step.
 
-Before enabling publishing, verify the finalized package name, metadata, release
+Before publishing, verify the finalized package name, metadata, release
 PR checks, clean-environment installation, and publisher account. The initial
 baseline is 0.1.0. `uv build`, `uv run twine check --strict dist/*`, and
 `uv run python scripts/verify_dist.py` verify local artifacts.
