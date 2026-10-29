@@ -15,14 +15,21 @@ tool name is verified from successful uploaded analyses before configuring a
 merge rule. A successful workflow means analysis completed; alert counts must be
 inspected separately. No broad query exclusions or severity suppression are used.
 
-Repository rules are a separate persistent setting. The proposed standard is PRs
+Repository rules are a separate persistent setting. The configured standard is PRs
 for all contributors, `CI passed` from GitHub Actions, linear history, no
 force-push/deletion, resolved review threads, and no mandatory approving review.
-The owner may bypass the CI rule through PRs only. A CodeQL all-alerts rule has no
-bypass and is activated only after successful setup and explicit approval.
-Installing this workflow does not configure rulesets or default-setup settings.
+The owner may bypass the CI rule through PRs only. The active CodeQL all-alerts rule has no
+bypass. These persistent rules were configured separately after successful scan
+verification and explicit approval. Workflow installation itself does not change
+rulesets or default-setup settings. No mandatory reviewer approvals are required.
 
 Mutation remains asynchronous and is never a required merge or release check.
 See [mutation testing](mutation.md) for score evidence, execution incidents, and
 triage ownership. Credentials should never be committed; runtime credential
 storage guidance is in [configuration](configuration.md).
+
+The HTTP transport explicitly requires TLS 1.2 or newer while retaining normal
+certificate and hostname verification and preserving a stricter existing minimum.
+This makes the modern Python default
+minimum explicit for both static analysis and future maintainers. Baseline
+quality findings are addressed in code rather than through query suppression.

@@ -4,12 +4,14 @@ import base64
 import json
 import os
 import stat
+from abc import abstractmethod
 from pathlib import Path
 from typing import Any, Protocol
 
+from codapact.auth import EnvironmentAuth
 from codapact.errors import AuthError, CodaError
 from codapact.loading import parse
-from codapact.runtime import EnvironmentAuth, config, validate
+from codapact.validation import config, validate
 from codapact.values import merge, slug_name
 
 
@@ -84,7 +86,9 @@ def read_file(path: Path, *, optional: bool = False, json_only: bool = False) ->
 class CredentialStore(Protocol):
     """Explicit dependency injection boundary for future keyring providers."""
 
-    def get(self, name: str) -> dict[str, str] | None: ...
+    @abstractmethod
+    def get(self, name: str) -> dict[str, str] | None:
+        raise NotImplementedError
 
 
 class JsonFileStore:

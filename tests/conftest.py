@@ -113,7 +113,8 @@ def server(contract):
             parts = urlsplit(self.path)
             requests.append((self.command, self.path, dict(self.headers)))
             if parts.path == "/contract":
-                return self.respond(200, contract)
+                self.respond(200, contract)
+                return
             if parts.path == "/redirect":
                 self.send_response(302)
                 self.send_header("Location", "/contract")
@@ -125,15 +126,20 @@ def server(contract):
                 self.wfile.write(b"x" * 2_000_001)
                 return
             if self.headers.get("Authorization") != "Bearer fixture-secret":
-                return self.respond(401, {"secret": "fixture-secret"})
+                self.respond(401, {"secret": "fixture-secret"})
+                return
             if parts.path == "/pets/404":
-                return self.respond(404, {"secret": "fixture-secret"})
+                self.respond(404, {"secret": "fixture-secret"})
+                return
             if parts.path == "/pets/999":
-                return self.respond(200, {"wrong": "fixture-secret"})
+                self.respond(200, {"wrong": "fixture-secret"})
+                return
             if parts.path == "/pets":
                 page = int(parse_qs(parts.query).get("page", [1])[0])
-                return self.respond(200, [{"id": page, "name": "Miso"}])
-            return self.respond(200, {"id": int(parts.path.rsplit("/", 1)[1]), "name": "Miso"})
+                self.respond(200, [{"id": page, "name": "Miso"}])
+                return
+            self.respond(200, {"id": int(parts.path.rsplit("/", 1)[1]), "name": "Miso"})
+            return
 
         def do_POST(self):
             requests.append((self.command, self.path, dict(self.headers)))

@@ -4,6 +4,7 @@ import http.client
 import ipaddress
 import socket
 import ssl
+from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Protocol, cast
 from urllib.parse import SplitResult, urlsplit
@@ -50,9 +51,9 @@ class Response:
 class Transport(Protocol):
     """Implementations must not follow redirects or log credentials."""
 
-    def send(
-        self, method: str, url: str, headers: dict[str, str], body: bytes | None
-    ) -> Response: ...
+    @abstractmethod
+    def send(self, method: str, url: str, headers: dict[str, str], body: bytes | None) -> Response:
+        raise NotImplementedError
 
 
 class HttpTransport:
@@ -82,7 +83,12 @@ class HttpTransport:
             sock = socket.create_connection((ips[0], port), timeout=self.timeout)
             try:
                 if parts.scheme == "https":
-                    sock = ssl.create_default_context().wrap_socket(sock, server_hostname=hostname)
+                    context = ssl.create_default_context()
+                    minimum = context.minimum_version
+                    context.minimum_version = (
+                        ssl.TLSVersion.TLSv1_2 if minimum < ssl.TLSVersion.TLSv1_2 else minimum
+                    )
+                    sock = context.wrap_socket(sock, server_hostname=hostname)
                 connection.sock = sock
                 target = (parts.path or "/") + ("?" + parts.query if parts.query else "")
                 connection.request(method, target, body, headers)

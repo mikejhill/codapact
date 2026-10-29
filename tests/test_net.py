@@ -2,14 +2,14 @@ import socket
 
 import pytest
 
+import codapact.net as net
 from codapact.errors import CodaError, TransportError
-from codapact.net import HttpTransport, validate_url
 
 
 @pytest.mark.parametrize("timeout", [0, -1, 121])
 def test_timeout_validation(timeout):
     with pytest.raises(CodaError):
-        HttpTransport(timeout=timeout)
+        net.HttpTransport(timeout=timeout)
 
 
 @pytest.mark.parametrize(
@@ -24,7 +24,7 @@ def test_timeout_validation(timeout):
 )
 def test_invalid_url(url):
     with pytest.raises(CodaError):
-        HttpTransport().send("GET", url, {}, None)
+        net.HttpTransport().send("GET", url, {}, None)
 
 
 @pytest.mark.parametrize(
@@ -35,8 +35,16 @@ def test_invalid_url(url):
         ("https://api.example.com?x=1", "/?x=1"),
     ],
 )
-def test_pinned_dns_and_hostname_verification(monkeypatch, url, target):
-    import codapact.net as net
+@pytest.mark.parametrize(
+    ("minimum", "expected_minimum"),
+    [
+        (net.ssl.TLSVersion.MINIMUM_SUPPORTED, net.ssl.TLSVersion.TLSv1_2),
+        (net.ssl.TLSVersion.TLSv1_3, net.ssl.TLSVersion.TLSv1_3),
+    ],
+)
+def test_pinned_dns_and_hostname_verification(
+    monkeypatch, url, target, minimum: net.ssl.TLSVersion, expected_minimum: net.ssl.TLSVersion
+):
 
     calls = []
 
@@ -75,7 +83,10 @@ def test_pinned_dns_and_hostname_verification(monkeypatch, url, target):
             calls.append("connection closed")
 
     class Context:
+        minimum_version: net.ssl.TLSVersion = minimum
+
         def wrap_socket(self, value, *, server_hostname):
+            assert self.minimum_version == expected_minimum
             assert value is sock
             assert server_hostname == "api.example.com"
             calls.append("verified context")
@@ -97,7 +108,9 @@ def test_pinned_dns_and_hostname_verification(monkeypatch, url, target):
     monkeypatch.setattr(net.socket, "create_connection", connect)
     monkeypatch.setattr(net.http.client, "HTTPConnection", Connection)
     monkeypatch.setattr(net.ssl, "create_default_context", Context)
-    response = HttpTransport(timeout=7.5).send("POST", url, {"X-Test": "value"}, b'{"test":true}')
+    response = net.HttpTransport(timeout=7.5).send(
+        "POST", url, {"X-Test": "value"}, b'{"test":true}'
+    )
     assert response.status == 200
     assert response.headers == {"Content-Type": "application/json"}
     assert response.body == b"{}"
@@ -105,14 +118,13 @@ def test_pinned_dns_and_hostname_verification(monkeypatch, url, target):
 
 
 def test_network_failure_redacted(monkeypatch):
-    import codapact.net as net
 
     def unavailable(*args, **kwargs):
         raise OSError("sensitive infrastructure detail")
 
     monkeypatch.setattr(net.socket, "getaddrinfo", unavailable)
     with pytest.raises(TransportError) as error:
-        HttpTransport().send("GET", "https://example.com", {}, None)
+        net.HttpTransport().send("GET", "https://example.com", {}, None)
     assert "sensitive" not in str(error.value)
 
 
@@ -130,21 +142,20 @@ def test_network_failure_redacted(monkeypatch):
 )
 def test_url_boundaries_before_network(url):
     with pytest.raises(CodaError, match="URL"):
-        validate_url(url)
+        net.validate_url(url)
 
 
 def test_base_url_query_rejected_and_encoded_query_preserved():
     with pytest.raises(CodaError, match="URL"):
-        validate_url("https://example.com?x=1", allow_query=False)
-    assert validate_url("https://example.com/?name=%C3%A9").query == "name=%C3%A9"
-    assert validate_url("https://example.com:1/").port == 1
+        net.validate_url("https://example.com?x=1", allow_query=False)
+    assert net.validate_url("https://example.com/?name=%C3%A9").query == "name=%C3%A9"
+    assert net.validate_url("https://example.com:1/").port == 1
 
 
 @pytest.mark.parametrize(
     "addresses", [[], ["93.184.216.34", "127.0.0.1"], ["127.0.0.1", "93.184.216.34"]]
 )
 def test_empty_or_mixed_private_dns_fails_before_connection(monkeypatch, addresses):
-    import codapact.net as net
 
     monkeypatch.setattr(
         net.socket,
@@ -159,14 +170,13 @@ def test_empty_or_mixed_private_dns_fails_before_connection(monkeypatch, address
 
     monkeypatch.setattr(net.socket, "create_connection", unexpected_connection)
     with pytest.raises(CodaError, match="private"):
-        HttpTransport().send("GET", "https://api.example.com", {}, None)
+        net.HttpTransport().send("GET", "https://api.example.com", {}, None)
     if not addresses:
         with pytest.raises(CodaError, match="private"):
-            HttpTransport(allow_private=True).send("GET", "https://api.example.com", {}, None)
+            net.HttpTransport(allow_private=True).send("GET", "https://api.example.com", {}, None)
 
 
 def test_public_plaintext_requires_opt_in_before_connection(monkeypatch):
-    import codapact.net as net
 
     monkeypatch.setattr(
         net.socket,
@@ -179,4 +189,4 @@ def test_public_plaintext_requires_opt_in_before_connection(monkeypatch):
 
     monkeypatch.setattr(net.socket, "create_connection", unexpected_connection)
     with pytest.raises(CodaError, match="plaintext HTTP"):
-        HttpTransport().send("GET", "http://api.example.com", {}, None)
+        net.HttpTransport().send("GET", "http://api.example.com", {}, None)
