@@ -14,9 +14,7 @@ from codapact.codegen.project import (
 
 default_registry = ProjectGenerator.default_registry
 digest = ProjectWriter.digest
-_safe_path = ProjectWriter._safe_path
 write_project = ProjectWriter.write_project
-_atomic = ProjectWriter._atomic
 generate = ProjectGenerator.generate
 
 __all__ = ["MANIFEST", "default_registry", "digest", "write_project", "generate"]

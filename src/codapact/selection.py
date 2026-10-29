@@ -16,7 +16,6 @@ from codapact.contracts.selection import (
 )
 
 normalize = SelectionDefinition.normalize
-_term = SelectionDefinition._term
 validate_result = SelectionValidator.validate_result
 
 __all__ = ["READ_METHODS", "normalize", "validate_result", "OperationSelector"]
