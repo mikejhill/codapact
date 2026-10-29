@@ -1,5 +1,7 @@
 """Reference amplification must remain bounded before serialization or code generation."""
 
+import json
+
 import pytest
 
 from codapact.errors import CodaError
@@ -19,3 +21,14 @@ def test_reference_text_budget_counts_repeated_values_and_keys(kind, references)
     else:
         with pytest.raises(CodaError, match="(?i)expansion text limit"):
             resolve(source)
+
+
+def test_expanded_text_budget_accepts_exact_limit_and_rejects_one_more_key_character():
+    # Two four-character root keys plus eight copies of this string total 8,000,000.
+    text = "x" * 999_999
+    source = {"leaf": text, "uses": [{"$ref": "#/leaf"} for _ in range(7)]}
+    assert len(json.dumps(source)) < 2_000_000
+    result = resolve(source)
+    assert result["leaf"] == text and len(result["uses"]) == 7
+    with pytest.raises(CodaError, match="(?i)expansion text limit"):
+        resolve({**source, "z": None})
