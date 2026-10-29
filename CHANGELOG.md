@@ -2,6 +2,21 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.2.0](https://github.com/mikejhill/codapact/compare/v0.1.1...v0.2.0) (2026-10-29)
+
+### Features
+
+* Generate the same specialized endpoint subset for typed clients and CLI wrappers, using
+  operation IDs, method names, path globs, and domain tags with explicit include/exclude rules.
+* Add versioned generation settings, CLI overrides, an owned selection report, and dry-run
+  generation/ownership preflight without output writes.
+* Preserve selected nested schema dependencies and authentication requirements, stable CLI
+  renames, deterministic regeneration, and unrelated user files.
+* Provide a GET/HEAD/OPTIONS read preset and runnable domain profiles. Method selection is
+  not a safety guarantee or server authorization control.
+
+Implemented in [PR #16](https://github.com/mikejhill/codapact/pull/16).
+
 ## [0.1.1](https://github.com/mikejhill/codapact/compare/v0.1.0...v0.1.1) (2026-10-29)
 
 ### Bug Fixes
