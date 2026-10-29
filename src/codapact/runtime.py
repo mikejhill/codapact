@@ -163,7 +163,7 @@ class ClientBase:
         headers.update(self._security(operation))
         for key, value in headers.items():
             if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", key) or any(
-                character in value for character in ("\r", "\n", "\x00")
+                ord(character) < 32 or ord(character) == 127 for character in value
             ):
                 raise CodaError("invalid request header")
         url = self._base_url + path + ("?" + urlencode(query) if query else "")

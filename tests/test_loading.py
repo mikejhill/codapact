@@ -80,3 +80,49 @@ def test_remote(server):
 )
 def test_json_roundtrip(value):
     assert parse(json.dumps(value).encode()) == value
+
+
+@pytest.mark.parametrize(
+    "data", [b'{"token":"first","token":"second"}', b'{"outer":{"x":1,"x":2}}']
+)
+def test_duplicate_json_keys_never_silently_choose_a_value(data):
+    with pytest.raises(CodaError, match="(?i)unique"):
+        parse(data)
+
+
+def test_document_byte_limit_accepts_exact_limit():
+    payload = b'{"value":0}'
+    assert parse(payload + b" " * (2_000_000 - len(payload))) == {"value": 0}
+    with pytest.raises(CodaError, match="(?i)limit"):
+        parse(payload + b" " * (2_000_001 - len(payload)))
+
+
+def test_reference_resolution_preserves_lists_scalars_and_independent_values():
+    source = {
+        "items": [{"value": "first"}, {"value": "second"}],
+        "selected": {"$ref": "#/items/1"},
+        "number": 7,
+        "nil": None,
+    }
+    resolved = resolve(source)
+    assert resolved == {
+        "items": [{"value": "first"}, {"value": "second"}],
+        "selected": {"value": "second"},
+        "number": 7,
+        "nil": None,
+    }
+    resolved["selected"]["value"] = "changed"
+    assert source["items"][1]["value"] == "second"
+    assert resolved["items"][1]["value"] == "second"
+
+
+def test_reference_expansion_budget_and_depth_boundaries():
+    assert len(resolve({"values": [0] * 99_998})["values"]) == 99_998
+    with pytest.raises(CodaError, match="(?i)expansion limit"):
+        resolve({"values": [0] * 99_999})
+    shallow = {"value": 0}
+    for _ in range(47):
+        shallow = {"nested": shallow}
+    assert resolve(shallow) == shallow
+    with pytest.raises(CodaError, match="(?i)expansion limit"):
+        resolve({"nested": shallow})

@@ -54,17 +54,17 @@ def run_cli(
     try:
         if args.config and args.config.startswith(("http://", "https://")):
             raise CodaError("runtime configuration must be local")
+        overrides = {
+            key: getattr(args, key)
+            for key in ("base_url", "timeout", "allow_private")
+            if getattr(args, key) is not None
+        }
         if profile is None:
             settings = load(args.config) if args.config else {}
             if args.config_dir or args.auth_file or args.no_auth_file:
                 raise CodaError("configuration discovery requires a generated runtime profile")
-            client = factory(settings=settings)
+            client = factory(settings={**settings, **overrides})
         else:
-            overrides = {
-                key: getattr(args, key)
-                for key in ("base_url", "timeout", "allow_private")
-                if getattr(args, key) is not None
-            }
             settings, directory = runtime_settings(profile, args.config_dir, args.config, overrides)
             if args.auth_file and args.no_auth_file:
                 raise CodaError("--auth-file and --no-auth-file conflict")
