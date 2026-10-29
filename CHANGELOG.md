@@ -2,6 +2,13 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.2.0](https://github.com/mikejhill/codapact/compare/v0.1.1...v0.2.0) (2026-10-29)
+
+
+### Features
+
+* filter generated endpoint surfaces ([0c09deb](https://github.com/mikejhill/codapact/commit/0c09debec46cc4c0345325aca1cb78b6cc0d7c66))
+
 ## [0.1.1](https://github.com/mikejhill/codapact/compare/v0.1.0...v0.1.1) (2026-10-29)
 
 ### Bug Fixes
