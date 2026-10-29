@@ -14,7 +14,9 @@
 * Reject all ASCII control characters and DEL in parameter and custom-auth request headers before
   transport, with redacted diagnostics.
 
-These fixes are included in [3e21fd7](https://github.com/mikejhill/codapact/commit/3e21fd7b42dc370e27bfa7617c6ed9174d2cb284).
+* Bound expanded reference text, counting repeated large string keys and values before serialization.
+
+The first four fixes are included in [3e21fd7](https://github.com/mikejhill/codapact/commit/3e21fd7b42dc370e27bfa7617c6ed9174d2cb284).
 
 ## 0.1.0 (2026-10-29)
 
