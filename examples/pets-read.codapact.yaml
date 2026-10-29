@@ -1,0 +1,19 @@
+version: 1
+contract:
+  source: domains.openapi.yaml
+output:
+  directory: ../generated/pets-read
+client:
+  package: pets_read
+cli:
+  slug: pets-read
+  definition: pets-read.cli.yaml
+selection:
+  version: 1
+  preset: read
+  include:
+    - tags: [Pets]
+  exclude: []
+runtime:
+  defaults:
+    timeout: 15

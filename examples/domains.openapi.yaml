@@ -1,0 +1,109 @@
+openapi: 3.0.3
+info:
+  title: Domain catalog
+  version: 1.0.0
+servers:
+  - url: https://api.example.invalid
+components:
+  securitySchemes:
+    token:
+      type: http
+      scheme: bearer
+  schemas:
+    Address:
+      type: object
+      properties:
+        city:
+          type: string
+    Pet:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        address:
+          $ref: '#/components/schemas/Address'
+security:
+  - token: []
+paths:
+  /pets:
+    get:
+      operationId: list_pets
+      tags: [Pets]
+      summary: Browse pets
+      responses:
+        '200':
+          description: Pet list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pet'
+    post:
+      operationId: create_pet
+      tags: [Pets]
+      summary: Create a pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pet'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+  /pets/{pet_id}:
+    parameters:
+      - name: pet_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      operationId: get_pet
+      tags: [Pets]
+      summary: Show a pet
+      responses:
+        '200':
+          description: Pet details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+    delete:
+      operationId: delete_pet
+      tags: [Pets]
+      summary: Delete a pet
+      responses:
+        '204':
+          description: Deleted
+  /billing/invoices:
+    get:
+      operationId: list_invoices
+      tags: [Billing]
+      summary: Browse invoice IDs
+      responses:
+        '200':
+          description: Invoice IDs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+  /health:
+    get:
+      operationId: health
+      tags: [System]
+      security: []
+      summary: Service status
+      responses:
+        '204':
+          description: Healthy

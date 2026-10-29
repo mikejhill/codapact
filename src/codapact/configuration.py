@@ -21,10 +21,11 @@ GENERATION_SCHEMA = json.loads(
 DEFAULTS: dict[str, Any] = {
     "version": 1,
     "contract": {"type": "openapi", "allow_private": False},
-    "output": {"directory": "generated"},
+    "output": {"directory": "generated", "dry_run": False},
     "client": {"language": "python"},
     "cli": {"style": "argparse", "definition": None},
     "runtime": {"config_directory": None, "defaults": {}},
+    "selection": {},
 }
 
 
@@ -122,6 +123,8 @@ def resolve_generation(
             "targets": (client["language"], cli["style"]),
             "cli_definition": definition,
             "allow_private": result["contract"]["allow_private"],
+            "selection": result.get("selection", {}),
+            "dry_run": result["output"].get("dry_run", False),
             "profile": {
                 "version": 1,
                 "slug": slug,

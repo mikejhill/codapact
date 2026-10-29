@@ -1,0 +1,6 @@
+version: 1
+commands:
+  - name: show
+    operation: get_pet
+  - name: browse
+    operation: list_pets
