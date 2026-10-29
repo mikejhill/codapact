@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from codapact import __version__
-from codapact.errors import CodaError
+from codapact.errors import CodaError, TransportError
 from codapact.generation import ArgparseGenerator, canonical, package_name
 from codapact.net import Response
 from codapact.openapi import OpenAPITranslator
@@ -80,6 +80,9 @@ def test_generated_types_and_call_signatures_are_usable(contract, tmp_path, monk
         hints = typing.get_type_hints(module.Client.create_pet, vars(module))
         assert type(None) in typing.get_args(hints["return"])
         project = tomllib.loads((tmp_path / "generated/pyproject.toml").read_text("utf-8"))
+        assert project["project"]["name"] == "behavior-pets"
+        assert project["project"]["requires-python"] == ">=3.13"
+        assert (tmp_path / "generated/.python-version").read_text().strip() == "3.13"
         assert project["project"]["dependencies"] == [f"codapact=={__version__}"]
         assert project["project"]["scripts"] == {"pets": "behavior_pets.__main__:main"}
         assert (tmp_path / "generated/src/behavior_pets/py.typed").is_file()
@@ -309,6 +312,13 @@ def test_generated_cli_legacy_auth_and_explicit_file_precedence(
         assert help_exit.value.code == 0
         text = capsys.readouterr().out
         assert text.isascii() and "\x1b" not in text and "é" not in text
+        for guidance in (
+            "json/yaml",
+            "auth.json",
+            "disable credential file discovery",
+            "indent json output",
+        ):
+            assert guidance in text.casefold()
         assert (
             "customsummary" in text.casefold() and "--config-dir" in text and "--auth-file" in text
         )
@@ -416,3 +426,105 @@ def test_atomic_replacement_stages_on_destination_filesystem(tmp_path, monkeypat
     write_project(tmp_path / "output", {"nested/client.py": "client"})
     assert calls == ["client.py", ".codapact-manifest.json"]
     assert sorted(p.name for p in (tmp_path / "output/nested").iterdir()) == ["client.py"]
+
+
+@pytest.mark.parametrize(
+    ("case", "exit_code"), [("api", 5), ("transport", 4), ("response", 6), ("input", 2)]
+)
+def test_generated_cli_exit_categories_and_response_redaction(
+    contract, tmp_path, monkeypatch, capsys, case, exit_code
+):
+    contract["security"] = []
+
+    class Transport:
+        def send(self, method, url, headers, body):
+            if case == "input":
+                pytest.fail("invalid CLI input must not reach the network")
+            if case == "transport":
+                raise TransportError("fixture transport failure")
+            return Response(
+                500 if case == "api" else 200,
+                {"Content-Type": "text/plain"},
+                b"secret-response-payload",
+            )
+
+    with generated(contract, tmp_path, monkeypatch) as module:
+        cli = importlib.import_module("behavior_pets.__main__")
+        monkeypatch.setattr(
+            cli, "Client", lambda **kwargs: module.Client(transport=Transport(), **kwargs)
+        )
+        argument = "secret-invalid-input" if case == "input" else "1"
+        assert cli.main(["get-pet", "--arg-pet-id", argument]) == exit_code
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err.startswith("codapact: ")
+        assert "secret-response-payload" not in captured.err
+        assert "secret-invalid-input" not in captured.err
+        if case == "api":
+            assert "500" in captured.err and "get_pet" in captured.err
+
+
+def test_cli_without_discovery_profile_still_honors_explicit_runtime_flags(
+    contract, tmp_path, monkeypatch, capsys
+):
+    from codapact.cli import run_cli
+
+    contract["security"] = []
+    seen = []
+
+    class Transport:
+        def send(self, method, url, headers, body):
+            return Response(200, {"Content-Type": "application/json"}, b'{"id":1,"name":"Pip"}')
+
+    ordinary = tmp_path / "settings.json"
+    ordinary.write_text(
+        json.dumps({"timeout": 7, "allow_private": True, "base_url": "https://config.example"}),
+        encoding="utf-8",
+    )
+    with generated(contract, tmp_path, monkeypatch) as module:
+        definition = json.loads((tmp_path / "generated/src/behavior_pets/cli.json").read_text())
+
+        def factory(**kwargs):
+            seen.append(kwargs["settings"])
+            return module.Client(transport=Transport(), **kwargs)
+
+        assert (
+            run_cli(
+                factory,
+                module.DOCUMENT,
+                definition,
+                [
+                    "--config",
+                    str(ordinary),
+                    "--base-url",
+                    "https://flag.example",
+                    "--timeout",
+                    "0.5",
+                    "--no-allow-private",
+                    "get-pet",
+                    "--arg-pet-id",
+                    "1",
+                ],
+            )
+            == 0
+        )
+        assert seen[-1] == {
+            "base_url": "https://flag.example",
+            "timeout": 0.5,
+            "allow_private": False,
+        }
+        assert (
+            run_cli(
+                factory,
+                module.DOCUMENT,
+                definition,
+                ["--config", str(ordinary), "get-pet", "--arg-pet-id", "1"],
+            )
+            == 0
+        )
+        assert seen[-1] == {
+            "base_url": "https://config.example",
+            "timeout": 7,
+            "allow_private": True,
+        }
+        assert capsys.readouterr().err == ""

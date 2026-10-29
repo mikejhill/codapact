@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+
+from codapact import __version__
 from codapact.__main__ import main
 
 
@@ -39,3 +42,16 @@ def test_generate_entrypoint(tmp_path, capsys):
         )
         == 2
     )
+
+
+def test_generator_identity_and_version_are_discoverable(capsys):
+    with pytest.raises(SystemExit) as version:
+        main(["--version"])
+    assert version.value.code == 0
+    output = capsys.readouterr().out
+    assert "codapact" in output.casefold() and __version__ in output
+    with pytest.raises(SystemExit) as help_exit:
+        main(["--help"])
+    assert help_exit.value.code == 0
+    output = capsys.readouterr().out.casefold()
+    assert "contracts into callable tools" in output and "generate" in output
