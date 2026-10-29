@@ -4,7 +4,7 @@
 
 **Contracts into callable tools.**
 
-This local first iteration generates an installable, typed Python client and a
+This first iteration generates an installable, typed Python client and a
 scriptable CLI from a local or remote OpenAPI contract. The package, module, and
 generator CLI are named `codapact`. Package registry publication is pending.
 
@@ -26,6 +26,12 @@ from pets_client import Client
 client = Client(settings={"auth": {"token": {"env": "PETS_TOKEN"}}})
 pet = client.get_pet(parameters={"pet_id": 7})
 ```
+
+Reusable generation values are supported with `uv run codapact generate
+--manifest examples/pets.codapact.yaml`. The resulting `pets` command discovers
+`config.json` and `auth.json` in `$XDG_CONFIG_HOME/pets` or `~/.config/pets`.
+Override its directory with `pets --config-dir PATH ...`. See the configuration
+guide for precedence, credential-file permissions, and every generation override.
 
 - [Architecture and extension contracts](docs/architecture.md)
 - [Supported features and safety boundaries](docs/support.md)

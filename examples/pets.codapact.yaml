@@ -1,0 +1,18 @@
+version: 1
+contract:
+  source: pets.yaml
+  type: openapi
+output:
+  directory: ../generated/pets
+client:
+  language: python
+  package: pets_client
+cli:
+  style: argparse
+  slug: pets
+runtime:
+  defaults:
+    timeout: 15
+    allow_private: false
+    policy:
+      deny: []

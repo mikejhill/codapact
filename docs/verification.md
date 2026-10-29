@@ -4,8 +4,8 @@ Verified on Windows with Python 3.13.15 and uv 0.11.32. Tests use synthetic
 contracts, loopback HTTP servers, temporary output directories, and fixture-only
 credentials. No real API credentials or private API calls were used.
 
-- 170 unit, integration, property, security, generation, and fresh-install tests
-  pass on Windows, with 92.84% combined line and branch coverage against a 90% gate.
+- 216 unit, integration, property, security, generation, and fresh-install tests
+  pass on Windows, with 94% combined line and branch coverage against a 90% gate.
 - The distribution test downloads a contract from the local fixture server,
   generates a package, builds both runtime and generated wheels, installs them
   into a fresh environment, and calls the server through the installed typed
@@ -35,8 +35,12 @@ WSL mutation experiment killed all 17 selected operation-policy mutants. Its
 first run found a missing assertion for useful denial diagnostics; the regression
 now requires the denied operation's identity in the error. The full generated
 inventory contained 2,763 mutants, so this is partial scope and cannot establish
-a project score. [Asynchronous full runs and alerts](mutation.md) provide
-continuing evidence.
+a project score. The first complete hosted main run measured 65.94% (1,822
+killed, 941 survived, 2,763 total), below the unchanged 90% floor. Its durable
+[regression issue](https://github.com/mikejhill/codapact/issues/5) is assigned for
+triage. Named mutant details and source snapshots are retained as workflow
+artifacts. [Asynchronous full runs and alerts](mutation.md) provide continuing
+evidence without blocking release.
 Fuzzing beyond the included Hypothesis properties has not been run. No package
 release or registry publication has occurred.
 

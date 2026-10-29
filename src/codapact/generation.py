@@ -9,6 +9,7 @@ from typing import Any
 from codapact import __version__
 from codapact.errors import CodaError
 from codapact.model import Contract
+from codapact.values import slug_name
 
 
 def package_name(name: str) -> str:
@@ -80,6 +81,16 @@ class PythonGenerator:
 
     def generate(self, contract: Contract, package: str) -> dict[str, str]:
         package = package_name(package)
+        command_name = package.replace("_", "-")
+        if "codapact.cli" in contract.metadata:
+            value = contract.metadata["codapact.cli"]
+            if not isinstance(value, str):
+                raise CodaError("invalid CLI command metadata")
+            command_name = slug_name(value)
+        if "codapact.runtime" in contract.metadata:
+            from codapact.profiles import validate_profile
+
+            validate_profile(contract.metadata["codapact.runtime"])
         emitter = TypeEmitter()
         methods = []
         for operation in contract.operations:
@@ -151,7 +162,7 @@ requires-python = ">=3.13"
 dependencies = ["codapact=={__version__}"]
 
 [project.scripts]
-{package.replace("_", "-")} = "{package}.__main__:main"
+{command_name} = "{package}.__main__:main"
 
 [build-system]
 requires = ["uv_build>=0.11.1,<0.13"]
@@ -222,7 +233,8 @@ class ArgparseGenerator:
             "def main(argv=None):\n"
             "    definition = json.loads(\n"
             "        files(__package__).joinpath('cli.json').read_text('utf-8'))\n"
-            "    return run_cli(Client, DOCUMENT, definition, argv)\n\n"
+            "    return run_cli(Client, DOCUMENT, definition, argv,\n"
+            "        profile=DOCUMENT.get('metadata', {}).get('codapact.runtime'))\n\n"
             "if __name__ == '__main__':\n    raise SystemExit(main())\n"
         )
         return {

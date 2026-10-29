@@ -13,6 +13,7 @@ from jsonschema import Draft7Validator
 
 from codapact.errors import ApiError, AuthError, CodaError, PolicyError, ResponseError
 from codapact.net import HttpTransport, Transport, validate_url
+from codapact.values import merge
 
 
 class Unset:
@@ -170,6 +171,12 @@ class ClientBase:
         auth: AuthProvider | None = None,
         policy: AuthorizationPolicy | None = None,
     ) -> None:
+        profile = document.get("metadata", {}).get("codapact.runtime")
+        if profile is not None:
+            from codapact.profiles import validate_profile
+
+            validate_profile(profile)
+            settings = merge(profile["defaults"], settings or {})
         settings = config(settings)
         if document.get("version") != 1:
             raise CodaError("unsupported IR version")

@@ -2,11 +2,10 @@
 
 import argparse
 import sys
-from pathlib import Path
 
 from codapact import __version__
+from codapact.configuration import resolve_generation
 from codapact.errors import CodaError
-from codapact.loading import load
 from codapact.net import HttpTransport
 from codapact.project import generate
 
@@ -16,29 +15,67 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="version", version=f"codapact {__version__}")
     subparsers = parser.add_subparsers(dest="action", required=True)
     command = subparsers.add_parser("generate", help="Generate a Python library and argparse CLI")
-    command.add_argument("source", help="Local OpenAPI JSON/YAML path or HTTPS URL")
-    command.add_argument("--output", type=Path, required=True)
-    command.add_argument("--package", required=True)
-    command.add_argument("--cli-definition", help="Local version 1 CLI definition")
+    command.add_argument("source", nargs="?", help="Local OpenAPI path or HTTP(S) URL")
+    command.add_argument("--manifest", help="Local version 1 generation manifest")
+    fields = {
+        "manifest-version": ("version", int),
+        "contract-type": ("contract.type", str),
+        "output": ("output.directory", str),
+        "package": ("client.package", str),
+        "client-language": ("client.language", str),
+        "cli-style": ("cli.style", str),
+        "slug": ("cli.slug", str),
+        "cli-definition": ("cli.definition", str),
+        "runtime-config-dir": ("runtime.config_directory", str),
+        "runtime-base-url": ("runtime.defaults.base_url", str),
+        "runtime-timeout": ("runtime.defaults.timeout", float),
+        "runtime-policy-allow": ("runtime.defaults.policy.allow", str),
+        "runtime-policy-deny": ("runtime.defaults.policy.deny", str),
+    }
+    for flag, (_, kind) in fields.items():
+        aliases = ["--slug", "--prefix"] if flag == "slug" else ["--" + flag]
+        command.add_argument(*aliases, type=kind, default=argparse.SUPPRESS)
     command.add_argument(
-        "--allow-private", action="store_true", help="Allow private networks and HTTP"
+        "--allow-private", action=argparse.BooleanOptionalAction, default=argparse.SUPPRESS
     )
+    command.add_argument(
+        "--runtime-allow-private", action=argparse.BooleanOptionalAction, default=argparse.SUPPRESS
+    )
+    command.add_argument("--set", action="append", default=[], metavar="FIELD=JSON")
     args = parser.parse_args(argv)
     try:
-        if args.cli_definition and args.cli_definition.startswith(("http://", "https://")):
-            raise CodaError("CLI definition must be local")
-        generate(
-            args.source,
-            args.output,
-            package=args.package,
-            cli_definition=load(args.cli_definition) if args.cli_definition else None,
-            transport=HttpTransport(allow_private=args.allow_private),
-        )
+        overrides = {}
+        for flag, (path, _) in fields.items():
+            if hasattr(args, flag.replace("-", "_")):
+                value = getattr(args, flag.replace("-", "_"))
+                if flag.startswith("runtime-policy-"):
+                    import json
+
+                    try:
+                        value = json.loads(value)
+                    except ValueError:
+                        raise CodaError("policy flags require JSON arrays") from None
+                cursor = overrides
+                parts = path.split(".")
+                for part in parts[:-1]:
+                    cursor = cursor.setdefault(part, {})
+                cursor[parts[-1]] = value
+        if args.source is not None:
+            overrides.setdefault("contract", {})["source"] = args.source
+        if hasattr(args, "allow_private"):
+            overrides.setdefault("contract", {})["allow_private"] = args.allow_private
+        if hasattr(args, "runtime_allow_private"):
+            overrides.setdefault("runtime", {}).setdefault("defaults", {})["allow_private"] = (
+                args.runtime_allow_private
+            )
+        options = resolve_generation(args.manifest, overrides, args.set)
+        allow_private = options.pop("allow_private")
+        generate(**options, transport=HttpTransport(allow_private=allow_private))
     except (CodaError, OSError) as exc:
         message = str(exc) if isinstance(exc, CodaError) else "cannot write generated project"
         print(f"codapact: {message}", file=sys.stderr)
         return 2
-    print(f"Generated {args.package} in {args.output}")
+    print(f"Generated {options['package']} in {options['output']}")
     return 0
 
 
