@@ -1228,3 +1228,50 @@ def test_contract_base_url_cannot_include_a_query(contract):
     with safe_error(CodaError, match="(?i)URL") as caught:
         OpenAPITranslator().translate(contract)
     assert "private" not in str(caught.value)
+
+
+def test_mixed_case_path_placeholders_are_preserved(contract):
+    contract["security"] = []
+    item = contract["paths"].pop("/pets/{pet_id}")
+    item["get"]["parameters"][0]["name"] = "PetID"
+    contract["paths"]["/pets/{PetID}"] = item
+
+    class Transport:
+        def send(self, method, url, headers, body):
+            assert url == "https://example.com/v1/pets/7"
+            return Response(200, {"Content-Type": "application/json"}, b'{"id":7,"name":"Pip"}')
+
+    client = ClientBase(OpenAPITranslator().translate(contract).to_dict(), transport=Transport())
+    assert client._execute("get_pet", {"PetID": 7}) == {"id": 7, "name": "Pip"}
+
+
+@pytest.mark.parametrize("name", ["Example", "XXXX", "X", "x"])
+def test_unrelated_security_schemes_do_not_reserve_synthetic_header_names(contract, name):
+    contract["security"] = []
+    contract["paths"]["/pets/{pet_id}"]["get"]["parameters"].append(
+        {"name": name, "in": "header", "schema": {"type": "string"}}
+    )
+
+    class Transport:
+        def send(self, method, url, headers, body):
+            assert headers[name] == "MiXeD"
+            return Response(200, {"Content-Type": "application/json"}, b'{"id":1,"name":"Pip"}')
+
+    client = ClientBase(OpenAPITranslator().translate(contract).to_dict(), transport=Transport())
+    assert client._execute("get_pet", {"pet_id": 1, name: "MiXeD"})["id"] == 1
+
+
+@pytest.mark.parametrize(
+    "source", ["http://example.invalid/config", "https://example.invalid/config", "file:///config"]
+)
+def test_profile_runtime_configuration_rejects_uris_before_file_access(
+    source, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("unsupported URI must not reach file access")
+
+    monkeypatch.setattr(profiles, "read_file", forbidden)
+    with safe_error(CodaError, match="(?i)local"):
+        profiles.runtime_settings(PROFILE, None, source, {})

@@ -721,3 +721,26 @@ def test_missing_generated_command_or_required_body_fails_before_client_construc
         with pytest.raises(SystemExit) as caught:
             cli.main(arguments)
         assert caught.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "failure", [ValueError("sensitive transport detail"), OSError("sensitive transport detail")]
+)
+def test_generated_cli_redacts_untyped_adapter_failures(
+    contract, tmp_path, monkeypatch, capsys, failure
+):
+    contract["security"] = []
+
+    class Transport:
+        def send(self, method, url, headers, body):
+            raise failure
+
+    with generated(contract, tmp_path, monkeypatch) as module:
+        cli = importlib.import_module("behavior_pets.__main__")
+        monkeypatch.setattr(
+            cli, "Client", lambda **kwargs: module.Client(transport=Transport(), **kwargs)
+        )
+        assert cli.main(["get-pet", "--arg-pet-id", "1"]) == 2
+        output = capsys.readouterr()
+        assert output.out == "" and output.err.strip()
+        assert "sensitive transport detail" not in output.err
