@@ -1,3 +1,12 @@
+---
+type: guide
+status: active
+authority: informative
+criticality: normal
+review:
+  status: unreviewed
+---
+
 # Specialized clients and CLIs
 
 Select operations after translation into the shared IR and before either
@@ -24,7 +33,7 @@ selection:
   exclude: []
 ```
 
-The [runnable domain profile](../examples/pets-read.codapact.yaml) also shows
+The [runnable domain profile](../../examples/pets-read.codapact.yaml) also shows
 stable custom command names. Run it from any directory:
 
 ```console

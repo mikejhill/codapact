@@ -61,9 +61,12 @@ def test_and_within_rule_or_between_rules_and_values_exclude_wins(domain):
     before = copy.deepcopy(definition)
     result = OperationSelector().select(domain, definition)
     assert ids(result) == ["head_probe", "list_pets"]
+    assert isinstance(result.report["definition"], dict)
     assert result.report["definition"]["include"][0]["methods"] == ["GET"]
     assert definition == before
+    assert isinstance(result.report["rules"], dict)
     assert result.report["rules"]["include"][0]["matches"] == ["get_pet", "list_pets"]
+    assert isinstance(result.report["excluded"], list)
     assert {item["id"]: item["reason"] for item in result.report["excluded"]} == {
         "create_pet": "not-included",
         "delete_pet": "not-included",

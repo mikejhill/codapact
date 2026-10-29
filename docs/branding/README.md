@@ -1,3 +1,12 @@
+---
+type: overview
+status: active
+authority: informative
+criticality: low
+review:
+  status: unreviewed
+---
+
 # CodaPact identity
 
 **CodaPact** joins a musical coda, code, a contract, and the idea of impact.
@@ -16,8 +25,8 @@ music notes, terminal windows, and paperwork.
 | Execution point | Amber `#d99732` |
 | Supporting text | Slate `#52627a` |
 
-Use [the wordmark](../branding/wordmark.svg) on light backgrounds and
-[the standalone mark](../branding/mark.svg) where space is limited. SVGs use
+Use [the wordmark](wordmark.svg) on light backgrounds and
+[the standalone mark](mark.svg) where space is limited. SVGs use
 system fonts and contain no scripts, external resources, or embedded images.
 
 Mike selected the name on 2026-10-29. Preliminary exact-name repository and

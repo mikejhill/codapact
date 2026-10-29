@@ -11,6 +11,7 @@ import codapact.auth as auth
 import codapact.profiles as profiles
 import codapact.validation as validation
 from codapact.configuration import clean_defaults, local_path, resolve_generation, runtime_directory
+from codapact.contracts.data import JsonSchema, SecurityScheme
 from codapact.errors import AuthError, CodaError, ResponseError
 from codapact.net import Response
 from codapact.openapi import OpenAPITranslator
@@ -132,6 +133,7 @@ def test_merge_precedence_deep_copy_and_null_resets(tmp_path):
     }
     result = merge(base, update)
     assert result == expected
+    assert isinstance(result["policy"], dict)
     result["policy"]["deny"].append("changed")
     assert base["policy"]["deny"] == ["delete_pet"]
     assert update["policy"]["allow"] == []
@@ -181,7 +183,12 @@ def test_missing_auth_configuration_has_actionable_reference_error():
         {"type": "apiKey", "name": "X-Key"},
     ):
         with safe_error(AuthError, match="(?i)reference"):
-            auth.EnvironmentAuth().headers("token", scheme)
+            typed_scheme: SecurityScheme = {
+                "type": scheme["type"],
+                "scheme": scheme.get("scheme", ""),
+                "name": scheme.get("name", ""),
+            }
+            auth.EnvironmentAuth().headers("token", typed_scheme)
 
 
 @pytest.mark.parametrize("value", ["", None, *["before" + chr(c) + "after" for c in [1, 31, 127]]])
@@ -270,13 +277,14 @@ def test_no_discovery_writes_and_exact_file_size_limit(tmp_path):
 
 
 def test_nested_nullable_and_additional_integer_mapping():
-    schema = {
+    schema: JsonSchema = {
         "type": "object",
         "properties": {"optional": {"type": ["integer", "null"]}},
         "additionalProperties": {"type": "array", "items": {"type": "integer"}},
     }
     result = map_types({"optional": 2.0, "extra": [3.0, 4]}, schema)
     assert result == {"optional": 2, "extra": [3, 4]}
+    assert isinstance(result, dict)
     assert type(result["optional"]) is int and type(result["extra"][0]) is int
     assert map_types({"optional": None}, schema) == {"optional": None}
     assert map_types({"extra": 1.5}, {"type": "object"}) == {"extra": 1.5}
@@ -584,6 +592,7 @@ def test_precise_request_serialization_and_untrusted_response_errors(contract):
     result = instance._execute(
         "get_pet", {"pet_id": "a/b ?", "query": "é & x", "active": False, "X-Count": 3.0}
     )
+    assert isinstance(result, dict)
     assert type(result["id"]) is int
     assert transport.calls == [
         (
@@ -633,7 +642,7 @@ def test_runtime_defaults_explicit_overrides_and_default_transport_policy(contra
             self.calls.append((method, url, headers, body))
             return self.response
 
-    monkeypatch.setattr("codapact.runtime.HttpTransport", Transport)
+    monkeypatch.setattr("codapact.execution.client.HttpTransport", Transport)
     document["metadata"]["codapact.runtime"] = {
         **PROFILE,
         "defaults": {
@@ -1209,6 +1218,7 @@ def test_nested_nullable_array_and_dictionary_schemas_are_normalized_and_enforce
     instance = ClientBase(ir.to_dict(), transport=Transport())
     result = instance._execute("create_pet", body={"numbers": [None, 2.0]})
     assert result == {"numbers": [None, 2]}
+    assert isinstance(result, dict)
     assert type(result["numbers"][1]) is int
 
 
@@ -1262,7 +1272,9 @@ def test_unrelated_security_schemes_do_not_reserve_synthetic_header_names(contra
             return Response(200, {"Content-Type": "application/json"}, b'{"id":1,"name":"Pip"}')
 
     client = ClientBase(OpenAPITranslator().translate(contract).to_dict(), transport=Transport())
-    assert client._execute("get_pet", {"pet_id": 1, name: "MiXeD"})["id"] == 1
+    result = client._execute("get_pet", {"pet_id": 1, name: "MiXeD"})
+    assert isinstance(result, dict)
+    assert result["id"] == 1
 
 
 @pytest.mark.parametrize(

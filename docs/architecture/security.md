@@ -1,3 +1,12 @@
+---
+type: architecture
+status: active
+authority: informative
+criticality: normal
+review:
+  status: unreviewed
+---
+
 # Security analysis
 
 The CodeQL workflow analyzes Python and GitHub Actions with the
@@ -24,9 +33,9 @@ verification and explicit approval. Workflow installation itself does not change
 rulesets or default-setup settings. No mandatory reviewer approvals are required.
 
 Mutation remains asynchronous and is never a required merge or release check.
-See [mutation testing](mutation.md) for score evidence, execution incidents, and
+See [mutation testing](../operations/mutation-testing.md) for score evidence, execution incidents, and
 triage ownership. Credentials should never be committed; runtime credential
-storage guidance is in [configuration](configuration.md).
+storage guidance is in [configuration](../reference/configuration.md).
 
 The HTTP transport explicitly requires TLS 1.2 or newer while retaining normal
 certificate and hostname verification and preserving a stricter existing minimum.

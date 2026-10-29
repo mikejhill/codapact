@@ -1,10 +1,21 @@
+---
+type: runbook
+status: draft
+authority: informative
+criticality: high
+review:
+  status: needs-review
+---
+
 # Releases
+
+Draft operational guidance; revalidate the full procedure before relying on it.
 
 The project follows VerdiClip's current standard: uv builds, Conventional
 Commits, SemVer, release-please release PRs, changelogs, `vX.Y.Z` tags,
 release-commit CI, one wheel/sdist build, version verification, provenance
 attestations, and PyPI trusted publishing. Sources inspected were VerdiClip's
-`docs/releasing.md`, `release-please-config.json`, `pyproject.toml`, and
+`docs/operations/releasing.md`, `release-please-config.json`, `pyproject.toml`, and
 `.github/workflows/release.yml` on main on 2026-10-29.
 
 Squash-merge PRs using Conventional Commit titles. `fix:` and `perf:` bump patch;
@@ -27,7 +38,7 @@ is required for this manual PR step. Confirm only intended version/changelog/
 lockfile changes are included and that `CI passed` succeeds.
 
 Mutation analysis remains asynchronous and is not part of `CI passed` or the
-release dependency chain. Its durable alerts are described in [mutation.md](mutation.md).
+release dependency chain. Its durable alerts are described in [mutation.md](mutation-testing.md).
 
 The workflow dispatches CI on release PR branches because the default GitHub
 token suppresses follow-on workflow events. An optional `RELEASE_PLEASE_TOKEN`

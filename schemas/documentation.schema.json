@@ -1,0 +1,392 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project documentation metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "status",
+    "authority",
+    "criticality",
+    "review"
+  ],
+  "properties": {
+    "type": {
+      "enum": [
+        "overview",
+        "guide",
+        "reference",
+        "architecture",
+        "runbook",
+        "decision",
+        "plan"
+      ]
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "active",
+        "deprecated",
+        "superseded",
+        "proposed",
+        "accepted",
+        "rejected",
+        "exploratory",
+        "completed",
+        "abandoned"
+      ]
+    },
+    "authority": {
+      "enum": [
+        "informative",
+        "normative",
+        "exploratory",
+        "historical"
+      ]
+    },
+    "criticality": {
+      "enum": [
+        "low",
+        "normal",
+        "high"
+      ]
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "unreviewed",
+            "needs-review",
+            "verified"
+          ]
+        }
+      }
+    },
+    "generated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "by",
+        "sources",
+        "method"
+      ],
+      "properties": {
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "verified": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "by",
+        "evidence",
+        "scope"
+      ],
+      "properties": {
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "superseded_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "extensions": {
+      "$ref": "#/$defs/extensions"
+    }
+  },
+  "$defs": {
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "not": {
+          "pattern": "^([tT][iI][mM][eE][sS][tT][aA][mM][pP]|[tT][iI][mM][eE][sS][tT][aA][mM][pP][sS]|[dD][aA][tT][eE]|[tT][iI][mM][eE]|[cC][rR][eE][aA][tT][eE][dD]|[uU][pP][dD][aA][tT][eE][dD]|[cC][rR][eE][aA][tT][eE][dD]_[aA][tT]|[uU][pP][dD][aA][tT][eE][dD]_[aA][tT]|[cC][rR][eE][aA][tT][eE][dD]_[oO][nN]|[uU][pP][dD][aA][tT][eE][dD]_[oO][nN]|[rR][eE][vV][iI][eE][wW][eE][dD]_[aA][tT]|[vV][eE][rR][iI][fF][iI][eE][dD]_[aA][tT]|[lL][aA][sS][tT]_[rR][eE][vV][iI][eE][wW]|[rR][eE][vV][iI][eE][wW]_[dD][aA][tT][eE]|[cC][rR][eE][aA][tT][eE][dD][aA][tT]|[uU][pP][dD][aA][tT][eE][dD][aA][tT]|[rR][eE][vV][iI][eE][wW][eE][dD][aA][tT]|[vV][eE][rR][iI][fF][iI][eE][dD][aA][tT])$"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/extensionValue"
+      }
+    },
+    "extensionValue": {
+      "anyOf": [
+        {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/extensionValue"
+          }
+        },
+        {
+          "$ref": "#/$defs/extensions"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "decision"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "enum": [
+              "proposed",
+              "accepted",
+              "rejected",
+              "superseded"
+            ]
+          }
+        }
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "type": {
+              "const": "plan"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "status": {
+              "enum": [
+                "exploratory",
+                "proposed",
+                "active",
+                "completed",
+                "abandoned"
+              ]
+            },
+            "authority": {
+              "const": "exploratory"
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "status": {
+              "enum": [
+                "draft",
+                "active",
+                "deprecated",
+                "superseded"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "review": {
+            "properties": {
+              "status": {
+                "const": "verified"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "verified"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "verified"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "superseded"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "superseded_by"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "decision"
+          },
+          "status": {
+            "enum": [
+              "rejected",
+              "superseded"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "authority": {
+            "const": "historical"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "draft",
+              "proposed",
+              "exploratory"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "authority": {
+            "not": {
+              "const": "normative"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "runbook"
+          },
+          "criticality": {
+            "const": "high"
+          },
+          "status": {
+            "const": "active"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "review": {
+            "properties": {
+              "status": {
+                "const": "verified"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "decision"
+          },
+          "status": {
+            "const": "accepted"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "authority": {
+            "enum": [
+              "normative",
+              "informative"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "runbook"
+          },
+          "criticality": {
+            "const": "high"
+          },
+          "review": {
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "verified"
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "draft"
+          },
+          "review": {
+            "properties": {
+              "status": {
+                "const": "needs-review"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

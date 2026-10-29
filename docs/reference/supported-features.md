@@ -1,3 +1,12 @@
+---
+type: reference
+status: active
+authority: informative
+criticality: normal
+review:
+  status: unreviewed
+---
+
 # Supported contract slice
 
 - OpenAPI 3.0.0–3.0.3, JSON or data-only YAML.
@@ -87,6 +96,6 @@ CLI help describes commands, inputs, and configuration-directory discovery;
 generation help shows assignment syntax for `--set`. Descriptions can evolve
 without preserving exact wording, case, decoration, or column widths.
 
-The [46-item mutation review](mutation-review-ab121cb.json) records behavior
+The [46-item mutation review](../development/mutation-review-ab121cb.json) records behavior
 counterexamples, presentation differences, and equivalence candidates against
 the referenced baseline. It does not exclude mutants or adjust the raw score.
