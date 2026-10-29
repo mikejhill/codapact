@@ -5,6 +5,7 @@ import json
 import os
 import re
 import tempfile
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -140,12 +141,25 @@ def generate(
     targets: tuple[str, ...] = ("python", "argparse"),
     cli_definition: dict[str, Any] | None = None,
     transport: Transport | None = None,
+    profile: dict[str, Any] | None = None,
 ) -> None:
     package_name(package)
     translator, generators = (registry or default_registry()).negotiate(source_plugin, targets)
     contract = translator.translate(load(source, transport=transport))
     if contract.version != 1:
         raise CodaError("unsupported IR version")
+    if profile is not None:
+        from codapact.profiles import validate_profile
+
+        profile = validate_profile(profile)
+        contract = replace(
+            contract,
+            metadata={
+                **contract.metadata,
+                "codapact.runtime": profile,
+                "codapact.cli": profile["slug"],
+            },
+        )
     files: dict[str, str] = {}
     for generator in generators:
         generated = (

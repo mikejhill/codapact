@@ -4,11 +4,13 @@ import argparse
 import json
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from codapact.errors import ApiError, CodaError, PolicyError, ResponseError, TransportError
 from codapact.loading import load
-from codapact.runtime import UNSET, ClientBase
+from codapact.profiles import JsonFileStore, StoredAuth, runtime_settings
+from codapact.runtime import UNSET, ClientBase, EnvironmentAuth
 
 
 def run_cli(
@@ -16,9 +18,19 @@ def run_cli(
     document: dict[str, Any],
     definition: dict[str, Any],
     argv: list[str] | None = None,
+    *,
+    profile: dict[str, Any] | None = None,
 ) -> int:
     parser = argparse.ArgumentParser(description="Generated CodaPact API CLI")
     parser.add_argument("--config", help="Local JSON/YAML runtime configuration")
+    parser.add_argument("--config-dir", help="Override configuration directory")
+    parser.add_argument("--auth-file", help="Override auth.json path")
+    parser.add_argument(
+        "--no-auth-file", action="store_true", help="Disable credential file discovery"
+    )
+    parser.add_argument("--base-url")
+    parser.add_argument("--timeout", type=float)
+    parser.add_argument("--allow-private", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--pretty", action="store_true", help="Indent JSON output")
     commands = parser.add_subparsers(dest="command", required=True)
     operations = {op["id"]: op for op in document["operations"]}
@@ -42,8 +54,34 @@ def run_cli(
     try:
         if args.config and args.config.startswith(("http://", "https://")):
             raise CodaError("runtime configuration must be local")
-        settings = load(args.config) if args.config else {}
-        client = factory(settings=settings)
+        if profile is None:
+            settings = load(args.config) if args.config else {}
+            if args.config_dir or args.auth_file or args.no_auth_file:
+                raise CodaError("configuration discovery requires a generated runtime profile")
+            client = factory(settings=settings)
+        else:
+            overrides = {
+                key: getattr(args, key)
+                for key in ("base_url", "timeout", "allow_private")
+                if getattr(args, key) is not None
+            }
+            settings, directory = runtime_settings(profile, args.config_dir, args.config, overrides)
+            if args.auth_file and args.no_auth_file:
+                raise CodaError("--auth-file and --no-auth-file conflict")
+            if args.auth_file and "://" in args.auth_file:
+                raise CodaError("auth file must be local")
+            auth = (
+                EnvironmentAuth(settings.get("auth"))
+                if args.no_auth_file
+                else StoredAuth(
+                    JsonFileStore(
+                        Path(args.auth_file) if args.auth_file else directory / "auth.json",
+                        optional=args.auth_file is None,
+                    ),
+                    EnvironmentAuth(settings.get("auth")),
+                )
+            )
+            client = factory(settings=settings, auth=auth)
         operation = mapping[args.command]
         parameters: dict[str, Any] = {}
         for index, parameter in enumerate(operation["parameters"]):

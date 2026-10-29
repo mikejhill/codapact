@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodaPact generation manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {"const": 1, "type": "integer"},
+    "contract": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "type": {"const": "openapi"},
+        "allow_private": {"type": "boolean"}
+      }
+    },
+    "output": {
+      "type": "object", "additionalProperties": false,
+      "properties": {"directory": {"type": "string", "minLength": 1}}
+    },
+    "client": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "language": {"const": "python"},
+        "package": {"type": "string", "minLength": 1}
+      }
+    },
+    "cli": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "style": {"const": "argparse"},
+        "slug": {"type": "string", "minLength": 1},
+        "definition": {"type": ["string", "null"], "minLength": 1}
+      }
+    },
+    "runtime": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "config_directory": {"type": ["string", "null"], "minLength": 1},
+        "defaults": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "base_url": {"type": ["string", "null"], "minLength": 1},
+            "timeout": {"type": "number", "exclusiveMinimum": 0, "maximum": 120},
+            "allow_private": {"type": "boolean"},
+            "policy": {
+              "type": "object", "additionalProperties": false,
+              "properties": {
+                "allow": {"type": ["array", "null"], "items": {"type": "string"}},
+                "deny": {"type": "array", "items": {"type": "string"}}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
