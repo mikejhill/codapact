@@ -521,8 +521,7 @@ class _Translator:
                 return t.Primitive(t.ScalarKind.BOOLEAN)
             case None:
                 return t.Primitive(t.ScalarKind.ANY)
-            case _:
-                raise ContractError(f"{where}: unknown schema type {kind!r}")
+        raise ContractError(f"{where}: unknown schema type {kind!r}")
 
     def object(self, schema: dict[str, Any], hint: str, where: str, *, named: bool) -> t.TypeExpr:
         properties = schema.get("properties") or {}
