@@ -1,269 +1,264 @@
-import copy
+"""Generated code end to end: pipeline → Python library → Python CLI, and TypeScript."""
+
+from __future__ import annotations
+
 import importlib
+import io
 import json
-import time
-import tomllib
-import typing
-from dataclasses import replace
+import shutil
+import subprocess
+import sys
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+from typing import Any
 
 import pytest
-from hypothesis import given
-from hypothesis import strategies as st
 
-from codapact.errors import CodaError
-from codapact.generation import ArgparseGenerator, PythonGenerator, TypeEmitter, package_name
-from codapact.model import Registry
-from codapact.openapi import OpenAPITranslator
-from codapact.project import default_registry, generate, write_project
-from tests.assertions import safe_error
+from codapact.pipeline.config import ProjectConfig
+from codapact.pipeline.defaults import default_registry
+from codapact.pipeline.pipeline import Pipeline
+from codapact.runtime import StaticAuth
+from tests.support import EXAMPLES, FakeTransport, Library, Petstore, serve
 
 
-def test_generated_library_and_cli(contract, server, tmp_path, monkeypatch, capsys):
-    source = tmp_path / "openapi.json"
-    source.write_text(json.dumps(contract), encoding="utf-8")
-    output = tmp_path / "generated"
-    generate(str(source), output, package="fixture_api")
-    monkeypatch.syspath_prepend(str(output / "src"))
-    monkeypatch.setenv("FIXTURE_TOKEN", "fixture-secret")
-    settings = {"version": 1, "allow_private": True, "auth": {"token": {"env": "FIXTURE_TOKEN"}}}
-    module = importlib.import_module("fixture_api")
-    assert module.Client(settings=settings).get_pet(parameters={"pet_id": 42})["id"] == 42
-    config = tmp_path / "config.json"
-    config.write_text(json.dumps(settings), encoding="utf-8")
-    cli = importlib.import_module("fixture_api.__main__")
-    assert cli.main(["--config", str(config), "get-pet", "--arg-pet-id", "42"]) == 0
-    assert json.loads(capsys.readouterr().out)["id"] == 42
-    for value, expected in [("404", 5), ("999", 6), ("bad", 2)]:
-        assert cli.main(["--config", str(config), "get-pet", "--arg-pet-id", value]) == expected
-        assert "fixture-secret" not in capsys.readouterr().err
-    assert cli.main(["get-pet", "--arg-pet-id", "1"]) == 3
-    config.write_text(json.dumps({"policy": {"deny": ["get_pet"]}}), encoding="utf-8")
-    assert cli.main(["--config", str(config), "get-pet", "--arg-pet-id", "1"]) == 3
-    assert cli.main(["--config", "https://example.com/config", "get-pet", "--arg-pet-id", "1"]) == 2
+def generate(example: str, tmp_path: Path) -> Path:
+    config = ProjectConfig.load(EXAMPLES / example / "codapact.yaml")
+    config = ProjectConfig(
+        source=config.source,
+        targets=tuple(
+            type(t)(
+                tmp_path / t.output.relative_to(EXAMPLES / example), t.name, t.plugin, t.options
+            )
+            for t in config.targets
+        ),
+        shape=config.shape,
+        surface=config.surface,
+        cli=config.cli,
+        base=EXAMPLES / example,
+    )
+    result = Pipeline(default_registry()).run(config)
+    assert not result.diagnostics.has_errors, list(result.diagnostics)
+    return tmp_path / "generated"
 
 
-def test_determinism_conflicts_stale_and_preservation(contract, tmp_path):
-    source = tmp_path / "api.json"
-    source.write_text(json.dumps(contract), encoding="utf-8")
-    output = tmp_path / "result"
-    generate(str(source), output, package="pet_api")
-    snapshot = {
-        p.relative_to(output).as_posix(): p.read_bytes() for p in output.rglob("*") if p.is_file()
-    }
-    generate(str(source), output, package="pet_api")
-    assert snapshot == {
-        p.relative_to(output).as_posix(): p.read_bytes() for p in output.rglob("*") if p.is_file()
-    }
-    user = output / "notes.txt"
-    user.write_text("keep me")
-    generate(str(source), output, package="renamed_api")
-    assert not (output / "src/pet_api/client.py").exists()
-    assert user.read_text() == "keep me"
-    edited = output / "src/renamed_api/client.py"
-    edited.write_text("user edits")
-    with safe_error(CodaError, match="modified"):
-        generate(str(source), output, package="renamed_api")
-    assert edited.read_text() == "user edits"
+def load_package(root: Path, name: str):
+    sys.path.insert(0, str(root / "python" / "src"))
+    try:
+        for module in [m for m in sys.modules if m == name or m.startswith(name + ".")]:
+            del sys.modules[module]
+        return importlib.import_module(name), importlib.import_module(f"{name}.cli")
+    finally:
+        sys.path.pop(0)
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "../escape",
-        "x/y",
-        "class",
-        "con",
-        "codapact",
-        "x\nimport os",
-        "a-b",
-        "http",
-        "ssl",
-        "jsonschema",
-    ],
-)
-def test_invalid_package(name):
-    with safe_error(CodaError):
-        package_name(name)
+def run_cli(
+    cli, argv: list[str], monkeypatch: pytest.MonkeyPatch, **env: str
+) -> tuple[int, str, str]:
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        try:
+            code = cli.main(argv)
+        except SystemExit as exit_:
+            code = int(exit_.code or 0)
+    return code, out.getvalue(), err.getvalue()
 
 
-@pytest.mark.parametrize(
-    "path",
-    ["../escape", "/absolute", "C:/evil", "a\\b", ".codapact-manifest.json", "CON", "a/NUL.txt"],
-)
-def test_plugin_path_traversal(tmp_path, path):
-    with safe_error(CodaError):
-        write_project(tmp_path, {path: "bad"})
+@pytest.fixture(scope="module")
+def petstore(tmp_path_factory: pytest.TempPathFactory):
+    root = generate("petstore", tmp_path_factory.mktemp("petstore"))
+    return root, *load_package(root, "petstore")
 
 
-def test_unowned_and_bad_manifest(tmp_path):
-    (tmp_path / "file").write_text("user")
-    with safe_error(CodaError):
-        write_project(tmp_path, {"file": "generated"})
-    (tmp_path / ".codapact-manifest.json").write_text("{}")
-    with safe_error(CodaError):
-        write_project(tmp_path, {"another": "generated"})
+@pytest.fixture(scope="module")
+def library(tmp_path_factory: pytest.TempPathFactory):
+    root = generate("library", tmp_path_factory.mktemp("library"))
+    return root, *load_package(root, "library")
 
 
-@pytest.mark.parametrize(
-    "files",
-    [
-        {"a": "file", "a/b": "nested"},
-        {"File": "one", "file": "two"},
-        {"a/./b": "noncanonical"},
-        {"a//b": "noncanonical"},
-    ],
-)
-def test_conflicting_file_paths(tmp_path, files):
-    with safe_error(CodaError):
-        write_project(tmp_path / "output", files)
-    assert not (tmp_path / "output").exists()
+def test_python_library_calls_through_namespaces(petstore) -> None:
+    _, package, _ = petstore
+    transport = FakeTransport(Petstore())
+    client = package.Client(
+        auth=StaticAuth({"token": "secret"}), transport=transport, middleware=()
+    )
+    assert client.pets.get(pet_id=1)["name"] == "Miso"
+    created = client.pets.create(name="Ramen", status="pending")
+    assert created["status"] == "pending"
+    assert json.loads(transport.requests[-1].body or b"") == {"name": "Ramen", "status": "pending"}
+    assert [p["id"] for p in client.pets.list_iter(limit=2)] == [1, 2, 3, 4, 5, 6]
+    assert client.health() == "ok"
 
 
-def test_cli_definition(contract):
-    ir = OpenAPITranslator().translate(contract)
-    definition = {
-        "version": 1,
-        "commands": [
-            {"name": "command-" + str(index), "operation": op.id}
-            for index, op in enumerate(ir.operations)
-        ],
-    }
+def test_python_package_layout(petstore) -> None:
+    root, _, _ = petstore
+    python = root / "python"
+    pyproject = (python / "pyproject.toml").read_text("utf-8")
+    assert 'petstore = "petstore.cli:main"' in pyproject
+    assert "codapact>=" in pyproject
+    types = (python / "src/petstore/types.py").read_text("utf-8")
     assert (
-        "command-0"
-        in ArgparseGenerator().generate_with_definition(ir, "pet_api", definition)[
-            "src/pet_api/cli.json"
-        ]
+        "Pet = TypedDict(" in types
+        and "type PetStatus = Literal['available', 'pending', 'sold']" in types
     )
-    for invalid in [
-        {"version": 2, "commands": []},
-        {"version": 1, "commands": []},
-        {"version": 1, "commands": [{"name": "../evil", "operation": "get_pet"}]},
-        {"version": 1, "commands": [None]},
-    ]:
-        with safe_error(CodaError):
-            ArgparseGenerator().generate_with_definition(ir, "pet_api", invalid)
+    manifest = json.loads((python / ".codapact-manifest.json").read_text("utf-8"))
+    assert "src/petstore/cli.py" in manifest["files"]
 
 
-def test_real_alternate_plugins(contract, tmp_path):
-    class FixtureTranslator:
-        api_version = 1
-        capabilities = frozenset({"json-http-v1", "ir-v1"})
-
-        def translate(self, document):
-            return OpenAPITranslator().translate(document["fixture"])
-
-    class JsonIndex:
-        api_version = 1
-        requires = frozenset({"ir-v1"})
-
-        def generate(self, contract, package):
-            return {"operation-index.json": json.dumps([op.id for op in contract.operations])}
-
-    registry = default_registry()
-    registry.translator("fixture", FixtureTranslator())
-    registry.generator("index", JsonIndex())
-    source = tmp_path / "fixture.json"
-    source.write_text(json.dumps({"fixture": contract}), encoding="utf-8")
-    generate(
-        str(source),
-        tmp_path / "output",
-        package="pets",
-        registry=registry,
-        source_plugin="fixture",
-        targets=("python", "argparse", "index"),
-    )
-    assert json.loads((tmp_path / "output/operation-index.json").read_text()) == [
-        "create_pet",
-        "delete_pet",
-        "get_pet",
-        "list_pets",
-    ]
-    with safe_error(CodaError):
-        registry.translator("fixture", FixtureTranslator())
-    plugin = JsonIndex()
-    plugin.api_version = 2
-    with safe_error(CodaError):
-        registry.generator("bad", plugin)
-    plugin.api_version = 1
-    plugin.requires = frozenset({"streaming"})
-    registry.generator("streaming", plugin)
-    with safe_error(CodaError):
-        registry.negotiate("openapi", ("streaming",))
-    with safe_error(CodaError):
-        Registry().negotiate("missing", ())
-
-
-@given(st.text(max_size=80))
-def test_type_field_strings_are_data(value):
-    emitter = TypeEmitter()
-    emitter.emit({"type": "object", "properties": {value: {"type": "string"}}}, "Safe")
-    source = "from typing import TypedDict, NotRequired\n" + "\n".join(emitter.lines)
-    compile(source, "generated", "exec")
-
-
-def test_generation_budget(contract):
-    document = copy.deepcopy(contract)
-    document["paths"] = {
-        f"/items/{index}": {
-            "get": {
-                "operationId": f"get_item_{index}",
-                "responses": {
-                    "200": {
-                        "description": "item",
-                        "content": {"application/json": {"schema": {"type": "string"}}},
-                    }
-                },
-            }
+def test_python_cli_over_real_http(petstore, monkeypatch: pytest.MonkeyPatch) -> None:
+    _, _, cli = petstore
+    with serve(Petstore()) as url:
+        env = {
+            "PETSTORE_BASE_URL": url + "/v1",
+            "PETSTORE_TOKEN": "secret",
+            "PETSTORE_ALLOW_PRIVATE": "1",
         }
-        for index in range(100)
+        code, out, err = run_cli(cli, ["pets", "get", "--pet-id", "2"], monkeypatch, **env)
+        assert (code, err) == (0, "") and json.loads(out)["name"] == "Tofu"
+        code, out, _ = run_cli(
+            cli, ["pets", "list", "--all", "--limit", "2", "--max-items", "3"], monkeypatch, **env
+        )
+        assert code == 0 and [p["id"] for p in json.loads(out)] == [1, 2, 3]
+        code, out, _ = run_cli(
+            cli,
+            ["pets", "create", "--name", "Ramen", "--status", "sold", "--output", "yaml"],
+            monkeypatch,
+            **env,
+        )
+        assert code == 0 and "status: sold" in out
+        code, _, err = run_cli(cli, ["pets", "get", "--pet-id", "99"], monkeypatch, **env)
+        assert code == 1 and "not_found" in err
+        code, _, err = run_cli(cli, ["pets", "list", "--limit", "500"], monkeypatch, **env)
+        assert code == 2 and "must be <= 100" in err
+        code, out, _ = run_cli(cli, ["health", "--output", "raw"], monkeypatch, **env)
+        assert (code, out) == (0, "ok\n")
+        monkeypatch.delenv("PETSTORE_TOKEN")
+        code, _, err = run_cli(cli, ["pets", "get", "--pet-id", "1"], monkeypatch)
+        assert code == 3 and "token" in err
+    code, _, err = run_cli(cli, ["pets", "status"], monkeypatch)
+    assert code == 2
+
+
+def test_graphql_library_and_cli(library, monkeypatch: pytest.MonkeyPatch) -> None:
+    _, package, cli = library
+    client = package.Client(
+        auth=StaticAuth({"token": "secret"}), transport=FakeTransport(Library()), middleware=()
+    )
+    assert [b["title"] for b in client.book_titles(genre="FICTION")] == [
+        "The Dispossessed",
+        "Earthsea",
+    ]
+    with serve(Library()) as url:
+        env = {
+            "LIBRARY_BASE_URL": url + "/graphql",
+            "LIBRARY_TOKEN": "secret",
+            "LIBRARY_ALLOW_PRIVATE": "1",
+        }
+        code, out, err = run_cli(cli, ["dashboard"], monkeypatch, **env)
+        assert code == 0, err
+        assert json.loads(out)["featured"]["title"] == "The Dispossessed"
+
+
+def test_regeneration_is_idempotent_and_protects_edits(tmp_path: Path) -> None:
+    root = generate("petstore", tmp_path)
+    again = Pipeline(default_registry())
+    config = ProjectConfig.from_data(
+        {
+            "version": 1,
+            "source": {"type": "openapi", "path": str(EXAMPLES / "petstore" / "openapi.yaml")},
+            "targets": [
+                {"name": "python", "output": "generated/python", "options": {"package": "petstore"}}
+            ],
+        },
+        base=tmp_path,
+    )
+    result = again.run(config, dry_run=True)
+    plan = result.plans[tmp_path / "generated/python"]
+    assert "src/petstore/cli.py" in plan.delete and "src/petstore/types.py" in plan.unchanged
+    (root / "python/src/petstore/types.py").write_text("# edited\n")
+    from codapact.core.errors import OwnershipError
+
+    with pytest.raises(OwnershipError, match="types.py"):
+        again.run(config)
+
+
+def _node_with_strip_types() -> str | None:
+    node = shutil.which("node")
+    if node is None:
+        return None
+    probe = subprocess.run(
+        [node, "--experimental-strip-types", "--no-warnings", "-e", "0"],
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    return node if probe.returncode == 0 else None
+
+
+NODE = _node_with_strip_types()
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def run_node(script: str, index: Path, url: str) -> dict[str, Any]:
+    assert NODE is not None
+    completed = subprocess.run(
+        [
+            NODE,
+            "--experimental-strip-types",
+            "--no-warnings",
+            str(FIXTURES / script),
+            index.as_uri(),
+            url,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout)
+
+
+@pytest.mark.skipif(NODE is None, reason="node >= 22.6 is not installed")
+def test_typescript_client_runs_against_real_http(tmp_path: Path) -> None:
+    index = generate("petstore", tmp_path) / "typescript/src/index.ts"
+    with serve(Petstore()) as url:
+        result = run_node("petstore_smoke.ts", index, url + "/v1")
+    assert result == {
+        "name": "Natto",
+        "created": "sold",
+        "ids": [1, 2, 3, 4, 5, 6],
+        "status": 404,
+        "health": "ok",
     }
-    start = time.monotonic()
-    ir = OpenAPITranslator().translate(document)
-    generated = PythonGenerator().generate(ir, "large_api")
-    compile(generated["src/large_api/client.py"], "client.py", "exec")
-    assert time.monotonic() - start < 10
 
 
-@pytest.mark.parametrize("name", ["trailing.", "nested/trailing.", "con.txt"])
-def test_portable_output_names_fail_before_writes(name, tmp_path):
-    root = tmp_path / "new-output"
-    with safe_error(CodaError, match="unsafe generated path"):
-        write_project(root, {name: "untrusted content"})
-    assert not root.exists()
+@pytest.mark.skipif(NODE is None, reason="node >= 22.6 is not installed")
+def test_typescript_graphql_client(tmp_path: Path) -> None:
+    index = generate("library", tmp_path) / "typescript/src/index.ts"
+    with serve(Library()) as url:
+        result = run_node("library_smoke.ts", index, url + "/graphql")
+    assert result == {
+        "titles": ["The Dispossessed", "Earthsea"],
+        "kinds": ["Book", "Book", "Author"],
+    }
 
 
-def test_default_generated_command_and_runtime_profile_validation(contract):
-    ir = OpenAPITranslator().translate(contract)
-    generator = PythonGenerator()
-    files = generator.generate(ir, "pet_client")
-    project = tomllib.loads(files["pyproject.toml"])
-    assert project["project"]["scripts"] == {"pet-client": "pet_client.__main__:Application.main"}
-    for profile in [
-        None,
-        {},
-        {"version": 1, "slug": "pets", "config_directory": "relative", "defaults": {}},
-    ]:
-        with safe_error(CodaError):
-            generator.generate(replace(ir, metadata={"codapact.runtime": profile}), "pet_client")
+TY = shutil.which("ty")
 
 
-def test_generator_registry_rejects_duplicate_and_noninteger_versions():
-    registry = default_registry()
-    original = registry.generators["python"]
-    with safe_error(CodaError, match="(?i)(duplicate|plugin)"):
-        registry.generator("python", PythonGenerator())
-    assert registry.generators["python"] is original
-    for version in [True, 1.0]:
-        plugin = typing.cast(typing.Any, PythonGenerator())
-        plugin.api_version = version
-        with safe_error(CodaError, match="(?i)version"):
-            registry.generator("alternate", plugin)
-
-
-def test_nullable_ir_type_order_does_not_change_generated_meaning():
-    annotation = TypeEmitter().emit({"type": ["null", "string"]}, "Value")
-
-    class Shape:
-        __annotations__ = {"value": annotation}
-
-    assert typing.get_type_hints(Shape)["value"] == str | None
+@pytest.mark.skipif(TY is None, reason="ty is not installed")
+def test_generated_python_type_checks(petstore, library, tmp_path: Path) -> None:
+    for root, package in ((petstore[0], "petstore"), (library[0], "library")):
+        shutil.copytree(root / "python" / "src" / package, tmp_path / package)
+    completed = subprocess.run(
+        [str(TY), "check", "--python", sys.executable, str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr

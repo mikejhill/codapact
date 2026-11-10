@@ -1,0 +1,49 @@
+"""A small library catalogue used by Codapact examples and tests."""
+schema { query: Query mutation: Mutation }
+
+scalar DateTime
+
+enum Genre { FICTION NON_FICTION POETRY }
+
+interface Node { id: ID! }
+
+type Author implements Node {
+  id: ID!
+  name: String!
+  books: [Book!]!
+}
+
+type Book implements Node {
+  id: ID!
+  title: String!
+  genre: Genre!
+  publishedAt: DateTime
+  author: Author!
+}
+
+type Magazine implements Node {
+  id: ID!
+  title: String!
+  issue: Int!
+}
+
+union SearchResult = Book | Author | Magazine
+
+input NewBook {
+  title: String!
+  genre: Genre!
+  authorId: ID!
+}
+
+type Query {
+  "Fetch one book by id."
+  book(id: ID!): Book
+  books(genre: Genre, first: Int = 10): [Book!]!
+  search(text: String!): [SearchResult!]!
+  node(id: ID!): Node
+}
+
+type Mutation {
+  "Add a book to the catalogue."
+  addBook(input: NewBook!): Book!
+}

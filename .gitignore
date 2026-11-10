@@ -14,3 +14,7 @@ __pycache__/
 coverage.xml
 dist/
 *.egg-info/
+
+# Example outputs are regenerated, not committed
+examples/*/generated/
+node_modules/

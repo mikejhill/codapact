@@ -1,0 +1,23 @@
+version: 1
+source:
+  type: openapi
+  path: openapi.yaml
+shape:
+  - group: {by: tag}
+  - paginate:
+      operations: [list_pets]
+      style: cursor
+      param: cursor
+      next: next_cursor
+      items: items
+cli:
+  program: petstore
+targets:
+  - name: python
+    output: generated/python
+    options: {package: petstore}
+  - name: python-cli
+    output: generated/python
+  - name: typescript
+    output: generated/typescript
+    options: {package: petstore}

@@ -1,0 +1,13 @@
+query BookTitles($genre: Genre) {
+  books(genre: $genre) { ...BookSummary }
+}
+
+query Dashboard {
+  featured: book(id: "1") { title author { name } }
+  results: search(text: "a") {
+    ... on Book { title }
+    ... on Author { name }
+  }
+}
+
+fragment BookSummary on Book { id title genre }
