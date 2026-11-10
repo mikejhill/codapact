@@ -99,7 +99,7 @@ def test_registry_rejects_incapable_targets() -> None:
 def test_writer_plans_and_owns(tmp_path: Path) -> None:
     files = (GeneratedFile("a.txt", "1"), GeneratedFile("dir/b.txt", "2"))
     writer.write(writer.plan(tmp_path, files), generator="test")
-    assert (tmp_path / "dir/b.txt").read_text() == "2"
+    assert (tmp_path / "dir/b.txt").read_text("utf-8") == "2"
     plan = writer.plan(tmp_path, (GeneratedFile("a.txt", "changed"),))
     assert plan.summary() == {
         "create": [],
@@ -163,7 +163,7 @@ def test_pipeline_with_external_plugin_and_shaping(tmp_path: Path) -> None:
     )
     result = Pipeline(default_registry()).run(config)
     assert not result.diagnostics.has_errors
-    assert "`pets.get` → get_pet" in (tmp_path / "outline/OUTLINE.md").read_text()
+    assert "`pets.get` → get_pet" in (tmp_path / "outline/OUTLINE.md").read_text("utf-8")
     assert result.shape_report[0]["transform"] == "group"
 
 

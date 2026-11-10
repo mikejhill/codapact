@@ -63,6 +63,7 @@ def _run(argv: list[str], stdin: str, timeout: float) -> str:
             input=stdin,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=timeout,
             check=False,
         )

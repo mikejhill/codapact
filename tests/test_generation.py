@@ -94,15 +94,15 @@ def test_python_library_calls_through_namespaces(petstore) -> None:
 def test_python_package_layout(petstore) -> None:
     root, _, _ = petstore
     python = root / "python"
-    pyproject = (python / "pyproject.toml").read_text()
+    pyproject = (python / "pyproject.toml").read_text("utf-8")
     assert 'petstore = "petstore.cli:main"' in pyproject
     assert "codapact>=" in pyproject
-    types = (python / "src/petstore/types.py").read_text()
+    types = (python / "src/petstore/types.py").read_text("utf-8")
     assert (
         "Pet = TypedDict(" in types
         and "type PetStatus = Literal['available', 'pending', 'sold']" in types
     )
-    manifest = json.loads((python / ".codapact-manifest.json").read_text())
+    manifest = json.loads((python / ".codapact-manifest.json").read_text("utf-8"))
     assert "src/petstore/cli.py" in manifest["files"]
 
 
@@ -210,7 +210,7 @@ def run_node(script: str, index: Path, url: str) -> dict[str, Any]:
             "--experimental-strip-types",
             "--no-warnings",
             str(FIXTURES / script),
-            str(index),
+            index.as_uri(),
             url,
         ],
         capture_output=True,
