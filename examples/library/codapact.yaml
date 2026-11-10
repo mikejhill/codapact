@@ -1,0 +1,20 @@
+version: 1
+source:
+  type: graphql
+  path: schema.graphql
+  documents: [operations.graphql]
+  options:
+    name: Library
+    url: https://library.example.com/graphql
+    auth: bearer
+cli:
+  program: library
+targets:
+  - name: python
+    output: generated/python
+    options: {package: library}
+  - name: python-cli
+    output: generated/python
+  - name: typescript
+    output: generated/typescript
+    options: {package: library}

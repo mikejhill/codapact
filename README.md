@@ -11,43 +11,62 @@ review:
 
 ![CodaPact wordmark](docs/branding/wordmark.svg)
 
-**Contracts into callable tools.** Generate an installable, typed Python library
-and scriptable CLI from a local or remote OpenAPI contract.
+**Contracts into callable tools.** Read an API contract (OpenAPI 3.0/3.1 or GraphQL),
+generate a typed library, then generate a CLI on top of that library.
 
-## Try it from source
+```text
+contract ──► sources ──► semantic model ──► shaping ──► library surface ──► command model
+ (OpenAPI,     (L1)          (L2)            (L3)          (L4)              (L5)
+  GraphQL)                                                   │                 │
+                                                             ▼                 ▼
+                                                   library targets      CLI targets
+                                                   (Python, TS, plugin) (Python CLI)
+```
+
+## Try it
 
 Prerequisites: Git and [uv](https://docs.astral.sh/uv/getting-started/installation/).
-uv manages the pinned Python version and dependencies.
 
 ```console
 git clone https://github.com/mikejhill/codapact.git
 cd codapact
 uv sync --locked
-uv run codapact generate examples/quickstart/openapi.yaml --output .tmp/quickstart --package demo_pets --slug demo-pets --runtime-allow-private
-uv run --with . --with ./.tmp/quickstart demo-pets --help
+uv run codapact generate -c examples/petstore/codapact.yaml
+uv run --with . --with ./examples/petstore/generated/python petstore pets list --help
 ```
 
-Follow [getting started](docs/guides/getting-started.md) to call the included local
-server and receive `{"id": 7, "name": "Miso"}`. The demo requires no API account.
-For a published installation, use `uv tool install codapact`.
+Quick mode, no project file:
 
-## Configure and extend
+```console
+uv run codapact generate --source openapi.yaml --target python --target python-cli \
+  --package acme --program acme --out out/
+```
 
-- [Documentation](docs/README.md): reading order and area indexes.
-- [Configuration](docs/reference/configuration.md): reusable manifests, flags,
-  XDG defaults, and separate authentication storage.
-- [Endpoint selection](docs/guides/endpoint-selection.md): narrow the library and CLI
-  together; inspect changes with `--dry-run`.
-- [Supported features](docs/reference/supported-features.md): exact OpenAPI subset
-  and safety boundaries.
-- [Architecture](docs/architecture/README.md): pluggable translation, selection,
-  generation, transport, authentication, and policy interfaces.
-- [Contributing](CONTRIBUTING.md): run `uv run poe check` before delivery.
+Inspect any intermediate layer as JSON:
 
-Generated commands discover `config.json` and `auth.json` in
-`$XDG_CONFIG_HOME/<slug>` or `~/.config/<slug>`. Override with `--config-dir PATH`.
-Programmatic clients use explicit settings and do not read ambient files.
+```console
+uv run codapact inspect model   -c examples/library/codapact.yaml
+uv run codapact inspect surface -c examples/library/codapact.yaml
+uv run codapact inspect commands -c examples/library/codapact.yaml
+```
 
-Generated packages pin the CodaPact runtime to the generator version. Source
-checkout examples use the local matching runtime; published generated packages
-install the matching release automatically.
+## What you get
+
+| Output | Contents |
+| --- | --- |
+| `python` | Installable package: `TypedDict` types, a resource-per-namespace client, paging iterators, `py.typed` |
+| `python-cli` | argparse CLI calling the Python library; JSON/YAML/raw output; env + XDG settings |
+| `typescript` | Fetch-based client with bundled runtime; strict `tsc` clean |
+| external plugin | Any executable speaking the JSON plugin protocol |
+
+Generated code is a thin facade over `codapact.runtime`: retries, auth, validation, and
+pagination live in one tested place and improve without regenerating.
+
+## Documents
+
+- [Architecture](docs/architecture.md): layers, dependency rules, extension seams, and
+  lessons taken from Smithy, Fern, Kiota, protoc, Stainless, Speakeasy, graphql-codegen,
+  and restish.
+- [Configuration](docs/configuration.md): `codapact.yaml`, shaping transforms, target
+  options, and generated CLI settings.
+- [Contributing](CONTRIBUTING.md)

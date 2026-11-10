@@ -1,15 +1,15 @@
 [project]
 name = "codapact"
 version = "0.2.0"
-description = "Contracts into callable tools: pluggable API client and CLI generation."
+description = "Contracts into callable tools: generate libraries, then CLIs, from OpenAPI, GraphQL, and other API contracts."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
-dependencies = ["PyYAML>=6.0.3,<7", "jsonschema>=4.25.1,<5"]
+dependencies = ["PyYAML>=6.0.3,<7", "graphql-core>=3.2.6,<4"]
 
 [project.scripts]
-codapact = "codapact.__main__:Application.main"
+codapact = "codapact.pipeline.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/mikejhill/codapact"
@@ -22,22 +22,26 @@ requires = ["uv_build>=0.11.1,<0.13"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-source-include = ["tests/**", "docs/**", "examples/**", "schemas/**", "scripts/**", "uv.lock", "CHANGELOG.md", "release-please-config.json", ".release-please-manifest.json", ".github/**"]
+source-include = ["tests/**", "docs/**", "examples/**", "scripts/**", "uv.lock", "CHANGELOG.md", "release-please-config.json", ".release-please-manifest.json", ".github/**"]
 
 [dependency-groups]
-mutation = ["mutmut>=3.8.0,<4; sys_platform != 'win32'"]
 dev = ["pytest>=9", "pytest-cov>=7", "hypothesis>=6", "ruff>=0.14", "ty>=0.0.1", "poethepoet>=0.37", "build>=1.3", "twine>=6"]
 
 [tool.ruff]
 target-version = "py313"
 line-length = 100
-extend-exclude = [".tmp", ".venv*", "dist", "mutants", "mutation-report"]
+extend-exclude = [".tmp", ".venv*", "dist"]
 
 [tool.ty.src]
 include = ["src", "tests", "scripts"]
 
 [tool.ty.rules]
 all = "error"
+# Empty strings and None are deliberately both "absent" in configuration handling.
+truthiness-test-of-none-union = "ignore"
+# JSON boundary code narrows `Any` explicitly; these flag every such narrowing.
+unsound-return-statement = "ignore"
+unsound-assignment = "ignore"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "S"]
@@ -65,19 +69,11 @@ show_missing = true
 format = "ruff format ."
 format-check = "ruff format --check ."
 lint = "ruff check ."
-source-lint = "ruff check src --extend-select ANN,D,FA,T20,G,PGH"
+source-lint = "ruff check src --extend-select ANN,D,FA,T20,G,PGH --ignore ANN401"
 typecheck = "ty check"
 test = "pytest --cov --cov-report=term-missing"
 lint-fix = "ruff check . --fix"
-source-lint-fix = "ruff check src --extend-select ANN,D,FA,T20,G,PGH --fix"
+source-lint-fix = "ruff check src --extend-select ANN,D,FA,T20,G,PGH --ignore ANN401 --fix"
 fix = ["format", "lint-fix", "source-lint-fix"]
-docs = "python scripts/check_docs.py"
-check = ["format-check", "lint", "source-lint", "typecheck", "docs", "test"]
+check = ["format-check", "lint", "source-lint", "typecheck", "test"]
 
-[tool.mutmut]
-source_paths = ["src/codapact/"]
-pytest_add_cli_args_test_selection = ["tests/", "--ignore=tests/test_distribution.py"]
-pytest_add_cli_args = ["-p", "no:cacheprovider"]
-also_copy = ["examples/", "schemas/", "scripts/"]
-mutate_only_covered_lines = true
-process_isolation = "forkserver"

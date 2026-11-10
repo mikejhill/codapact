@@ -1,233 +1,302 @@
+from __future__ import annotations
+
+import argparse
+import io
+import json
+
 import pytest
 
-from codapact.errors import ApiError, AuthError, CodaError, PolicyError, ResponseError
-from codapact.net import Response
-from codapact.openapi import OpenAPITranslator
-from codapact.runtime import ClientBase, EnvironmentAuth, OperationPolicy, config
-from tests.assertions import safe_error
+from codapact.core.errors import ConfigError, TransportError
+from codapact.core.net import HttpRequest, HttpResponse
+from codapact.model import AuthKind, AuthScheme, ParamLocation
+from codapact.runtime import (
+    ApiError,
+    AuthError,
+    ChainAuth,
+    Credential,
+    EnvAuth,
+    GraphQLResponseError,
+    Retry,
+    RuntimeClient,
+    StaticAuth,
+    ValidationError,
+)
+from codapact.runtime.arguments import UNSET, call_args
+from codapact.runtime.cli import CliRuntime, compact, json_value, render
+from codapact.runtime.codec import Codec
+from codapact.shaping.engine import Shaper
+from tests.support import FakeTransport, Library, Petstore, json_response, library_api, petstore_api
+
+AUTH = StaticAuth({"token": "secret"})
 
 
-class RecordingTransport:
-    def __init__(self, response=None):
-        self.response = response or Response(
-            200, {"Content-Type": "application/json"}, b'{"id":1,"name":"Miso"}'
+def petstore_client(handler=None, **options) -> tuple[RuntimeClient, FakeTransport]:
+    api = (
+        Shaper()
+        .apply(
+            petstore_api(),
+            [{"paginate": {"operations": ["list_pets"], "next": "next_cursor", "items": "items"}}],
         )
-        self.calls = []
-
-    def send(self, method, url, headers, body):
-        self.calls.append((method, url, headers, body))
-        return self.response
-
-
-def client(contract, *, transport=None, **kwargs):
-    return ClientBase(
-        OpenAPITranslator().translate(contract).to_dict(),
-        transport=transport or RecordingTransport(),
-        **kwargs,
+        .api
     )
+    assert api is not None
+    transport = FakeTransport(handler or Petstore())
+    options.setdefault("auth", AUTH)
+    options.setdefault("middleware", ())
+    return RuntimeClient(api, transport=transport, **options), transport
 
 
-def test_real_calls(contract, server, monkeypatch):
-    monkeypatch.setenv("FIXTURE_TOKEN", "fixture-secret")
-    instance = ClientBase(
-        OpenAPITranslator().translate(contract).to_dict(),
-        settings={"allow_private": True, "auth": {"token": {"env": "FIXTURE_TOKEN"}}},
+# ---------------------------------------------------------------- codec
+
+
+def test_codec_maps_wire_names_and_validates() -> None:
+    codec = Codec(petstore_api())
+    from codapact.model import Ref
+
+    owner = codec.encode({"name": "Ann", "contact_email": "a@b"}, Ref("Owner"))
+    assert owner == {"name": "Ann", "contactEmail": "a@b"}
+    assert codec.decode(owner, Ref("Owner")) == {"name": "Ann", "contact_email": "a@b"}
+    pet = {"id": 1, "name": "M", "status": "available", "extra": True}
+    assert codec.decode(pet, Ref("Pet"))["extra"] is True  # unknown fields survive decoding
+    with pytest.raises(ValidationError, match=r"\$.status"):
+        codec.decode({**pet, "status": "lost"}, Ref("Pet"))
+    with pytest.raises(ValidationError, match=r"\$.name: needs at least 1"):
+        codec.encode({"id": 1, "name": "", "status": "sold"}, Ref("Pet"))
+    with pytest.raises(ValidationError, match="is required"):
+        codec.encode({"id": 1}, Ref("Pet"))
+
+
+def test_codec_unions_by_discriminator() -> None:
+    api = library_api()
+    codec = Codec(api)
+    from codapact.model import Ref
+
+    decoded = codec.decode({"__typename": "Author", "name": "U"}, Ref("DashboardDataResults"))
+    assert decoded == {"typename": "Author", "name": "U"}
+    with pytest.raises(ValidationError, match="no variant"):
+        codec.decode({"__typename": "Robot"}, Ref("DashboardDataResults"))
+
+
+# ---------------------------------------------------------------- http adapter
+
+
+def test_http_call_builds_request_and_decodes() -> None:
+    client, transport = petstore_client()
+    page = client.call("list_pets", {"limit": 2, "status": ["available", "sold"]})
+    assert [p["name"] for p in page["items"]] == ["Miso", "Tofu"]
+    request = transport.requests[0]
+    assert (
+        request.url == "https://petstore.example.com/v1/pets?limit=2&status=available&status=sold"
     )
-    assert instance._execute("get_pet", {"pet_id": 7}) == {"id": 7, "name": "Miso"}
-    assert instance._execute("list_pets", {"page": 2}) == [{"id": 2, "name": "Miso"}]
-    result = instance._execute("create_pet", body={"id": 3, "name": "Pip"})
-    assert isinstance(result, dict)
-    assert result["name"] == "Pip"
-    assert instance._execute("delete_pet") is None
-    with safe_error(ApiError, match="HTTP 404") as error:
-        instance._execute("get_pet", {"pet_id": 404})
-    assert "fixture-secret" not in str(error.value)
-    with safe_error(ResponseError):
-        instance._execute("get_pet", {"pet_id": 999})
-    assert len(server[1]) == 6
+    assert request.headers["Authorization"] == "Bearer secret"
+    assert request.headers["User-Agent"].startswith("codapact/")
 
 
-def test_auth_or_and(contract, monkeypatch):
-    contract["security"] = [{"token": [], "key": []}, {"basic": []}]
-    monkeypatch.setenv("TOKEN", "abc")
-    monkeypatch.setenv("USER", "mike")
-    monkeypatch.setenv("PASS", "secret")
-    transport = RecordingTransport()
-    instance = client(
-        contract,
-        transport=transport,
-        settings={
-            "auth": {
-                "token": {"env": "TOKEN"},
-                "basic": {"username_env": "USER", "password_env": "PASS"},
-            }
-        },
+def test_http_body_errors_and_text() -> None:
+    client, transport = petstore_client()
+    created = client.call("create_pet", {"body": {"name": "Ramen"}})
+    assert created["id"] == 6 and json.loads(transport.requests[0].body or b"") == {"name": "Ramen"}
+    with pytest.raises(ApiError) as caught:
+        client.call("get_pet", {"pet_id": 99})
+    assert caught.value.status == 404 and caught.value.error == "not_found"
+    assert caught.value.payload == {"message": "no such pet"}
+    assert client.call("delete_pet", {"pet_id": 1}) is None
+    assert client.call("health", {}) == "ok"
+
+
+def test_arguments_are_validated_before_sending() -> None:
+    client, transport = petstore_client()
+    with pytest.raises(ValidationError, match="must be <= 100"):
+        client.call("list_pets", {"limit": 500})
+    with pytest.raises(ValidationError, match="unknown arguments"):
+        client.call("list_pets", {"color": "red"})
+    with pytest.raises(ValidationError, match="is required"):
+        client.call("get_pet", {})
+    assert transport.requests == []
+
+
+def test_pagination_follows_cursors() -> None:
+    client, _ = petstore_client()
+    names = [pet["name"] for pet in client.paginate("list_pets", {"limit": 2})]
+    assert names == ["Miso", "Tofu", "Natto", "Udon", "Soba"]
+    assert len(list(client.paginate("list_pets", {"limit": 2}, max_items=3))) == 3
+
+
+def test_auth_failures_and_alternatives() -> None:
+    client, _ = petstore_client(auth=StaticAuth({}))
+    with pytest.raises(AuthError, match="token"):
+        client.call("get_pet", {"pet_id": 1})
+    assert client.call("health", {}) == "ok"  # anonymous alternative
+
+
+def test_auth_providers() -> None:
+    bearer = AuthScheme("token", AuthKind.BEARER)
+    basic = AuthScheme("basic-auth", AuthKind.BASIC)
+    env = EnvAuth(
+        "PET", {"PET_TOKEN": "t", "PET_BASIC_AUTH_USERNAME": "u", "PET_BASIC_AUTH_PASSWORD": "p"}
     )
-    instance._execute("get_pet", {"pet_id": 1})
-    headers = transport.calls[-1][2]
-    assert headers["Authorization"] == "Basic bWlrZTpzZWNyZXQ="
-    assert "X-API-Key" not in headers
-    monkeypatch.setenv("KEY", "my-key")
-    instance = client(
-        contract,
-        transport=transport,
-        settings={"auth": {"token": {"env": "TOKEN"}, "key": {"env": "KEY"}}},
+    assert env.credential(bearer) == Credential("t")
+    assert env.credential(basic) == Credential("p", "u")
+    assert repr(Credential("t")) == "Credential(<redacted>)"
+    chain = ChainAuth((StaticAuth({}), env))
+    assert chain.credential(bearer) == Credential("t")
+    assert ChainAuth().credential(bearer) is None
+
+
+def test_api_key_locations() -> None:
+    import dataclasses
+
+    api = petstore_api()
+    api = dataclasses.replace(
+        api, auth_schemes=(AuthScheme("token", AuthKind.API_KEY, ParamLocation.QUERY, "key"),)
     )
-    instance._execute("get_pet", {"pet_id": 1})
-    assert transport.calls[-1][2]["X-API-Key"] == "my-key"
-    assert transport.calls[-1][2]["Authorization"] == "Bearer abc"
+    transport = FakeTransport(lambda r: json_response(200, {"items": []}))
+    client = RuntimeClient(api, transport=transport, auth=AUTH, middleware=())
+    client.call("list_pets", {})
+    assert transport.requests[0].url.endswith("/pets?key=secret")
 
 
-def test_auth_missing_conflict_and_anonymous(contract, monkeypatch):
-    with safe_error(AuthError):
-        client(contract)._execute("get_pet", {"pet_id": 1})
-    contract["security"] = [{"token": [], "basic": []}]
-    monkeypatch.setenv("TOKEN", "abc")
-    monkeypatch.setenv("USER", "mike")
-    monkeypatch.setenv("PASS", "secret")
-    with safe_error(AuthError):
-        client(
-            contract,
-            settings={
-                "auth": {
-                    "token": {"env": "TOKEN"},
-                    "basic": {"username_env": "USER", "password_env": "PASS"},
-                }
-            },
-        )._execute("get_pet", {"pet_id": 1})
-    contract["security"] = [{"token": []}, {}]
-    transport = RecordingTransport()
-    client(contract, transport=transport)._execute("get_pet", {"pet_id": 1})
-    assert "Authorization" not in transport.calls[0][2]
+def test_retry_only_idempotent_and_honors_retry_after() -> None:
+    attempts = []
+
+    def flaky(request: HttpRequest) -> HttpResponse:
+        attempts.append(request.method)
+        if len(attempts) < 3:
+            return json_response(503, None, {"Retry-After": "1"})
+        return Petstore()(request)
+
+    sleeps: list[float] = []
+    client, _ = petstore_client(flaky, middleware=(Retry(sleep=sleeps.append),))
+    assert client.call("get_pet", {"pet_id": 1})["name"] == "Miso"
+    assert attempts == ["GET"] * 3 and sleeps == [1.0, 1.0]
+    attempts.clear()
+    with pytest.raises(ApiError):
+        client.call("create_pet", {"body": {"name": "x"}})
+    assert attempts == ["POST"]
 
 
-def test_custom_auth_and_policy_hooks(contract):
-    class CustomAuth:
-        def headers(self, name, scheme):
-            assert name == "token"
-            return {"Authorization": "Bearer custom"}
+def test_retry_on_transport_errors() -> None:
+    calls = []
 
-    class ReadOnly:
-        def authorize(self, operation):
-            if operation["method"] != "GET":
-                raise PolicyError("read only")
+    def broken(request: HttpRequest) -> HttpResponse:
+        calls.append(1)
+        raise TransportError("down")
 
-    transport = RecordingTransport()
-    instance = client(contract, transport=transport, auth=CustomAuth(), policy=ReadOnly())
-    instance._execute("get_pet", {"pet_id": 1})
-    assert transport.calls[0][2]["Authorization"] == "Bearer custom"
-    with safe_error(PolicyError):
-        instance._execute("create_pet", body={"id": 1, "name": "Miso"})
-    assert len(transport.calls) == 1
+    client, _ = petstore_client(broken, middleware=(Retry(sleep=lambda _: None, max_retries=1),))
+    with pytest.raises(TransportError):
+        client.call("get_pet", {"pet_id": 1})
+    assert len(calls) == 2
+
+
+def test_client_requires_base_url() -> None:
+    import dataclasses
+
+    with pytest.raises(ConfigError, match="base_url"):
+        RuntimeClient(dataclasses.replace(petstore_api(), servers=()))
+    with pytest.raises(ConfigError):
+        RuntimeClient(petstore_api(), base_url="ftp://nope")
+
+
+# ---------------------------------------------------------------- graphql adapter
+
+
+def library_client(handler=None) -> tuple[RuntimeClient, FakeTransport]:
+    transport = FakeTransport(handler or Library())
+    return RuntimeClient(library_api(), transport=transport, auth=AUTH, middleware=()), transport
+
+
+def test_graphql_call_sends_document_and_unwraps() -> None:
+    client, transport = library_client()
+    books = client.call("book_titles", {"genre": "FICTION"})
+    assert books == [
+        {"id": "1", "title": "The Dispossessed", "genre": "FICTION"},
+        {"id": "2", "title": "Earthsea", "genre": "FICTION"},
+    ]
+    payload = json.loads(transport.requests[0].body or b"")
+    assert payload["operationName"] == "BookTitles" and payload["variables"] == {"genre": "FICTION"}
+
+
+def test_graphql_unions_decode() -> None:
+    client, _ = library_client()
+    data = client.call("dashboard", {})
+    assert data["featured"]["author"] == {"name": "Ursula"}
+    assert {r["typename"] for r in data["results"]} == {"Book", "Author"}
+
+
+def test_graphql_errors_surface() -> None:
+    client, _ = library_client(
+        lambda r: json_response(200, {"data": None, "errors": [{"message": "boom"}]})
+    )
+    with pytest.raises(GraphQLResponseError, match="boom"):
+        client.call("dashboard", {})
+    client, _ = library_client(lambda r: json_response(500, {"data": None}))
+    with pytest.raises(ApiError):
+        client.call("dashboard", {})
+
+
+# ---------------------------------------------------------------- helpers and cli runtime
+
+
+def test_call_args_rebuilds_flattened_params() -> None:
+    assert call_args({"a": 1, "b": UNSET}) == {"a": 1}
+    assert call_args({}, {"body": {"x": UNSET}}) == {}
+    assert call_args({}, {"body": {"x": UNSET}}, required=frozenset({"body"})) == {"body": {}}
+    assert call_args({}, {"body": {"x": None}}) == {"body": {"x": None}}
+    assert not UNSET and repr(UNSET) == "UNSET"
+
+
+def test_cli_runtime_settings_precedence(tmp_path) -> None:
+    config = tmp_path / "petstore" / "config.json"
+    config.parent.mkdir()
+    config.write_text(json.dumps({"base_url": "https://file", "timeout": 5, "allow_private": True}))
+    runtime = CliRuntime(
+        "petstore",
+        "PETSTORE",
+        {"XDG_CONFIG_HOME": str(tmp_path), "PETSTORE_BASE_URL": "https://env"},
+    )
+    args = argparse.Namespace(base_url=None, timeout=None, config=None)
+    settings = runtime.settings(args)
+    assert settings["base_url"] == "https://env" and settings["timeout"] == 5.0
+    assert settings["allow_private"] is True
+    args.base_url = "https://flag"
+    assert runtime.settings(args)["base_url"] == "https://flag"
+    config.write_text(json.dumps({"token": "nope"}))
+    with pytest.raises(Exception, match="allowed keys"):
+        runtime.settings(args)
 
 
 @pytest.mark.parametrize(
-    "settings",
+    ("error", "code"),
     [
-        {"version": 2},
-        {"token": "secret"},
-        {"timeout": 0},
-        {"auth": {"token": {"literal": "secret"}}},
-        {"allow_private": "yes"},
+        (ValidationError("$", "bad"), 2),
+        (AuthError("no"), 3),
+        (TransportError("down"), 4),
+        (ApiError("op", 500, None, {"m": 1}), 1),
+        (GraphQLResponseError("op", [{"message": "x"}], None), 1),
     ],
 )
-def test_bad_config(settings):
-    with safe_error(CodaError):
-        config(settings)
+def test_cli_runtime_exit_codes(error: Exception, code: int) -> None:
+    runtime = CliRuntime("p", "P", {})
+    args = argparse.Namespace(base_url=None, timeout=None, config=None, output="json")
 
+    def handler(client, args):
+        raise error
 
-@pytest.mark.parametrize(
-    "values,body",
-    [({"unknown": 1}, None), ({}, None), ({"pet_id": "one"}, None), ({"pet_id": 1}, {})],
-)
-def test_invalid_request_before_transport(contract, values, body):
-    contract["security"] = []
-    transport = RecordingTransport()
-    with safe_error(CodaError):
-        client(contract, transport=transport)._execute("get_pet", values, body)
-    assert transport.calls == []
-
-
-def test_body_validation(contract):
-    contract["security"] = []
-    for body in [None, {"id": "bad", "name": "Miso"}]:
-        with safe_error(CodaError):
-            client(contract)._execute("create_pet", body=body)
-
-
-@pytest.mark.parametrize(
-    "response",
-    [
-        Response(201, {}, b""),
-        Response(200, {}, b"{}"),
-        Response(200, {"Content-Type": "application/json"}, b"broken"),
-        Response(200, {"Content-Type": "application/json"}, b'{"id":"bad","name":"secret"}'),
-    ],
-)
-def test_bad_responses(contract, response):
-    contract["security"] = []
-    with safe_error(ResponseError):
-        client(contract, transport=RecordingTransport(response))._execute("get_pet", {"pet_id": 1})
-
-
-def test_policies_and_secrets(monkeypatch):
-    for policy in [OperationPolicy(allow=[]), OperationPolicy(deny=["get_pet"])]:
-        with safe_error(PolicyError, match="get_pet"):
-            policy.authorize({"id": "get_pet"})
-    auth = EnvironmentAuth(
-        {"basic": {"username_env": "USER", "password_env": "PASS"}, "token": {"env": "TOKEN"}}
+    err = io.StringIO()
+    assert (
+        runtime.run(args, lambda options: None, handler, stdout=io.StringIO(), stderr=err) == code
     )
-    monkeypatch.setenv("USER", "bad:user")
-    with safe_error(AuthError):
-        auth.headers("basic", {"type": "http", "scheme": "basic"})
-    monkeypatch.setenv("TOKEN", "secret\r\nInjected: value")
-    with safe_error(AuthError) as error:
-        auth.headers("token", {"type": "http", "scheme": "bearer"})
-    assert "secret" not in str(error.value)
+    assert err.getvalue().startswith("p: ")
 
 
-def test_path_header_encoding(contract):
-    contract["security"] = []
-    parameter = contract["paths"]["/pets/{pet_id}"]["get"]["parameters"][0]
-    parameter["schema"] = {"type": "string"}
-    transport = RecordingTransport()
-    instance = client(contract, transport=transport)
-    instance._execute("get_pet", {"pet_id": "a/b?x=y"})
-    assert transport.calls[0][1].endswith("/pets/a%2Fb%3Fx%3Dy")
-    with safe_error(CodaError):
-        instance._execute("get_pet", {"pet_id": ".."})
-
-
-def test_bad_ir_and_base_url(contract):
-    document = OpenAPITranslator().translate(contract).to_dict()
-    document["version"] = 2
-    with safe_error(CodaError):
-        ClientBase(document)
-    with safe_error(CodaError):
-        client(contract, settings={"base_url": "https://user:secret@example.com"})
-
-
-def test_explicit_null_body_and_missing_body(contract):
-    contract["security"] = []
-    operation = contract["paths"]["/pets"]["post"]
-    operation["requestBody"]["content"]["application/json"]["schema"] = {
-        "type": "string",
-        "nullable": True,
-    }
-    transport = RecordingTransport(
-        Response(201, {"Content-Type": "application/json"}, b'{"id":1,"name":"Miso"}')
-    )
-    instance = client(contract, transport=transport)
-    instance._execute("create_pet", body=None)
-    assert transport.calls[0][3] == b"null"
-    with safe_error(CodaError, match="required"):
-        instance._execute("create_pet")
-
-
-def test_default_response_does_not_widen_success_types(contract):
-    contract["security"] = []
-    contract["paths"]["/pets/{pet_id}"]["get"]["responses"]["default"] = {"description": "failure"}
-    with safe_error(ResponseError):
-        client(contract, transport=RecordingTransport(Response(201, {}, b"")))._execute(
-            "get_pet", {"pet_id": 1}
-        )
+def test_cli_render_formats() -> None:
+    out = io.StringIO()
+    render({"a": [1]}, "yaml", out)
+    render("text", "raw", out)
+    render({"b": 2}, "json", out)
+    render(None, "json", out)
+    assert out.getvalue() == 'a:\n- 1\ntext\n{\n  "b": 2\n}\n'
+    assert compact({"a": None, "b": 0}) == {"b": 0}
+    assert json_value('{"x": 1}') == {"x": 1}
+    with pytest.raises(argparse.ArgumentTypeError):
+        json_value("{")

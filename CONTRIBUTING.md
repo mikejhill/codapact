@@ -10,13 +10,18 @@ review:
 # Contributing
 
 Use Python 3.13 or newer and uv. Run `uv sync`, then `uv run poe check` before
-opening a PR. Keep the 90% combined coverage gate and strict type checks intact.
+opening a PR. Keep the 90% coverage gate and strict type checks intact.
 Use Conventional Commit titles; squash merges drive release-please versioning.
 
-Mutation testing is asynchronous on main, with a weekly full run and durable
-[owner-assigned alerts](docs/operations/mutation-testing.md). It is not an eager PR, merge, or release
-gate. Triage alerts within one working day and review open incidents weekly.
+Respect the layer map in [architecture](docs/architecture.md). `tests/test_architecture.py`
+fails the build when a module imports a layer it must not depend on.
 
-Keep unsupported contract behavior explicit. Add a failing regression before
-changing translation, generated types, authentication semantics, network policy,
-or file ownership. Never add credentials to fixtures or generated artifacts.
+- New contract format: add a `Source` under `sources/`; it may only produce the semantic model.
+- New language: add a `Target` under `targets/` (or ship an external plugin); targets must
+  not import each other.
+- New shaping step: add a `Transform`; the engine re-validates the model after every step.
+- Changed model shape: bump `MODEL_VERSION` and add a migration in `model/migrations.py`.
+
+Keep unsupported contract behavior explicit: strict mode errors, lenient mode warns.
+Add a failing regression before changing translation, generated code, authentication,
+network policy, or file ownership. Never add credentials to fixtures or generated artifacts.

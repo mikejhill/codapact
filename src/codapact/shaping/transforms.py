@@ -1,0 +1,329 @@
+"""Built-in shaping transforms: select, rename, group, paginate, prune."""
+
+from __future__ import annotations
+
+import dataclasses
+import re
+from collections.abc import Mapping
+from fnmatch import fnmatchcase
+from typing import Any
+
+from codapact.core.diagnostics import Diagnostics
+from codapact.core.errors import ConfigError
+from codapact.core.naming import Name
+from codapact.model.api import (
+    Api,
+    CursorPagination,
+    HttpBinding,
+    OffsetPagination,
+    Operation,
+    OperationKind,
+)
+from codapact.model.rewrite import reachable_types, rename_types
+from codapact.model.types import ListOf, Nullable, Record, Ref, TypeExpr
+from codapact.shaping.base import TransformResult
+
+
+def _matches(operation: Operation, selector: Any) -> bool:
+    if isinstance(selector, str):
+        return fnmatchcase(operation.name, selector)
+    if not isinstance(selector, dict) or not selector:
+        raise ConfigError("selectors must be a glob string or a non-empty mapping")
+    unknown = set(selector) - {"name", "tag", "kind", "namespace", "read_only"}
+    if unknown:
+        raise ConfigError(f"unknown selector keys {sorted(unknown)}")
+    checks = []
+    if "name" in selector:
+        checks.append(fnmatchcase(operation.name, str(selector["name"])))
+    if "tag" in selector:
+        checks.append(any(fnmatchcase(tag, str(selector["tag"])) for tag in operation.tags))
+    if "kind" in selector:
+        checks.append(operation.kind is OperationKind(selector["kind"]))
+    if "namespace" in selector:
+        checks.append(fnmatchcase(".".join(operation.namespace), str(selector["namespace"])))
+    if "read_only" in selector:
+        checks.append(operation.read_only is bool(selector["read_only"]))
+    return all(checks)
+
+
+def _selectors(config: Mapping[str, Any], key: str) -> list[Any]:
+    value = config.get(key, [])
+    if not isinstance(value, list):
+        raise ConfigError(f"{key!r} must be a list")
+    return value
+
+
+class Prune:
+    """Remove definitions no operation can reach."""
+
+    name = "prune"
+
+    def apply(
+        self, api: Api, config: Mapping[str, Any], diagnostics: Diagnostics
+    ) -> TransformResult:
+        """Drop unreachable types."""
+        keep = reachable_types(api)
+        removed = sorted(d.name for d in api.types if d.name not in keep)
+        api = dataclasses.replace(api, types=tuple(d for d in api.types if d.name in keep))
+        return TransformResult(api, [{"transform": self.name, "removed_types": removed}])
+
+
+class Select:
+    """Keep operations matching ``include`` (default: all) and not matching ``exclude``."""
+
+    name = "select"
+
+    def apply(
+        self, api: Api, config: Mapping[str, Any], diagnostics: Diagnostics
+    ) -> TransformResult:
+        """Filter operations, then prune unreachable types."""
+        include = _selectors(config, "include")
+        exclude = _selectors(config, "exclude")
+        kept, removed = [], []
+        for operation in api.operations:
+            selected = (not include or any(_matches(operation, s) for s in include)) and not any(
+                _matches(operation, s) for s in exclude
+            )
+            (kept if selected else removed).append(operation)
+        for selector in include:
+            if not any(_matches(op, selector) for op in api.operations):
+                diagnostics.warning(
+                    "shape.select.unmatched", f"include {selector!r} matched nothing"
+                )
+        if not kept:
+            diagnostics.error("shape.select.empty", "selection removed every operation")
+        api = dataclasses.replace(api, operations=tuple(kept))
+        pruned = Prune().apply(api, {}, diagnostics)
+        report = {
+            "transform": self.name,
+            "kept": [op.name for op in kept],
+            "removed": [op.name for op in removed],
+            "removed_types": pruned.report[0]["removed_types"],
+        }
+        return TransformResult(pruned.api, [report])
+
+
+class Rename:
+    """Rename operations, types, record fields (``Type.field``), and params (``op.param``)."""
+
+    name = "rename"
+
+    def apply(
+        self, api: Api, config: Mapping[str, Any], diagnostics: Diagnostics
+    ) -> TransformResult:
+        """Apply every mapping; unknown targets are errors."""
+        unknown = set(config) - {"operations", "types", "fields", "params"}
+        if unknown:
+            raise ConfigError(f"unknown rename keys {sorted(unknown)}")
+        changes: list[dict[str, str]] = []
+        types = dict(config.get("types", {}))
+        missing = set(types) - {d.name for d in api.types}
+        for name in sorted(missing):
+            diagnostics.error("shape.rename.unknown", f"unknown type {name!r}")
+        api = rename_types(api, types)
+        changes += [{"type": old, "to": new} for old, new in types.items()]
+
+        operations = dict(config.get("operations", {}))
+        names = {op.name for op in api.operations}
+        for old in sorted(set(operations) - names):
+            diagnostics.error("shape.rename.unknown", f"unknown operation {old!r}")
+        api = dataclasses.replace(
+            api,
+            operations=tuple(
+                dataclasses.replace(op, name=operations.get(op.name, op.name))
+                for op in api.operations
+            ),
+        )
+        changes += [{"operation": old, "to": new} for old, new in operations.items()]
+
+        for key, new in dict(config.get("fields", {})).items():
+            type_name, _, field_name = str(key).partition(".")
+            api = self._field(api, type_name, field_name, str(new), diagnostics)
+            changes.append({"field": key, "to": new})
+        for key, new in dict(config.get("params", {})).items():
+            op_name, _, param = str(key).partition(".")
+            api = self._param(api, op_name, param, str(new), diagnostics)
+            changes.append({"param": key, "to": new})
+        return TransformResult(api, [{"transform": self.name, "changes": changes}])
+
+    @staticmethod
+    def _field(
+        api: Api, type_name: str, field_name: str, new: str, diagnostics: Diagnostics
+    ) -> Api:
+        types = []
+        found = False
+        for definition in api.types:
+            if isinstance(definition, Record) and definition.name == type_name:
+                fields = []
+                for f in definition.fields:
+                    if f.name == field_name:
+                        found = True
+                        f = dataclasses.replace(f, name=new, wire_name=f.wire)
+                    fields.append(f)
+                definition = dataclasses.replace(definition, fields=tuple(fields))
+            types.append(definition)
+        if not found:
+            diagnostics.error("shape.rename.unknown", f"unknown field {type_name}.{field_name}")
+        return dataclasses.replace(api, types=tuple(types))
+
+    @staticmethod
+    def _param(api: Api, op_name: str, param: str, new: str, diagnostics: Diagnostics) -> Api:
+        operations = []
+        found = False
+        for op in api.operations:
+            if op.name == op_name and any(p.name == param for p in op.params):
+                found = True
+                op = _rename_param(op, param, new)
+            operations.append(op)
+        if not found:
+            diagnostics.error("shape.rename.unknown", f"unknown param {op_name}.{param}")
+        return dataclasses.replace(api, operations=tuple(operations))
+
+
+def _rename_param(op: Operation, old: str, new: str) -> Operation:
+    params = tuple(dataclasses.replace(p, name=new) if p.name == old else p for p in op.params)
+    bindings = []
+    for binding in op.bindings:
+        if isinstance(binding, HttpBinding):
+            binding = dataclasses.replace(
+                binding,
+                params=tuple(
+                    dataclasses.replace(p, param=new) if p.param == old else p
+                    for p in binding.params
+                ),
+            )
+        else:
+            binding = dataclasses.replace(
+                binding,
+                variables=tuple((new if p == old else p, v) for p, v in binding.variables),
+            )
+        bindings.append(binding)
+    pagination = op.pagination
+    if isinstance(pagination, CursorPagination) and pagination.cursor_param == old:
+        pagination = dataclasses.replace(pagination, cursor_param=new)
+    if isinstance(pagination, OffsetPagination):
+        if pagination.offset_param == old:
+            pagination = dataclasses.replace(pagination, offset_param=new)
+        if pagination.limit_param == old:
+            pagination = dataclasses.replace(pagination, limit_param=new)
+    return dataclasses.replace(op, params=params, bindings=tuple(bindings), pagination=pagination)
+
+
+class Group:
+    """Assign namespaces: ``by: tag``, ``by: path`` (HTTP), or explicit ``operations`` globs."""
+
+    name = "group"
+
+    def apply(
+        self, api: Api, config: Mapping[str, Any], diagnostics: Diagnostics
+    ) -> TransformResult:
+        """Set ``Operation.namespace`` for matching operations."""
+        by = config.get("by")
+        explicit = dict(config.get("operations", {}))
+        if by not in (None, "tag", "path"):
+            raise ConfigError("group 'by' must be 'tag' or 'path'")
+        assigned: dict[str, str] = {}
+        operations = []
+        for op in api.operations:
+            namespace = op.namespace
+            if by == "tag" and op.tags:
+                namespace = (Name.parse(op.tags[0]).snake,)
+            elif by == "path":
+                binding = op.binding(HttpBinding)
+                segment = _first_literal_segment(binding.path) if binding else None
+                if segment:
+                    namespace = (Name.parse(segment).snake,)
+            for pattern, target in explicit.items():
+                if fnmatchcase(op.name, pattern):
+                    namespace = tuple(
+                        Name.parse(part).snake for part in str(target).split(".") if part
+                    )
+            if namespace != op.namespace:
+                assigned[op.name] = ".".join(namespace)
+            operations.append(dataclasses.replace(op, namespace=namespace))
+        api = dataclasses.replace(api, operations=tuple(operations))
+        return TransformResult(api, [{"transform": self.name, "assigned": assigned}])
+
+
+def _first_literal_segment(path: str) -> str | None:
+    for segment in path.strip("/").split("/"):
+        if segment and not segment.startswith("{") and not re.fullmatch(r"v\d+", segment):
+            return segment
+    return None
+
+
+class Paginate:
+    """Declare cursor or offset pagination for operations matching ``operations`` globs."""
+
+    name = "paginate"
+
+    def apply(
+        self, api: Api, config: Mapping[str, Any], diagnostics: Diagnostics
+    ) -> TransformResult:
+        """Attach a validated ``Pagination`` to each matching operation."""
+        patterns = _selectors(config, "operations")
+        style = config.get("style", "cursor")
+        items = _path(config.get("items"), "items")
+        applied = []
+        operations = []
+        for op in api.operations:
+            if any(_matches(op, p) for p in patterns):
+                where = f"operations.{op.name}"
+                pagination: CursorPagination | OffsetPagination
+                if style == "cursor":
+                    pagination = CursorPagination(
+                        str(config.get("param", "cursor")), _path(config.get("next"), "next"), items
+                    )
+                    param = pagination.cursor_param
+                    _resolve(api, op.result, pagination.next_cursor, diagnostics, where)
+                elif style == "offset":
+                    limit = config.get("limit_param")
+                    pagination = OffsetPagination(
+                        str(config.get("param", "offset")), items, str(limit) if limit else None
+                    )
+                    param = pagination.offset_param
+                else:
+                    raise ConfigError("paginate 'style' must be 'cursor' or 'offset'")
+                if param not in {p.name for p in op.params}:
+                    diagnostics.error("shape.paginate", f"operation has no param {param!r}", where)
+                item = _resolve(api, op.result, items, diagnostics, where)
+                if item is not None and not isinstance(_strip(item), ListOf):
+                    diagnostics.error("shape.paginate", "items path must resolve to a list", where)
+                op = dataclasses.replace(op, pagination=pagination)
+                applied.append(op.name)
+            operations.append(op)
+        if not applied:
+            diagnostics.warning("shape.paginate.unmatched", f"{patterns!r} matched nothing")
+        api = dataclasses.replace(api, operations=tuple(operations))
+        return TransformResult(api, [{"transform": self.name, "operations": applied}])
+
+
+def _path(value: Any, key: str) -> tuple[str, ...]:
+    if not isinstance(value, str) or not value:
+        raise ConfigError(f"paginate {key!r} must be a dotted field path")
+    return tuple(value.split("."))
+
+
+def _strip(expr: TypeExpr) -> TypeExpr:
+    return expr.inner if isinstance(expr, Nullable) else expr
+
+
+def _resolve(
+    api: Api, expr: TypeExpr | None, path: tuple[str, ...], diagnostics: Diagnostics, where: str
+) -> TypeExpr | None:
+    current = expr
+    for part in path:
+        current = _strip(current) if current is not None else None
+        definition = api.type(current.name) if isinstance(current, Ref) else None
+        if not isinstance(definition, Record):
+            diagnostics.error("shape.paginate", f"cannot resolve {'.'.join(path)!r}", where)
+            return None
+        match = next((f for f in definition.fields if f.name == part), None)
+        if match is None:
+            diagnostics.error("shape.paginate", f"no field {part!r} in {definition.name}", where)
+            return None
+        current = match.type
+    return current
+
+
+BUILTIN_TRANSFORMS = (Select(), Rename(), Group(), Paginate(), Prune())

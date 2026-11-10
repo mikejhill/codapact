@@ -1,5 +1,8 @@
-"""CodaPact: contracts into callable tools."""
+"""Codapact: generate libraries, then CLIs, from API contracts."""
 
-from __future__ import annotations
+from importlib.metadata import PackageNotFoundError, version
 
-__version__ = "0.2.0"  # x-release-please-version
+try:
+    __version__ = version("codapact")
+except PackageNotFoundError:  # pragma: no cover - running from an unbuilt tree
+    __version__ = "0.0.0"

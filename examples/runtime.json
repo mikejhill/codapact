@@ -1,5 +1,0 @@
-{
-  "version": 1,
-  "base_url": "https://pets.example.invalid",
-  "auth": {"token": {"env": "PETS_TOKEN"}}
-}
