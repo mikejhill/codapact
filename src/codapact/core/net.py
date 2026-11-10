@@ -104,7 +104,7 @@ class SafeHttpClient:
             sock = socket.create_connection((addresses[0], port), timeout=self.timeout)
             if parts.scheme == "https":
                 context = ssl.create_default_context()
-                context.minimum_version = max(context.minimum_version, ssl.TLSVersion.TLSv1_2)
+                context.minimum_version = ssl.TLSVersion.TLSv1_2
                 sock = context.wrap_socket(sock, server_hostname=host)
             connection.sock = sock
             connection.request(request.method, target, request.body, request.headers)

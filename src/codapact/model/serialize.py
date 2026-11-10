@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import math
 import types
 import typing
 from enum import StrEnum
@@ -79,7 +80,7 @@ def _is_json(value: object, depth: int = 0) -> bool:
     if value is None or isinstance(value, bool | int | str):
         return True
     if isinstance(value, float):
-        return value == value and value not in (float("inf"), float("-inf"))
+        return math.isfinite(value)
     if isinstance(value, list):
         return all(_is_json(v, depth + 1) for v in value)
     if isinstance(value, dict):
@@ -89,7 +90,7 @@ def _is_json(value: object, depth: int = 0) -> bool:
 
 def from_data[T](cls: type[T], data: Any, path: str = "$") -> T:
     """Rebuild a model node of ``cls`` from JSON-compatible data."""
-    return typing.cast(T, _decode(cls, data, path))
+    return _decode(cls, data, path)
 
 
 def _decode(hint: Any, data: Any, path: str) -> Any:

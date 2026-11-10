@@ -76,17 +76,17 @@ class Target(Protocol):
     @property
     def name(self) -> str:
         """Unique target name used in configuration."""
-        ...
+        raise NotImplementedError
 
     @property
     def capabilities(self) -> frozenset[str]:
         """Model features this target can render (see ``required_capabilities``)."""
-        ...
+        raise NotImplementedError
 
     @property
     def needs_commands(self) -> bool:
         """Whether the request must carry the command tree."""
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def generate(self, request: GenerationRequest) -> GenerationResponse:

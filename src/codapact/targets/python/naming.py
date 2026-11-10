@@ -9,7 +9,6 @@ from codapact.core.naming import Name
 from codapact.model.api import Api
 from codapact.model.types import (
     ListOf,
-    Literal,
     MapOf,
     Nullable,
     Primitive,
@@ -68,20 +67,18 @@ def annotation(expr: TypeExpr, prefix: str = "") -> str:
     would otherwise shadow the builtin inside class bodies.
     """
     container = "builtins." if prefix else ""
-    match expr:
-        case Primitive(scalar=scalar):
-            return SCALARS[scalar]
-        case Ref(name=name):
-            return prefix + type_name(name)
-        case ListOf(item=item):
-            return f"{container}list[{annotation(item, prefix)}]"
-        case MapOf(value=value):
-            return f"{container}dict[str, {annotation(value, prefix)}]"
-        case Nullable(inner=inner):
-            return f"{annotation(inner, prefix)} | None"
-        case Literal(value=value):
-            return f"Literal[{value!r}]" if isinstance(value, str | int | bool) else "Any"
-    raise AssertionError(expr)  # pragma: no cover
+    if isinstance(expr, Primitive):
+        return SCALARS[expr.scalar]
+    if isinstance(expr, Ref):
+        return prefix + type_name(expr.name)
+    if isinstance(expr, ListOf):
+        return f"{container}list[{annotation(expr.item, prefix)}]"
+    if isinstance(expr, MapOf):
+        return f"{container}dict[str, {annotation(expr.value, prefix)}]"
+    if isinstance(expr, Nullable):
+        return f"{annotation(expr.inner, prefix)} | None"
+    value = expr.value
+    return f"Literal[{value!r}]" if isinstance(value, str | int | bool) else "Any"
 
 
 def docstring(text: str, indent: str) -> str:

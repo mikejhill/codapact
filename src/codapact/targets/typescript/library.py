@@ -24,10 +24,8 @@ from codapact.model.api import (
     Operation,
 )
 from codapact.model.types import (
-    Alias,
     Enum,
     ListOf,
-    Literal,
     MapOf,
     Nullable,
     Primitive,
@@ -112,20 +110,17 @@ def _key(text: str) -> str:
 
 def ts_type(expr: TypeExpr, prefix: str = "") -> str:
     """Render a type expression; ``prefix`` qualifies references (``T.``)."""
-    match expr:
-        case Primitive(scalar=scalar):
-            return SCALARS[scalar]
-        case Ref(name=name):
-            return prefix + name
-        case ListOf(item=item):
-            return f"Array<{ts_type(item, prefix)}>"
-        case MapOf(value=value):
-            return f"Record<string, {ts_type(value, prefix)}>"
-        case Nullable(inner=inner):
-            return f"{ts_type(inner, prefix)} | null"
-        case Literal(value=value):
-            return json.dumps(value)
-    raise AssertionError(expr)  # pragma: no cover
+    if isinstance(expr, Primitive):
+        return SCALARS[expr.scalar]
+    if isinstance(expr, Ref):
+        return prefix + expr.name
+    if isinstance(expr, ListOf):
+        return f"Array<{ts_type(expr.item, prefix)}>"
+    if isinstance(expr, MapOf):
+        return f"Record<string, {ts_type(expr.value, prefix)}>"
+    if isinstance(expr, Nullable):
+        return f"{ts_type(expr.inner, prefix)} | null"
+    return json.dumps(expr.value)
 
 
 def _comment(text: str, indent: str = "") -> str:
@@ -145,25 +140,22 @@ def render_types(api: Api) -> str:
 
 
 def _definition(definition: TypeDef) -> str:
-    match definition:
-        case Record(name=name, fields=fields, additional=additional):
-            lines = [f"export type {name} = {{"]
-            for f in fields:
-                optional = "" if f.required else "?"
-                lines.append(
-                    _comment(f.docs, "  ") + f"  {_key(f.wire)}{optional}: {ts_type(f.type)};"
-                )
-            if additional is not None:
-                lines.append("  [key: string]: unknown;")
-            lines.append("};\n")
-            return "\n".join(lines)
-        case Enum(name=name, values=values):
-            return f"export type {name} = {' | '.join(json.dumps(v.value) for v in values)};\n"
-        case Union(name=name, variants=variants):
-            return f"export type {name} = {' | '.join(ts_type(v.type) for v in variants)};\n"
-        case Alias(name=name, target=target):
-            return f"export type {name} = {ts_type(target)};\n"
-    raise AssertionError(definition)  # pragma: no cover
+    name = definition.name
+    if isinstance(definition, Record):
+        lines = [f"export type {name} = {{"]
+        for f in definition.fields:
+            optional = "" if f.required else "?"
+            lines.append(_comment(f.docs, "  ") + f"  {_key(f.wire)}{optional}: {ts_type(f.type)};")
+        if definition.additional is not None:
+            lines.append("  [key: string]: unknown;")
+        lines.append("};\n")
+        return "\n".join(lines)
+    if isinstance(definition, Enum):
+        values = " | ".join(json.dumps(v.value) for v in definition.values)
+        return f"export type {name} = {values};\n"
+    if isinstance(definition, Union):
+        return f"export type {name} = {' | '.join(ts_type(v.type) for v in definition.variants)};\n"
+    return f"export type {name} = {ts_type(definition.target)};\n"
 
 
 def _operation_spec(api: Api, operation: Operation) -> dict[str, Any]:

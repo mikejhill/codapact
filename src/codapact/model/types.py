@@ -172,28 +172,25 @@ TypeDef = Record | Enum | Union | Alias
 
 def walk_refs(expr: TypeExpr) -> list[str]:
     """Return every definition name referenced by an expression."""
-    match expr:
-        case Ref(name=name):
-            return [name]
-        case ListOf(item=item):
-            return walk_refs(item)
-        case MapOf(value=value):
-            return walk_refs(value)
-        case Nullable(inner=inner):
-            return walk_refs(inner)
-        case _:
-            return []
+    if isinstance(expr, Ref):
+        return [expr.name]
+    if isinstance(expr, ListOf):
+        return walk_refs(expr.item)
+    if isinstance(expr, MapOf):
+        return walk_refs(expr.value)
+    if isinstance(expr, Nullable):
+        return walk_refs(expr.inner)
+    return []
 
 
 def definition_refs(definition: TypeDef) -> list[str]:
     """Return every definition name a definition references directly."""
-    match definition:
-        case Record(fields=fields, additional=additional):
-            refs = [r for f in fields for r in walk_refs(f.type)]
-            return refs + (walk_refs(additional) if additional is not None else [])
-        case Union(variants=variants):
-            return [r for v in variants for r in walk_refs(v.type)]
-        case Alias(target=target):
-            return walk_refs(target)
-        case _:
-            return []
+    if isinstance(definition, Record):
+        refs = [r for f in definition.fields for r in walk_refs(f.type)]
+        extra = definition.additional
+        return refs + (walk_refs(extra) if extra is not None else [])
+    if isinstance(definition, Union):
+        return [r for v in definition.variants for r in walk_refs(v.type)]
+    if isinstance(definition, Alias):
+        return walk_refs(definition.target)
+    return []

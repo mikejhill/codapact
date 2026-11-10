@@ -9,7 +9,7 @@ from codapact.core.diagnostics import Diagnostic, Severity
 from codapact.core.naming import Name
 from codapact.model.api import Api
 from codapact.model.serialize import dumps
-from codapact.model.types import Alias, Enum, Record, TypeDef, Union
+from codapact.model.types import Enum, Record, TypeDef, Union
 from codapact.plugins.protocol import GeneratedFile, GenerationRequest, GenerationResponse
 from codapact.surface.model import Method, Namespace, SurfaceParam
 from codapact.targets.python.naming import (
@@ -113,25 +113,22 @@ def render_types(api: Api) -> str:
 def _definition(definition: TypeDef) -> str:
     name = type_name(definition.name)
     docs = docstring(definition.docs, "")
-    match definition:
-        case Record(fields=fields):
-            entries = []
-            for f in fields:
-                ann = annotation(f.type)
-                ann = f'"{ann}"' if f.required else f'NotRequired["{ann}"]'
-                entries.append(f"    {f.name!r}: {ann},")
-            body = "\n".join(entries)
-            text = f"{name} = TypedDict(\n    {name!r},\n    {{\n{body}\n    }},\n)\n"
-            return text + (f"{docs.rstrip()}\n" if docs else "")
-        case Enum(values=values):
-            literal = ", ".join(repr(v.value) for v in values)
-            return f"type {name} = Literal[{literal}]\n" + (docs.rstrip() + "\n" if docs else "")
-        case Union(variants=variants):
-            members = " | ".join(annotation(v.type) for v in variants)
-            return f"type {name} = {members}\n" + (docs.rstrip() + "\n" if docs else "")
-        case Alias(target=target):
-            return f"type {name} = {annotation(target)}\n" + (docs.rstrip() + "\n" if docs else "")
-    raise AssertionError(definition)  # pragma: no cover
+    trailer = docs.rstrip() + "\n" if docs else ""
+    if isinstance(definition, Record):
+        entries = []
+        for f in definition.fields:
+            ann = annotation(f.type)
+            ann = f'"{ann}"' if f.required else f'NotRequired["{ann}"]'
+            entries.append(f"    {f.name!r}: {ann},")
+        body = "\n".join(entries)
+        return f"{name} = TypedDict(\n    {name!r},\n    {{\n{body}\n    }},\n)\n" + trailer
+    if isinstance(definition, Enum):
+        literal = ", ".join(repr(v.value) for v in definition.values)
+        return f"type {name} = Literal[{literal}]\n" + trailer
+    if isinstance(definition, Union):
+        members = " | ".join(annotation(v.type) for v in definition.variants)
+        return f"type {name} = {members}\n" + trailer
+    return f"type {name} = {annotation(definition.target)}\n" + trailer
 
 
 def resource_class(path: tuple[Name, ...]) -> str:
