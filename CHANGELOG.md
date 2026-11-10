@@ -2,6 +2,17 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.3.0](https://github.com/mikejhill/codapact/compare/v0.2.0...v0.3.0) (2026-11-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* the CLI, configuration format, and generated code are new.
+
+### Features
+
+* rewrite codapact as a layered contract-to-library-and-CLI generator ([#20](https://github.com/mikejhill/codapact/issues/20)) ([594ae46](https://github.com/mikejhill/codapact/commit/594ae46258b64d478e33313c9ca93033cbfff226))
+
 ## [0.2.0](https://github.com/mikejhill/codapact/compare/v0.1.1...v0.2.0) (2026-10-29)
 
 ### Features
