@@ -66,3 +66,8 @@ class Name:
     def __str__(self) -> str:
         """Render as snake case for messages."""
         return self.snake
+
+
+def env_variable(prefix: str, name: str) -> str:
+    """Return ``<PREFIX>_<NAME>`` with ``name`` reduced to upper snake case."""
+    return f"{prefix}_{re.sub(r'[^A-Za-z0-9]+', '_', name).strip('_').upper()}"

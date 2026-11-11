@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import base64
 import os
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from codapact.core.naming import env_variable
 from codapact.model.api import Api, AuthKind, AuthRequirement, AuthScheme, ParamLocation
 from codapact.runtime.abstractions import AuthProvider, Credential
 from codapact.runtime.errors import AuthError
@@ -38,8 +38,14 @@ class EnvAuth:
 
     def variable(self, scheme: AuthScheme) -> str:
         """Return the environment variable name for ``scheme``."""
-        name = re.sub(r"[^A-Za-z0-9]+", "_", scheme.name).strip("_").upper()
-        return f"{self.prefix}_{name}"
+        return env_variable(self.prefix, scheme.name)
+
+    def hint(self, scheme: AuthScheme) -> str:
+        """Tell a person where this provider looks for ``scheme``."""
+        base = self.variable(scheme)
+        if scheme.kind is AuthKind.BASIC:
+            return f"set {base}_USERNAME and {base}_PASSWORD"
+        return f"set {base}"
 
     def credential(self, scheme: AuthScheme) -> Credential | None:
         """Return the credential from the environment, if set."""
@@ -57,6 +63,11 @@ class ChainAuth:
     """Try providers in order; the first credential wins."""
 
     providers: tuple[AuthProvider, ...] = field(default_factory=tuple)
+
+    def hint(self, scheme: AuthScheme) -> str:
+        """Join the hints of providers that offer one."""
+        hints = [h for p in self.providers if (h := auth_hint(p, scheme))]
+        return " or ".join(hints)
 
     def credential(self, scheme: AuthScheme) -> Credential | None:
         """Return the first credential any provider supplies."""
@@ -93,7 +104,15 @@ def resolve_auth(
         if complete:
             return applied
     names = sorted({n for alternative in requirement.alternatives for n in alternative})
-    raise AuthError(f"no credentials configured for any of: {', '.join(names)}")
+    hints = [h for n in names if provider is not None and (h := auth_hint(provider, api.scheme(n)))]
+    detail = f" ({'; '.join(hints)})" if hints else ""
+    raise AuthError(f"no credentials configured for any of: {', '.join(names)}{detail}")
+
+
+def auth_hint(provider: AuthProvider, scheme: AuthScheme) -> str:
+    """Return the provider's optional ``hint(scheme)``, or an empty string."""
+    hint = getattr(provider, "hint", None)
+    return str(hint(scheme)) if callable(hint) else ""
 
 
 def _apply(scheme: AuthScheme, credential: Credential, applied: AppliedAuth) -> None:

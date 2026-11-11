@@ -127,6 +127,8 @@ class RuntimeClient:
             raise ValidationError(operation.name, f"unknown arguments {sorted(unknown)}")
         encoded: dict[str, Any] = {}
         for param in operation.params:
+            if param.name not in arguments and param.default is not None:
+                arguments = {**arguments, param.name: param.default}
             if param.name not in arguments or arguments[param.name] is None and not param.required:
                 if param.required:
                     raise ValidationError(f"{operation.name}.{param.name}", "is required")

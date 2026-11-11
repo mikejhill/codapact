@@ -17,10 +17,15 @@ from codapact.model.values import JsonValue
 
 @dataclass(frozen=True, slots=True)
 class ParamSource:
-    """Where a surface argument goes: a model param, or one field of a record param."""
+    """Where a surface argument goes: a model param, a field of it, or a field of that field.
+
+    ``subfield`` is set when a single-field wrapper body was flattened:
+    ``ParamSource("body", "account", "name")`` builds ``{"account": {"name": ...}}``.
+    """
 
     param: str
     field: str | None = None
+    subfield: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

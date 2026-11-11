@@ -178,3 +178,112 @@ def test_unsupported_response_media() -> None:
     doc = spec(get(responses={"200": {"content": {"application/xml": {}}}}))
     api, _ = ok(doc, strict=False)
     assert api.operations == ()
+
+
+def test_nullable_components_are_nullable_at_every_reference() -> None:
+    schemas = {
+        "Flag": {"type": ["string", "null"], "enum": ["red", "", None]},
+        "Fmt": {
+            "type": ["object", "null"],
+            "required": ["format"],
+            "properties": {"format": {"type": "string"}},
+        },
+        "Legacy": {"type": "string", "nullable": True},
+        "Holder": {
+            "type": "object",
+            "properties": {
+                "flag": {"$ref": "#/components/schemas/Flag"},
+                "fmt": {"$ref": "#/components/schemas/Fmt"},
+                "legacy": {"$ref": "#/components/schemas/Legacy", "nullable": True},
+            },
+        },
+    }
+    api, _ = ok(spec(get(), schemas))
+    holder = api.type("Holder")
+    assert isinstance(holder, t.Record)
+    types = {f.name: f.type for f in holder.fields}
+    assert types == {
+        "flag": t.Nullable(t.Ref("Flag")),
+        "fmt": t.Nullable(t.Ref("Fmt")),
+        "legacy": t.Nullable(t.Ref("Legacy")),
+    }
+    assert isinstance(api.type("Flag"), t.Enum)
+    assert isinstance(api.type("Fmt"), t.Record)
+
+
+def test_all_of_nullable_wrapper_and_required_overlay() -> None:
+    schemas = {
+        "Base": {
+            "type": "object",
+            "properties": {"name": {"type": ["string", "null"]}, "group": {"type": "string"}},
+        },
+        "New": {"allOf": [{"$ref": "#/components/schemas/Base"}, {"required": ["name", "group"]}]},
+        "Typed": {
+            "allOf": [{"$ref": "#/components/schemas/Base"}],
+            "type": "object",
+            "required": ["group"],
+        },
+        "Wrapper": {
+            "type": "object",
+            "properties": {
+                "maybe": {"allOf": [{"$ref": "#/components/schemas/Base"}], "nullable": True}
+            },
+        },
+    }
+    api, diagnostics = ok(spec(get(), schemas))
+    assert not diagnostics.has_errors
+    new = api.type("New")
+    assert isinstance(new, t.Record)
+    assert {f.name: f.required for f in new.fields} == {"name": True, "group": True}
+    typed = api.type("Typed")
+    assert isinstance(typed, t.Record)
+    assert {f.name: f.required for f in typed.fields} == {"name": False, "group": True}
+    wrapper = api.type("Wrapper")
+    assert isinstance(wrapper, t.Record)
+    assert wrapper.fields[0].type == t.Nullable(t.Ref("Base"))
+
+
+def test_all_of_required_overlay_must_name_declared_fields() -> None:
+    schemas = {
+        "Base": {"type": "object", "properties": {"a": {"type": "string"}}},
+        "Bad": {"allOf": [{"$ref": "#/components/schemas/Base"}, {"required": ["zz"]}]},
+    }
+    result = openapi(spec(get(), schemas))
+    assert any("'zz'" in str(d) for d in result.diagnostics)
+
+
+def test_signed_and_colliding_property_names() -> None:
+    schemas = {
+        "Reactions": {
+            "type": "object",
+            "properties": {
+                "+1": {"type": "integer"},
+                "-1": {"type": "integer"},
+                "1": {"type": "integer"},
+                "a-b": {"type": "string"},
+                "a_b": {"type": "string"},
+            },
+        }
+    }
+    api, _ = ok(spec(get(), schemas))
+    record = api.type("Reactions")
+    assert isinstance(record, t.Record)
+    assert [(f.name, f.wire) for f in record.fields] == [
+        ("plus_1", "+1"),
+        ("minus_1", "-1"),
+        ("n1", "1"),
+        ("a_b", "a-b"),
+        ("a_b_2", "a_b"),
+    ]
+
+
+def test_inline_all_of_members_keep_keyword_checks() -> None:
+    inline = {"type": "object", "properties": {"x": {"type": "string"}}, "not": {}}
+    schemas = {
+        "Base": {"type": "object", "properties": {"a": {"type": "string"}}},
+        "Odd": {"allOf": [{"$ref": "#/components/schemas/Base"}, inline]},
+    }
+    result = openapi(spec(get(), schemas))
+    assert any("not" in d.message for d in result.diagnostics if d.severity.value == "error")
+    api, _ = ok(spec(get(), schemas), strict=False)
+    assert api.type("Odd") == t.Alias("Odd", t.Primitive(t.ScalarKind.ANY))

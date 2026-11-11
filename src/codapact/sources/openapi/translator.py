@@ -7,6 +7,7 @@ definitions derived from their position (``GetPetResponse``, ``PetStatus``).
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from collections.abc import Mapping
 from http import HTTPStatus
@@ -102,6 +103,7 @@ class _Translator:
         self.diagnostics = diagnostics
         self.definitions: dict[str, t.TypeDef] = {}
         self.component_names: dict[str, str] = {}
+        self.nullable_components: set[str] = set()
         self.pending: set[str] = set()
 
     # ----------------------------------------------------------------- utilities
@@ -165,8 +167,10 @@ class _Translator:
             raise ContractError("paths must be an object")
         components = self.doc.get("components", {})
         schemas = components.get("schemas", {}) if isinstance(components, dict) else {}
-        for raw in schemas:
+        for raw, schema in schemas.items():
             self.component_names[raw] = _type_name(raw)
+            if _admits_null(schema):
+                self.nullable_components.add(raw)
         for raw, schema in schemas.items():
             name = self.component_names[raw]
             if name in self.definitions:
@@ -427,7 +431,7 @@ class _Translator:
         if isinstance(expr, t.Nullable) and expr.inner == t.Ref(name):
             self.diagnostics.info(
                 "openapi.nullable-definition",
-                "nullability on a named schema applies only where it is used",
+                "nullability on a named schema is applied at each reference to it",
                 where,
             )
             return t.Ref(name)
@@ -442,6 +446,14 @@ class _Translator:
         except Unsupported:
             return t.Primitive(t.ScalarKind.ANY)
 
+    def check_keywords(self, schema: dict[str, Any], where: str) -> None:
+        """Reject schema keywords the model cannot represent."""
+        unknown = {k for k in schema if not k.startswith("x-")} - (
+            SCHEMA_KEYS_SUPPORTED | SCHEMA_KEYS_IGNORED
+        )
+        if unknown:
+            self.unsupported(f"schema keywords {sorted(unknown)} are not supported", where)
+
     def structural(self, schema: Any, hint: str, where: str, *, named: bool) -> t.TypeExpr:
         if schema is True or schema == {}:
             return t.Primitive(t.ScalarKind.ANY)
@@ -449,11 +461,7 @@ class _Translator:
             raise ContractError(f"{where}: schema must be an object")
         if "$ref" in schema:
             return self.reference(schema, hint, where)
-        unknown = {k for k in schema if not k.startswith("x-")} - (
-            SCHEMA_KEYS_SUPPORTED | SCHEMA_KEYS_IGNORED
-        )
-        if unknown:
-            self.unsupported(f"schema keywords {sorted(unknown)} are not supported", where)
+        self.check_keywords(schema, where)
         raw_type = schema.get("type")
         types_listed = raw_type if isinstance(raw_type, list) else [raw_type] if raw_type else []
         nullable = bool(schema.get("nullable")) or "null" in types_listed
@@ -469,10 +477,14 @@ class _Translator:
             if raw not in self.component_names:
                 raise ContractError(f"{where}: unresolved reference {ref!r}")
             target: t.TypeExpr = t.Ref(self.component_names[raw])
+            if raw in self.nullable_components:
+                # The named definition is the non-null type; nullability is part of the
+                # component's contract, so every reference to it carries it.
+                target = t.Nullable(target)
         else:
             target = self.structural(self.pointer(str(ref), where), hint, where, named=False)
         siblings = {k for k in schema if k != "$ref"} - SCHEMA_KEYS_IGNORED
-        if siblings == {"nullable"} and schema["nullable"]:
+        if siblings == {"nullable"} and schema["nullable"] and not isinstance(target, t.Nullable):
             return t.Nullable(target)
         return target
 
@@ -532,10 +544,22 @@ class _Translator:
             return t.MapOf(t.Primitive(t.ScalarKind.ANY))
         name = hint if named else self.unique_name(hint)
         self.pending.add(name)
+        fields = self.fields(schema, name, where)
+        extra: t.TypeExpr | None = None
+        if isinstance(additional, dict) and additional:
+            extra = self.expr(additional, name + "Value", where)
+        return self.add(
+            t.Record(name, tuple(fields), _docs(schema), extra, closed=additional is False)
+        )
+
+    def fields(self, schema: dict[str, Any], name: str, where: str) -> list[t.Field]:
+        """Translate ``properties``; nested shapes are named after ``name``."""
+        properties = schema.get("properties") or {}
         required = set(schema.get("required", []))
         fields = []
+        used: set[str] = set()
         for wire, prop in properties.items():
-            field_name = _identifier(wire)
+            field_name = _unique_identifier(str(wire), used)
             prop_hint = name + Name.parse(field_name).pascal
             fields.append(
                 t.Field(
@@ -548,12 +572,7 @@ class _Translator:
                     default=prop.get("default") if isinstance(prop, dict) else None,
                 )
             )
-        extra: t.TypeExpr | None = None
-        if isinstance(additional, dict) and additional:
-            extra = self.expr(additional, name + "Value", where)
-        return self.add(
-            t.Record(name, tuple(fields), _docs(schema), extra, closed=additional is False)
-        )
+        return fields
 
     def enum(self, schema: dict[str, Any], hint: str, where: str, *, named: bool) -> t.TypeExpr:
         values = [v for v in schema["enum"] if v is not None]
@@ -581,13 +600,29 @@ class _Translator:
 
     def all_of(self, schema: dict[str, Any], hint: str, where: str, *, named: bool) -> t.TypeExpr:
         parts = schema["allOf"]
-        rest = {k: v for k, v in schema.items() if k not in {"allOf", *SCHEMA_KEYS_IGNORED}}
+        # ``nullable`` and an object/null ``type`` are applied by ``structural``; they are
+        # not an extra member to merge.
+        handled = {"allOf", "nullable", *SCHEMA_KEYS_IGNORED}
+        if _object_or_null_type(schema.get("type")):
+            handled.add("type")
+        rest = {k: v for k, v in schema.items() if k not in handled}
         if len(parts) == 1 and not rest:
             return self.structural(parts[0], hint, where, named=named)
         fields: dict[str, t.Field] = {}
+        overlay_required: set[str] = set()
         name = hint if named else self.unique_name(hint)
         self.pending.add(name)
         for index, part in enumerate([*parts, rest] if rest else parts):
+            if _is_required_overlay(part):
+                # ``{required: [...]}`` without properties tightens fields from other members.
+                overlay_required.update(part["required"])
+                continue
+            if _is_plain_object(part):
+                # Inline object members merge directly; they never become public types.
+                self.check_keywords(part, f"{where}.allOf[{index}]")
+                for f in self.fields(part, name, f"{where}.allOf[{index}]"):
+                    fields[f.name] = f
+                continue
             expr = self.structural(part, f"{name}Part{index}", where, named=False)
             record = self.resolve_record(expr)
             if record is None:
@@ -595,9 +630,18 @@ class _Translator:
                 raise AssertionError  # pragma: no cover - unsupported always raises
             for f in record.fields:
                 fields[f.name] = f
+        by_wire = {f.wire: key for key, f in fields.items()}
+        for wire in sorted(overlay_required):
+            if wire not in by_wire:
+                self.unsupported(f"allOf requires {wire!r}, which no member declares", where)
+                raise AssertionError  # pragma: no cover - unsupported always raises
+            key = by_wire[wire]
+            fields[key] = dataclasses.replace(fields[key], required=True)
         return self.add(t.Record(name, tuple(fields.values()), _docs(schema)))
 
     def resolve_record(self, expr: t.TypeExpr) -> t.Record | None:
+        if isinstance(expr, t.Nullable):
+            expr = expr.inner
         while isinstance(expr, t.Ref):
             definition = self.definitions.get(expr.name)
             if definition is None:
@@ -640,6 +684,40 @@ class _Translator:
             t.Union(name, tuple(variants), discriminator.get("propertyName"), _docs(schema))
         )
         return t.Nullable(ref) if nullable else ref
+
+
+def _admits_null(schema: Any) -> bool:
+    """Whether a component schema itself declares ``null`` as a valid value."""
+    if not isinstance(schema, dict) or "$ref" in schema:
+        return False
+    raw_type = schema.get("type")
+    if schema.get("nullable") is True or raw_type == "null":
+        return True
+    if isinstance(raw_type, list) and "null" in raw_type:
+        return True
+    enum = schema.get("enum")
+    return isinstance(enum, list) and None in enum
+
+
+def _object_or_null_type(raw_type: Any) -> bool:
+    types = raw_type if isinstance(raw_type, list) else [raw_type]
+    return bool(types) and all(x in {"object", "null"} for x in types)
+
+
+def _is_plain_object(part: Any) -> bool:
+    if not isinstance(part, dict) or not part.get("properties"):
+        return False
+    if part.get("additionalProperties") not in (None, True, False):
+        return False
+    structural = {"$ref", "allOf", "oneOf", "anyOf", "enum", "const", "nullable"}
+    return not (set(part) & structural) and part.get("type", "object") == "object"
+
+
+def _is_required_overlay(part: Any) -> bool:
+    if not isinstance(part, dict) or not isinstance(part.get("required"), list):
+        return False
+    keys = set(part) - SCHEMA_KEYS_IGNORED - {"required"}
+    return not keys or (keys == {"type"} and part["type"] == "object")
 
 
 def _infer_type(schema: Mapping[str, Any]) -> str | None:
@@ -687,12 +765,28 @@ def _type_name(raw: str) -> str:
     return f"T{name}" if name[0].isdigit() else name
 
 
+_SIGNS = {"+": "plus", "-": "minus"}
+
+
 def _identifier(raw: str) -> str:
+    sign = _SIGNS.get(raw[:1], "") if raw[1:2].isdigit() else ""
     try:
         name = Name.parse(raw).snake
     except ValueError:
         name = "value"
+    if sign:
+        return f"{sign}_{name}"
     return f"n{name}" if name[0].isdigit() else name
+
+
+def _unique_identifier(raw: str, used: set[str]) -> str:
+    """Return ``_identifier(raw)``, suffixed with ``_2``, ``_3``… if already ``used``."""
+    base = _identifier(raw)
+    name, index = base, 2
+    while name in used:
+        name, index = f"{base}_{index}", index + 1
+    used.add(name)
+    return name
 
 
 def _derive_operation_name(method: str, path: str) -> str:

@@ -8,12 +8,14 @@ from __future__ import annotations
 
 from codapact.commands.model import Arg, ArgKind, Command, CommandTree, Group
 from codapact.core.errors import PluginError, expect
-from codapact.core.naming import Name
+from codapact.core.naming import Name, env_variable
+from codapact.model.api import AuthKind
 from codapact.model.types import ScalarKind
 from codapact.plugins.protocol import GeneratedFile, GenerationRequest, GenerationResponse
 from codapact.targets.python.library import CAPABILITIES, PythonOptions
 from codapact.targets.python.naming import ident, method_ident
 
+METAVARS = {"date": "YYYY-MM-DD", "datetime": "DATETIME"}
 PARSERS = {
     ScalarKind.INTEGER: "integer",
     ScalarKind.FLOAT: "number",
@@ -35,7 +37,10 @@ class PythonCliTarget:
         tree = request.commands
         root = f"src/{options.package}"
         files = (
-            GeneratedFile(f"{root}/cli.py", render_cli(tree, request.api.docs or request.api.name)),
+            GeneratedFile(
+                f"{root}/cli.py",
+                render_cli(tree, request.api.docs or request.api.name, _auth_help(request)),
+            ),
             GeneratedFile(
                 f"{root}/__main__.py",
                 '"""Run the generated CLI with ``python -m``."""\n\n'
@@ -46,12 +51,28 @@ class PythonCliTarget:
         return GenerationResponse(files)
 
 
-def render_cli(tree: CommandTree, description: str) -> str:
+def _auth_help(request: GenerationRequest) -> str:
+    prefix = request.commands.env_prefix if request.commands is not None else ""
+    lines = []
+    for scheme in request.api.auth_schemes:
+        base = env_variable(prefix, scheme.name)
+        where = f"{base}_USERNAME and {base}_PASSWORD" if scheme.kind is AuthKind.BASIC else base
+        lines.append(f"  {scheme.name}: set {where}")
+    return "\n".join(lines)
+
+
+def render_cli(tree: CommandTree, description: str, auth_help: str = "") -> str:
     """Render the argparse module."""
     handlers: list[str] = []
     parser_lines: list[str] = []
     _group(tree.root, "commands", (), handlers, parser_lines)
     summary = description.strip().splitlines()[0] if description.strip() else tree.program.kebab
+    prefix = tree.env_prefix
+    epilog = (
+        (f"credentials:\n{auth_help}\n\n" if auth_help else "")
+        + f"settings: --config PATH or $XDG_CONFIG_HOME/{tree.program.kebab}/config.json\n"
+        + f"environment: {prefix}_BASE_URL, {prefix}_TIMEOUT, {prefix}_ALLOW_PRIVATE"
+    )
     head = [
         '"""Command line interface generated from the command model. Do not edit."""\n',
         "# ruff: noqa: E501",
@@ -75,14 +96,15 @@ def render_cli(tree: CommandTree, description: str) -> str:
         "    common = argparse.ArgumentParser(add_help=False)",
         "    RUNTIME.add_global_options(common)",
         "    parser = argparse.ArgumentParser(",
-        f"        prog={tree.program.kebab!r}, description={summary!r}",
+        f"        prog={tree.program.kebab!r}, description={summary!r}, epilog={epilog!r},",
+        "        formatter_class=argparse.RawDescriptionHelpFormatter, parents=[common],",
         "    )",
         '    commands = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)',
         *parser_lines,
         "    return parser\n",
         "\ndef main(argv: Sequence[str] | None = None) -> int:",
         '    """Parse arguments, run one command, and return the exit code."""',
-        "    args = build_parser().parse_args(argv)",
+        "    args = RUNTIME.parse(build_parser(), argv)",
         "    return RUNTIME.run(args, lambda options: Client(**options), args.handler)",
     ]
     return "\n".join(head + handlers + build) + "\n"
@@ -131,6 +153,9 @@ def _handler(command: Command) -> str:
         f"\n\ndef {_handler_name(command)}(client: Client, args: argparse.Namespace) -> Any:",
         f"    kwargs = compact({{{kwargs}}})",
     ]
+    if command.destructive:
+        label = " ".join(n.kebab for n in command.method_path)
+        lines.append(f"    RUNTIME.confirm(args, {label!r})")
     if command.paginated:
         lines.append("    if args.all:")
         lines.append(f"        return client.{attribute}_iter(**kwargs, max_items=args.max_items)")
@@ -150,7 +175,10 @@ def _command_parser(command: Command, container: str) -> list[str]:
         lines.append(f"    {var}.add_argument({', '.join(_argument(arg))})")
     if command.paginated:
         lines.append(f"    RUNTIME.add_paging_options({var})")
-    lines.append(f"    {var}.set_defaults(handler={_handler_name(command)})")
+    if command.destructive:
+        lines.append(f"    RUNTIME.add_confirm_option({var})")
+    flags = {".".join(a.source): "--" + a.flag.kebab for a in command.args if a.source}
+    lines.append(f"    {var}.set_defaults(handler={_handler_name(command)}, flags={flags!r})")
     return lines
 
 
@@ -170,11 +198,14 @@ def _argument(arg: Arg) -> list[str]:
             parts += ["type=json_value", 'metavar="JSON"']
         case ArgKind.SCALAR:
             parts.extend(_scalar(arg.scalar))
-            parts.append(f"metavar={arg.flag.screaming!r}")
+            parts.append(f"metavar={METAVARS.get(arg.format or '', arg.flag.screaming)!r}")
     if arg.required:
         parts.append("required=True")
-    if arg.docs:
-        parts.append(f"help={arg.docs.strip().splitlines()[0]!r}")
+    help_text = arg.docs.strip().splitlines()[0] if arg.docs.strip() else ""
+    if arg.default is not None:
+        help_text = f"{help_text} (default: {arg.default})".strip()
+    if help_text:
+        parts.append(f"help={help_text.replace('%', '%%')!r}")
     return parts
 
 

@@ -11,6 +11,7 @@ from enum import StrEnum
 
 from codapact.core.naming import Name
 from codapact.model.types import ScalarKind, TypeExpr
+from codapact.model.values import JsonValue
 
 
 class ArgKind(StrEnum):
@@ -35,6 +36,9 @@ class Arg:
     scalar: ScalarKind | None = None
     choices: tuple[str, ...] = ()
     docs: str = ""
+    default: JsonValue = None
+    format: str | None = None
+    source: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +53,7 @@ class Command:
     read_only: bool = False
     paginated: bool = False
     deprecated: bool = False
+    destructive: bool = False
 
 
 @dataclass(frozen=True, slots=True)

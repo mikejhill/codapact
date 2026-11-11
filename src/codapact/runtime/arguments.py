@@ -30,6 +30,11 @@ class Unset:
 UNSET: Final = Unset()
 
 
+def fields(values: Mapping[str, Any]) -> dict[str, Any]:
+    """Return ``values`` without ``UNSET`` entries (a flattened wrapper's inner record)."""
+    return {key: value for key, value in values.items() if value is not UNSET}
+
+
 def call_args(
     flat: Mapping[str, Any],
     nested: Mapping[str, Mapping[str, Any]] | None = None,

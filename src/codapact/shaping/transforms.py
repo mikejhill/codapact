@@ -112,7 +112,7 @@ class Rename:
         self, api: Api, config: Mapping[str, Any], diagnostics: Diagnostics
     ) -> TransformResult:
         """Apply every mapping; unknown targets are errors."""
-        unknown = set(config) - {"operations", "types", "fields", "params"}
+        unknown = set(config) - {"operations", "types", "fields", "params", "patterns"}
         if unknown:
             raise ConfigError(f"unknown rename keys {sorted(unknown)}")
         changes: list[dict[str, str]] = []
@@ -125,6 +125,8 @@ class Rename:
 
         operations = dict(config.get("operations", {}))
         names = {op.name for op in api.operations}
+        for name, new in _pattern_renames(config.get("patterns", []), names, diagnostics).items():
+            operations.setdefault(name, new)
         for old in sorted(set(operations) - names):
             diagnostics.error("shape.rename.unknown", f"unknown operation {old!r}")
         api = dataclasses.replace(
@@ -326,4 +328,79 @@ def _resolve(
     return current
 
 
-BUILTIN_TRANSFORMS = (Select(), Rename(), Group(), Paginate(), Prune())
+class Defaults:
+    """Give params a default value, making them optional (``op_glob.param: value``).
+
+    The runtime sends the default whenever the caller omits the argument, so a
+    required path param such as ``plan_id`` can default to ``last-used``.
+    """
+
+    name = "defaults"
+
+    def apply(
+        self, api: Api, config: Mapping[str, Any], diagnostics: Diagnostics
+    ) -> TransformResult:
+        """Set ``default`` and clear ``required`` on every matching param."""
+        unknown = set(config) - {"params"}
+        if unknown:
+            raise ConfigError(f"unknown defaults keys {sorted(unknown)}")
+        params = config.get("params", {})
+        if not isinstance(params, Mapping) or not params:
+            raise ConfigError("defaults.params must be a non-empty mapping of op.param: value")
+        hits: dict[str, list[str]] = {str(key): [] for key in params}
+        operations = []
+        for op in api.operations:
+            new_params = []
+            for param in op.params:
+                for key, value in params.items():
+                    glob, _, name = str(key).rpartition(".")
+                    if not glob or not name:
+                        raise ConfigError(f"defaults key {key!r} must look like 'op_glob.param'")
+                    if param.name == name and fnmatchcase(op.name, glob):
+                        if value is None or isinstance(value, dict | list):
+                            raise ConfigError(f"default for {key!r} must be a scalar")
+                        param = dataclasses.replace(param, required=False, default=value)
+                        hits[str(key)].append(op.name)
+                        break
+                new_params.append(param)
+            operations.append(dataclasses.replace(op, params=tuple(new_params)))
+        for key, matched in hits.items():
+            if not matched:
+                diagnostics.warning("shape.defaults.unmatched", f"{key!r} matched no param")
+        api = dataclasses.replace(api, operations=tuple(operations))
+        return TransformResult(api, [{"transform": self.name, "params": hits}])
+
+
+BUILTIN_TRANSFORMS = (Select(), Rename(), Group(), Paginate(), Defaults(), Prune())
+
+
+def _pattern_renames(patterns: Any, names: set[str], diagnostics: Diagnostics) -> dict[str, str]:
+    """Expand ``[{match: regex, replace: template}]`` into an operation rename map.
+
+    The first pattern that fully matches a name wins; explicit ``operations`` entries
+    take precedence over patterns.
+    """
+    if not isinstance(patterns, list):
+        raise ConfigError("rename.patterns must be a list of {match, replace}")
+    compiled: list[tuple[re.Pattern[str], str]] = []
+    for entry in patterns:
+        if not isinstance(entry, Mapping) or set(entry) != {"match", "replace"}:
+            raise ConfigError("each rename pattern needs exactly 'match' and 'replace'")
+        try:
+            compiled.append((re.compile(str(entry["match"])), str(entry["replace"])))
+        except re.error as error:
+            raise ConfigError(f"invalid rename pattern {entry['match']!r}: {error}") from None
+    result: dict[str, str] = {}
+    for pattern, template in compiled:
+        hits = 0
+        for name in sorted(names):
+            match = pattern.fullmatch(name)
+            if match is None or name in result:
+                continue
+            result[name] = match.expand(template)
+            hits += 1
+        if not hits:
+            diagnostics.warning(
+                "shape.rename.unused", f"rename pattern {pattern.pattern!r} matched nothing"
+            )
+    return result
