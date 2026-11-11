@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 from pathlib import Path
 
 import pytest
@@ -31,12 +30,31 @@ def test_evaluate(stats: dict[str, int], floor: float, passed: bool) -> None:
     assert mutation_score.evaluate(stats, floor)[0] is passed
 
 
+RESULTS = """\
+    codapact.core.a__mutmut_1: killed
+    codapact.core.a__mutmut_2: killed
+    codapact.core.a__mutmut_3: killed
+    codapact.core.a__mutmut_4: killed
+    codapact.core.a__mutmut_5: survived
+    codapact.model.b__mutmut_1: not checked
+    codapact.model.b__mutmut_2: no tests
+"""
+
+
+def test_count_filters_by_prefix() -> None:
+    assert mutation_score.count(RESULTS, "codapact.core.") == {"killed": 4, "survived": 1}
+    assert mutation_score.count(RESULTS, "codapact.model.") == {"not_checked": 1, "no_tests": 1}
+
+
 def test_main_writes_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    stats = tmp_path / "stats.json"
-    stats.write_text(json.dumps({"killed": 4, "survived": 1}), "utf-8")
+    stats = tmp_path / "results.txt"
+    stats.write_text(RESULTS, "utf-8")
     summary = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    assert mutation_score.main(["--stats", str(stats), "--floor", "80"]) == 0
+    core = ["--results", str(stats), "--prefix", "codapact.core."]
+    assert mutation_score.main([*core, "--floor", "80"]) == 0
     assert "80.0%" in summary.read_text("utf-8")
-    assert mutation_score.main(["--stats", str(stats), "--floor", "81"]) == 1
-    assert mutation_score.main(["--stats", str(tmp_path / "missing.json")]) == 1
+    assert mutation_score.main([*core, "--floor", "81"]) == 1
+    # Unchecked mutants in the shard make the run incomplete.
+    assert mutation_score.main(["--results", str(stats), "--floor", "0"]) == 1
+    assert mutation_score.main(["--results", str(tmp_path / "missing.txt")]) == 1

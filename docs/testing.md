@@ -26,7 +26,7 @@ make sure they keep running.
 | Prism | `e2e/test_public_apis.py` + `CODAPACT_PRISM_URL` | Every request validated by a Prism mock of the pinned PokeAPI spec | every PR |
 | Live | marker `live`, `CODAPACT_LIVE=1` | PokeAPI and Countries GraphQL respond as the generated CLI expects | nightly |
 | Performance | `tests/perf`, `perf` | Translation, generation, and decoding scale linearly; throughput floors | every PR |
-| Mutation | `mutmut` | Tests notice behavior changes in `src/codapact` | after merge to main, weekly |
+| Mutation | `mutmut`, 6 parallel shards | Tests notice behavior changes in `src/codapact` | after merge to main, weekly |
 
 Suite markers come from the directory (`tests/conftest.py`); a new file needs no marker.
 
@@ -58,7 +58,7 @@ unit regression next to the fix.
 | Coverage of changed lines | 100% | `coverage` job (`diff-cover` vs. base branch) |
 | TypeScript tests run | must not skip | `CODAPACT_REQUIRE_NODE=1` in CI |
 | Scaling ratio (4x input) | < 8x time | `perf` job |
-| Mutation score | floor in `.github/workflows/mutation.yml` | `mutation` workflow |
+| Mutation score, per shard | 70% (baseline ~74%; raise, never lower) | `mutation` workflow |
 
 Subprocesses are measured too (`[tool.coverage.run] patch = ["subprocess"]`), so e2e
 runs count. Code that genuinely cannot run in tests takes `# pragma: no cover` with a

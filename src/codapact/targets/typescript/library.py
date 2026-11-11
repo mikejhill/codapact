@@ -163,6 +163,7 @@ def _operation_spec(api: Api, operation: Operation) -> dict[str, Any]:
         "name": operation.name,
         "auth": [list(a) for a in operation.auth.alternatives],
         "idempotent": operation.idempotent,
+        "required": [p.name for p in operation.params if p.required],
     }
     paging = operation.pagination
     if isinstance(paging, CursorPagination):
@@ -321,7 +322,7 @@ def _method(api: Api, method: Method) -> str:
             )
     for (source, wire), items in wrapped.items():
         nested.setdefault(source, []).append(f"{json.dumps(wire)}: {{ {', '.join(items)} }}")
-    required = required_sources(api, method)
+    required = required_sources(method)
     for source, items in nested.items():
         record = f"{{ {', '.join(items)} }}"
         flat.append(f"{json.dumps(source)}: present({record}, {json.dumps(source in required)})")

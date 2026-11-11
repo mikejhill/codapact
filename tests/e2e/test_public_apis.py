@@ -36,7 +36,7 @@ USED_COMMANDS = [
     ["utility", "meta-retrieve"],
     ["pokemon", "retrieve"],
     ["pokemon", "list"],
-    ["berries", "berry-retrieve"],
+    ["berries", "retrieve"],
 ]
 
 
@@ -102,7 +102,7 @@ def test_pokeapi_against_prism_mock(pokeapi_src: Path) -> None:
     assert isinstance(cli.json("utility", "meta-retrieve"), dict)
     assert isinstance(cli.json("pokemon", "retrieve", "--id", "25"), dict)
     assert isinstance(cli.json("pokemon", "retrieve", "--id", "pikachu"), dict)
-    assert isinstance(cli.json("berries", "berry-retrieve", "--id", "1"), dict)
+    assert isinstance(cli.json("berries", "retrieve", "--id", "1"), dict)
     page = cli.json("pokemon", "list", "--limit", "2")
     assert isinstance(page, dict) and isinstance(page.get("results"), list)
     for output in ("yaml", "raw"):
@@ -123,7 +123,7 @@ def test_pokeapi_live(pokeapi_src: Path) -> None:
     assert (pikachu["id"], pikachu["name"]) == (25, "pikachu")
     assert "electric" in {t["type"]["name"] for t in pikachu["types"]}
     assert cli.json("pokemon", "retrieve", "--id", "pikachu")["id"] == 25
-    assert cli.json("berries", "berry-retrieve", "--id", "1")["name"] == "cheri"
+    assert cli.json("berries", "retrieve", "--id", "1")["name"] == "cheri"
     items = cli.json("pokemon", "list", "--limit", "2", "--all", "--max-items", "5")
     assert len(items) == 5 and all({"name", "url"} <= set(i) for i in items)
     missing = cli("pokemon", "retrieve", "--id", "999999")

@@ -38,7 +38,7 @@ CALLS: list[tuple[str, dict[str, Any]]] = [
     ("echo", {"ids": [6], "name": "ünïcode", "flag": False, "tag": []}),
     ("echo", {"ids": [7], "name": "n", "x_trace": "bad\r\nInjected: 1"}),
     ("echo", {"ids": [8], "name": "n", "sid": "abc; admin=1"}),
-    # A required body whose fields are all optional is sent as {} when none are given.
+    # A required body whose fields are all optional is reported missing, not sent as {}.
     ("touch", {}),
     ("touch", {"label": "x"}),
 ]
@@ -100,5 +100,5 @@ def test_python_wire_format(generated: Path) -> None:
     assert fifth["ok"]["query"] == "flag=false"
     assert header_injection == {"invalid": "echo.x_trace"}
     assert cookie_injection == {"invalid": "echo.sid"}
-    assert empty["ok"]["method"] == "PATCH" and empty["ok"]["body"] == {}
+    assert empty == {"invalid": "touch.body"}
     assert label["ok"]["body"] == {"label": "x"}

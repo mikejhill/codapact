@@ -112,7 +112,7 @@ test-deep = { cmd = "pytest -m integration", env = { HYPOTHESIS_PROFILE = "deep"
 # Every changed line on this branch must be covered (CI compares against origin/main).
 diff-coverage = "diff-cover coverage.xml --compare-branch=origin/main --fail-under=100"
 mutation = "mutmut run --max-children 4"
-mutation-score = "python scripts/mutation_score.py --stats mutants/mutmut-cicd-stats.json"
+mutation-score = { shell = "mkdir -p mutation-report && mutmut results --all true > mutation-report/results.txt && python scripts/mutation_score.py --results mutation-report/results.txt" }
 lint-fix = "ruff check . --fix"
 source-lint-fix = "ruff check src --extend-select ANN,D,FA,T20,G,PGH --ignore ANN401 --fix"
 fix = ["format", "lint-fix", "source-lint-fix"]

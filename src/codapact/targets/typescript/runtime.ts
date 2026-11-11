@@ -33,6 +33,8 @@ interface BaseOperation {
   name: string;
   auth: string[][];
   idempotent: boolean;
+  /** Model params the caller must supply; checked before anything is sent. */
+  required: string[];
   paging?: Paging;
 }
 
@@ -112,6 +114,11 @@ export class Runtime {
   }
 
   async call(op: OperationSpec, args: Record<string, unknown>): Promise<unknown> {
+    for (const param of op.required) {
+      if (args[param] === undefined) {
+        throw new ValidationError(`${op.name}.${param}`, "is required");
+      }
+    }
     const auth = this.resolveAuth(op);
     return op.kind === "http" ? this.callHttp(op, args, auth) : this.callGraphQL(op, args, auth);
   }
