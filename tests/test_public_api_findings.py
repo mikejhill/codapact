@@ -664,6 +664,25 @@ def test_paginate_config_errors(config: dict[str, Any], message: str) -> None:
     assert any(message in d.message for d in result.diagnostics), list(result.diagnostics)
 
 
+def test_offset_and_page_params_must_be_integers() -> None:
+    spec = json.loads(json.dumps(GITHUBISH))
+    params = spec["paths"]["/repos/{owner}/{repo}/labels"]["get"]["parameters"]
+    params[2]["schema"] = {"type": "string"}
+    params.append({"name": "offset", "in": "query", "schema": {"type": "string"}})
+    for style in ("page", "offset"):
+        named = Shaper().apply(
+            translate(spec),
+            [{"paginate": {"operations": ["repos_list_labels"], "style": style, "items": "$"}}],
+        )
+        assert named.api is None
+        assert any(f"{style} param" in d.message for d in named.diagnostics)
+    globbed = Shaper().apply(
+        translate(spec), [{"paginate": {"operations": ["*"], "style": "page", "items": "$"}}]
+    )
+    assert globbed.api is not None
+    assert globbed.api.operation("repos_list_labels").pagination is None
+
+
 def test_paginate_root_items_need_a_result() -> None:
     spec = json.loads(json.dumps(GITHUBISH))
     spec["paths"]["/repos/{owner}/{repo}/labels"]["get"]["responses"] = {

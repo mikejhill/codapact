@@ -26,7 +26,16 @@ from codapact.model.api import (
     ParamLocation,
 )
 from codapact.model.rewrite import reachable_types, rename_types
-from codapact.model.types import ListOf, Nullable, Record, Ref, TypeExpr
+from codapact.model.types import (
+    Alias,
+    ListOf,
+    Nullable,
+    Primitive,
+    Record,
+    Ref,
+    ScalarKind,
+    TypeExpr,
+)
 from codapact.shaping.base import TransformResult
 
 
@@ -336,14 +345,31 @@ def _pagination(
             raise ConfigError("paginate 'start' must be an integer")
         pagination = PagePagination(str(config.get("param", "page")), items, start)
         param = pagination.page_param
-    if param not in {p.name for p in op.params}:
+    found = next((p for p in op.params if p.name == param), None)
+    if found is None:
         diagnostics.error("shape.paginate", f"operation has no param {param!r}", where)
+    elif style != "cursor" and not _is_integer(api, found.type):
+        diagnostics.error("shape.paginate", f"{style} param {param!r} must be an integer", where)
     item = _resolve(api, op.result, items, diagnostics, where)
     if not items and op.result is None:
         diagnostics.error("shape.paginate", "operation has no result to page through", where)
     if item is not None and not isinstance(_strip(item), ListOf):
         diagnostics.error("shape.paginate", "items path must resolve to a list", where)
     return pagination
+
+
+def _is_integer(api: Api, expr: TypeExpr) -> bool:
+    seen: set[str] = set()
+    while True:
+        expr = _strip(expr)
+        if isinstance(expr, Ref) and expr.name not in seen:
+            seen.add(expr.name)
+            definition = api.type(expr.name)
+            if isinstance(definition, Alias):
+                expr = definition.target
+                continue
+            return False
+        return isinstance(expr, Primitive) and expr.scalar is ScalarKind.INTEGER
 
 
 def _path(value: Any, key: str, *, allow_root: bool = False) -> tuple[str, ...]:
