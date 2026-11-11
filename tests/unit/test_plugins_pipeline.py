@@ -24,9 +24,9 @@ from codapact.plugins.protocol import (
     required_capabilities,
 )
 from codapact.surface.derive import derive_surface
-from tests.support import EXAMPLES, library_api, petstore_api
+from tests.support import EXAMPLES, FIXTURES, library_api, petstore_api
 
-PLUGIN = [sys.executable, str(Path(__file__).parent / "fixtures" / "outline_plugin.py")]
+PLUGIN = [sys.executable, str(FIXTURES / "outline_plugin.py")]
 PETSTORE = str(EXAMPLES / "petstore" / "openapi.yaml")
 
 

@@ -12,7 +12,7 @@ from codapact.model.api import Api, AuthKind, AuthScheme
 from codapact.model.serialize import dumps
 from codapact.model.types import Enum, Record, TypeDef, Union
 from codapact.plugins.protocol import GeneratedFile, GenerationRequest, GenerationResponse
-from codapact.surface.model import Method, Namespace, SurfaceParam
+from codapact.surface.model import Method, Namespace, SurfaceParam, required_sources
 from codapact.targets.python.naming import (
     annotation,
     default_package,
@@ -275,11 +275,7 @@ def _arguments(method: Method) -> str:
             nested[param_name] = [
                 e.replace(f"<{index}>", "_fields({" + ", ".join(items) + "})") for e in entries
             ]
-    required = sorted(
-        source
-        for source in nested
-        if any(p.required for p in method.params if p.source.param == source)
-    )
+    required = sorted(required_sources(method))
     text = "call_args({" + ", ".join(flat) + "}"
     if nested:
         groups = ", ".join(f"{k!r}: {{{', '.join(v)}}}" for k, v in nested.items())

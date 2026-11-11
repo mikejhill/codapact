@@ -1,0 +1,15 @@
+# Operations the live e2e suite runs against countries.trevorblades.com (MIT).
+query Country($code: ID!) {
+  country(code: $code) {
+    name
+    capital
+    currency
+  }
+}
+
+query Continents {
+  continents {
+    code
+    name
+  }
+}

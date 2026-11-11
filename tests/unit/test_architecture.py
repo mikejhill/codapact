@@ -11,7 +11,9 @@ from pathlib import Path
 
 import pytest
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "codapact"
+from tests.support import ROOT
+
+SRC = ROOT / "src" / "codapact"
 
 ALLOWED: dict[str, set[str]] = {
     "core": set(),

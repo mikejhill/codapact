@@ -20,10 +20,10 @@ from codapact.pipeline.config import ProjectConfig
 from codapact.pipeline.defaults import default_registry
 from codapact.pipeline.pipeline import Pipeline
 from codapact.runtime import StaticAuth
-from tests.support import json_response, serve
-from tests.test_generation import load_package, run_cli
+from tests.integration.test_generation import load_package, run_cli
+from tests.support import FIXTURES, json_response, serve
 
-FIXTURE = Path(__file__).parent / "fixtures" / "ynab"
+FIXTURE = FIXTURES / "corpus" / "ynab"
 
 TRANSACTION: dict[str, Any] = {
     "id": "t1",

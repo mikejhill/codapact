@@ -18,3 +18,6 @@ dist/
 # Example outputs are regenerated, not committed
 examples/*/generated/
 node_modules/
+diff-coverage.md
+perf-report.json
+.coverage.*
