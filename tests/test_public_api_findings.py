@@ -853,8 +853,8 @@ def test_new_global_options_are_reserved_flags() -> None:
 def test_https_proxies_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ConfigError, match="http://"):
         SafeHttpClient(proxy="https://proxy.example.com:8443")
+    for name in ("https_proxy", "NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("HTTPS_PROXY", "https://proxy.example.com:8443")
-    monkeypatch.delenv("NO_PROXY", raising=False)
-    monkeypatch.delenv("no_proxy", raising=False)
     with pytest.raises(ConfigError, match="http://"):
         SafeHttpClient().proxy_for("https://api.example.com/")
