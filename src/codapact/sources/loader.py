@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, cast, override
 
 import yaml
-from yaml.nodes import MappingNode, Node, ScalarNode
+from yaml.nodes import MappingNode, Node
 
 from codapact.core.errors import ContractError
 from codapact.core.net import HttpRequest, SafeHttpClient
@@ -95,10 +95,20 @@ class _UniqueKeyLoader(_BaseLoader):
 
     @override
     def construct_mapping(self, node: MappingNode, deep: bool = False) -> dict[Any, Any]:
-        keys = [k.value if isinstance(k, ScalarNode) else id(k) for k, _ in node.value]
-        if len(set(keys)) != len(keys):
-            raise ContractError("duplicate mapping keys")
-        return cast(dict[Any, Any], super().construct_mapping(node, deep=deep))
+        # Keys are compared after construction, so ``1`` and ``01`` (both 1) collide.
+        self.flatten_mapping(node)
+        mapping: dict[Any, Any] = {}
+        seen: set[str] = set()
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            text = str(key)
+            if text in seen:
+                raise ContractError("duplicate mapping keys")
+            seen.add(text)
+            if isinstance(key, list | dict):
+                raise ContractError("mapping keys must be scalars")
+            mapping[key] = self.construct_object(value_node, deep=deep)
+        return mapping
 
 
 def _normalize(value: Any, depth: int, budget: list[int]) -> Any:

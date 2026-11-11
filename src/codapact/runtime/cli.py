@@ -235,9 +235,15 @@ class CliRuntime:
         Keys are option names without dashes (``plan_id`` or ``plan-id``).
         """
         defaults = self._file_settings(getattr(args, "config", None)).get("defaults", {})
+        # Positional arguments leave no attribute when omitted, so also accept every
+        # option the command declares (``flags`` maps sources to ``--option`` names).
+        declared = {
+            "p_" + flag.removeprefix("--").replace("-", "_")
+            for flag in (getattr(args, "flags", None) or {}).values()
+        }
         for key, value in defaults.items():
             dest = "p_" + str(key).replace("-", "_")
-            if hasattr(args, dest) and getattr(args, dest) is None:
+            if (hasattr(args, dest) or dest in declared) and getattr(args, dest, None) is None:
                 setattr(args, dest, value)
 
     def _report_mismatches(self, caught: list[warnings.WarningMessage], err: TextIO) -> None:

@@ -25,11 +25,9 @@ from codapact.model.api import (
     Pagination,
     ParamLocation,
 )
-from codapact.model.rewrite import reachable_types, rename_types
+from codapact.model.rewrite import reachable_types, rename_types, unwrap
 from codapact.model.types import (
-    Alias,
     ListOf,
-    Nullable,
     Primitive,
     Record,
     Ref,
@@ -353,23 +351,14 @@ def _pagination(
     item = _resolve(api, op.result, items, diagnostics, where)
     if not items and op.result is None:
         diagnostics.error("shape.paginate", "operation has no result to page through", where)
-    if item is not None and not isinstance(_strip(item), ListOf):
+    if item is not None and not isinstance(unwrap(api, item), ListOf):
         diagnostics.error("shape.paginate", "items path must resolve to a list", where)
     return pagination
 
 
 def _is_integer(api: Api, expr: TypeExpr) -> bool:
-    seen: set[str] = set()
-    while True:
-        expr = _strip(expr)
-        if isinstance(expr, Ref) and expr.name not in seen:
-            seen.add(expr.name)
-            definition = api.type(expr.name)
-            if isinstance(definition, Alias):
-                expr = definition.target
-                continue
-            return False
-        return isinstance(expr, Primitive) and expr.scalar is ScalarKind.INTEGER
+    resolved = unwrap(api, expr)
+    return isinstance(resolved, Primitive) and resolved.scalar is ScalarKind.INTEGER
 
 
 def _path(value: Any, key: str, *, allow_root: bool = False) -> tuple[str, ...]:
@@ -382,16 +371,12 @@ def _path(value: Any, key: str, *, allow_root: bool = False) -> tuple[str, ...]:
     return tuple(value.split("."))
 
 
-def _strip(expr: TypeExpr) -> TypeExpr:
-    return expr.inner if isinstance(expr, Nullable) else expr
-
-
 def _resolve(
     api: Api, expr: TypeExpr | None, path: tuple[str, ...], diagnostics: Diagnostics, where: str
 ) -> TypeExpr | None:
     current = expr
     for part in path:
-        current = _strip(current) if current is not None else None
+        current = unwrap(api, current) if current is not None else None
         definition = api.type(current.name) if isinstance(current, Ref) else None
         if not isinstance(definition, Record):
             diagnostics.error("shape.paginate", f"cannot resolve {'.'.join(path)!r}", where)

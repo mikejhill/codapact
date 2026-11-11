@@ -117,11 +117,7 @@ def _command(api: Api, method: Method, path: tuple[Name, ...], diagnostics: Diag
 
 def _path_positions(api: Api, method: Method) -> dict[str, int]:
     """Map path-param names to their order in the URL template."""
-    try:
-        operation = api.operation(method.operation)
-    except KeyError:
-        return {}
-    binding = operation.binding(HttpBinding)
+    binding = api.operation(method.operation).binding(HttpBinding)
     if binding is None:
         return {}
     found = [

@@ -84,11 +84,30 @@ class Codec:
                     return self._lenient(value, definition.target, path, issues)
                 if isinstance(definition, Record):
                     return self._lenient_record(value, definition, path, issues)
+                if isinstance(definition, Union):
+                    return self._lenient_union(value, definition, path, issues)
         try:
             return self._convert(value, expr, path, encode=False)
         except ValidationError as error:
             issues.append(error)
             return value
+
+    def _lenient_union(
+        self, value: Any, union: Union, path: str, issues: list[ValidationError]
+    ) -> Any:
+        """Pick the variant as strict decoding would, then decode that variant leniently."""
+        if union.discriminator is not None and isinstance(value, dict):
+            for variant in union.variants:
+                key = self._tag_key(variant.type, union.discriminator, encode=False)
+                if variant.tag is not None and value.get(key) == variant.tag:
+                    return self._lenient(value, variant.type, path, issues)
+        for variant in union.variants:
+            try:
+                return self._convert(value, variant.type, path, encode=False)
+            except ValidationError:
+                continue
+        issues.append(ValidationError(path, f"matches no variant of {union.name}"))
+        return value
 
     def _lenient_record(
         self, value: Any, record: Record, path: str, issues: list[ValidationError]

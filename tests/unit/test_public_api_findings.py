@@ -41,117 +41,9 @@ from codapact.sources import loader
 from codapact.sources.base import SourceInput
 from codapact.sources.graphql import GraphQLSource
 from codapact.sources.loader import Fetcher, SourceDocument, parse_structured
-from codapact.sources.openapi import OpenApiSource
 from codapact.surface.derive import SurfaceOptions, derive_surface
-from tests.support import FakeTransport, json_response, serve
-from tests.test_generation import load_package, run_cli
-
-# A small GitHub-shaped contract: array results, page/per_page params, path params,
-# no securitySchemes, and a label description the server sends as null.
-GITHUBISH: dict[str, Any] = {
-    "openapi": "3.0.3",
-    "info": {"title": "Hub", "version": "1"},
-    "servers": [{"url": "https://hub.example.com"}],
-    "paths": {
-        "/repos/{owner}/{repo}": {
-            "get": {
-                "operationId": "repos_get",
-                "tags": ["repos"],
-                "parameters": [
-                    {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                    {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
-                ],
-                "responses": {
-                    "200": {
-                        "description": "ok",
-                        "content": {
-                            "application/json": {"schema": {"$ref": "#/components/schemas/Repo"}}
-                        },
-                    }
-                },
-            }
-        },
-        "/repos/{owner}/{repo}/labels": {
-            "get": {
-                "operationId": "repos_list_labels",
-                "tags": ["repos"],
-                "parameters": [
-                    {"name": "owner", "in": "path", "required": True, "schema": {"type": "string"}},
-                    {"name": "repo", "in": "path", "required": True, "schema": {"type": "string"}},
-                    {"name": "page", "in": "query", "schema": {"type": "integer"}},
-                    {"name": "per_page", "in": "query", "schema": {"type": "integer"}},
-                ],
-                "responses": {
-                    "200": {
-                        "description": "ok",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "array",
-                                    "items": {"$ref": "#/components/schemas/Label"},
-                                }
-                            }
-                        },
-                    }
-                },
-            }
-        },
-        "/meta": {
-            "get": {
-                "operationId": "meta_list_x",
-                "tags": ["meta"],
-                "responses": {
-                    "200": {
-                        "description": "ok",
-                        "content": {"application/json": {"schema": {"type": "object"}}},
-                    }
-                },
-            }
-        },
-    },
-    "components": {
-        "schemas": {
-            "Repo": {
-                "type": "object",
-                "required": ["id", "full_name"],
-                "properties": {"id": {"type": "integer"}, "full_name": {"type": "string"}},
-            },
-            "Label": {
-                "type": "object",
-                "required": ["name", "description"],
-                "properties": {"name": {"type": "string"}, "description": {"type": "string"}},
-            },
-        }
-    },
-}
-
-
-def translate(spec: dict[str, Any], **options: Any) -> Api:
-    document = SourceDocument("spec.json", json.dumps(spec).encode())
-    result = OpenApiSource().parse(SourceInput(document, (), options))
-    assert result.api is not None, list(result.diagnostics)
-    return result.api
-
-
-def shaped(spec: dict[str, Any], steps: list[dict[str, Any]]) -> Api:
-    result = Shaper().apply(translate(spec), steps)
-    assert result.api is not None, list(result.diagnostics)
-    return result.api
-
-
-LABELS = [{"name": "bug", "description": None}, {"name": "docs", "description": "Docs"}]
-
-
-def hub(request: HttpRequest) -> HttpResponse:
-    if request.url.endswith("/repos/acme/app"):
-        return json_response(200, {"id": 1, "full_name": "acme/app"})
-    if "/labels" in request.url:
-        page = int(request.url.split("page=")[1].split("&")[0]) if "page=" in request.url else 1
-        return json_response(
-            200, LABELS if page == 1 else [{"name": "p2", "description": ""}][: 3 - page]
-        )
-    return json_response(404, {"message": "missing"})
-
+from tests.public_api_contract import GITHUBISH, LABELS, hub, shaped, translate
+from tests.support import FakeTransport, serve
 
 # ------------------------------------------------------- #2 size cap, #14 YAML speed
 
@@ -555,9 +447,10 @@ GITHUB_LIKE_SDL = """
 interface Node { id: ID! }
 type Project implements Node { id: ID! @deprecated(reason: "old") name: String }
 type Owner { setting: String setting: String }
+input In { a: Int }
 type Query {
   "Look up a project."
-  project(id: ID!, first: Int, flag: Boolean, tags: [String]): Project
+  project(id: ID!, first: Int, flag: Boolean, tags: [String], ids: [ID!], f: In): Project
   owner: Owner
 }
 """
@@ -567,8 +460,11 @@ query First { owner { setting } }
 
 # Name of one project.
 # Second line.
-query ProjectName($id: ID!, $first: Int = 5, $flag: Boolean = true, $tags: [String] = ["a"]) {
-  project(id: $id, first: $first, flag: $flag, tags: $tags) { name }
+query ProjectName(
+  $id: ID! = 123, $first: Int = 5, $flag: Boolean = true, $tags: [String] = "a",
+  $ids: [ID!] = 7, $f: In = {a: 1}
+) {
+  project(id: $id, first: $first, flag: $flag, tags: $tags, ids: $ids, f: $f) { name }
 }
 """
 
@@ -599,7 +495,13 @@ def test_graphql_lenient_builds_invalid_production_schemas() -> None:
     params = {p.name: p for p in op.params}
     assert params["first"].default == 5 and not params["first"].required
     assert params["flag"].default is True
-    assert params["tags"].default is None and not params["tags"].required
+    # Defaults are coerced to the declared type, so the runtime sends what the server would.
+    assert params["id"].default == "123" and not params["id"].required
+    assert params["tags"].default == ["a"] and params["ids"].default == ["7"]
+    assert params["f"].default is None and not params["f"].required  # left to the server
+    codec = Codec(result.api)
+    for name in ("id", "tags", "ids"):
+        codec.encode(params[name].default, params[name].type, name)
     assert result.api.operation("first").docs == ""  # never the root field's description
 
 
@@ -760,69 +662,6 @@ def test_required_path_params_become_ordered_positionals() -> None:
     assert positions == {"owner": 0, "repo": 1, "page": None, "per-page": None}
 
 
-@pytest.fixture(scope="module")
-def hub_cli(tmp_path_factory: pytest.TempPathFactory):
-    root = tmp_path_factory.mktemp("hub")
-    spec = root / "spec.json"
-    spec.write_text(json.dumps(GITHUBISH))
-    config = ProjectConfig.from_data(
-        {
-            "version": 1,
-            "source": {"type": "openapi", "path": str(spec)},
-            "shape": [
-                {"group": {"by": "tag"}},
-                {"paginate": {"operations": ["*_list_*"], "style": "page", "items": "$"}},
-                {"auth": {"schemes": {"token": "bearer"}, "optional": True}},
-            ],
-            "cli": {"program": "hub"},
-            "targets": [
-                {"name": "python", "output": "generated/python", "options": {"package": "hub"}},
-                {"name": "python-cli", "output": "generated/python"},
-            ],
-        },
-        base=root,
-    )
-    result = Pipeline(default_registry()).run(config)
-    assert not result.diagnostics.has_errors, list(result.diagnostics)
-    return load_package(root / "generated", "hub")
-
-
-def test_generated_cli_positionals_auth_and_paging(hub_cli, monkeypatch) -> None:
-    _, cli = hub_cli
-    seen: list[HttpRequest] = []
-
-    def handler(request: HttpRequest) -> HttpResponse:
-        seen.append(request)
-        return hub(HttpRequest(request.method, request.url.replace("/api", ""), {}, None))
-
-    with serve(handler) as url:
-        env = {"HUB_BASE_URL": url}
-        code, out, err = run_cli(
-            cli, ["repos", "get", "acme", "app", "--allow-private"], monkeypatch, **env
-        )
-        assert (code, err) == (0, "") and json.loads(out)["full_name"] == "acme/app"
-        assert "Authorization" not in seen[-1].headers  # optional auth: anonymous
-        code, out, _ = run_cli(
-            cli,
-            ["repos", "get", "--owner", "acme", "--repo", "app", "--allow-private"],
-            monkeypatch,
-            **{**env, "HUB_TOKEN": "t"},
-        )
-        assert code == 0 and seen[-1].headers.get("Authorization") == "Bearer t"
-        code, _, err = run_cli(cli, ["repos", "get", "acme", "--allow-private"], monkeypatch, **env)
-        assert code == 2 and "missing required argument REPO (or --repo)" in err
-        code, out, err = run_cli(
-            cli,
-            ["repos", "list-labels", "acme", "app", "--all", "--allow-private"],
-            monkeypatch,
-            **env,
-        )
-        assert code == 0 and [i["name"] for i in json.loads(out)] == ["bug", "docs", "p2"]
-        assert "does not match the contract" in err
-        code, _, err = run_cli(cli, ["repos", "get", "acme", "app"], monkeypatch, **env)
-        assert code == 4 and "--allow-private" in err
-
-
 def test_page_pagination_sends_its_start_page_first() -> None:
     api = shaped(
         GITHUBISH,
@@ -858,3 +697,166 @@ def test_https_proxies_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HTTPS_PROXY", "https://proxy.example.com:8443")
     with pytest.raises(ConfigError, match="http://"):
         SafeHttpClient().proxy_for("https://api.example.com/")
+
+
+# ------------------------------------------------------- review follow-ups on #23
+
+
+def test_yaml_duplicate_keys_compare_constructed_values() -> None:
+    for text in (b"1: x\n01: y\n", b"true: x\nyes: y\n", b"a: 1\n'a': 2\n"):
+        with pytest.raises(ContractError, match="duplicate mapping keys"):
+            parse_structured(SourceDocument("d.yaml", text))
+    with pytest.raises(ContractError, match="keys must be scalars"):
+        parse_structured(SourceDocument("k.yaml", b"? [1]\n: x\n"))
+    nested = parse_structured(SourceDocument("n.yaml", b"a: {b: [1, {c: 2}]}\n200: ok\n"))
+    assert nested == {"a": {"b": [1, {"c": 2}]}, "200": "ok"}
+
+
+def _named_array_spec() -> dict[str, Any]:
+    spec = json.loads(json.dumps(GITHUBISH))
+    spec["components"]["schemas"]["Labels"] = {
+        "type": "array",
+        "items": {"$ref": "#/components/schemas/Label"},
+    }
+    response = spec["paths"]["/repos/{owner}/{repo}/labels"]["get"]["responses"]["200"]
+    response["content"]["application/json"]["schema"] = {"$ref": "#/components/schemas/Labels"}
+    return spec
+
+
+def test_root_items_follow_named_array_aliases() -> None:
+    api = shaped(
+        _named_array_spec(),
+        [{"paginate": {"operations": ["repos_list_labels"], "style": "page", "items": "$"}}],
+    )
+    surface = derive_surface(api, SurfaceOptions(), Diagnostics())
+    method = next(m for m in surface.root.methods if m.operation == "repos_list_labels")
+    assert method.paging is not None and method.paging.item == Ref("Label")
+
+
+def test_nested_items_follow_aliases() -> None:
+    spec = _named_array_spec()
+    response = spec["paths"]["/repos/{owner}/{repo}/labels"]["get"]["responses"]["200"]
+    spec["components"]["schemas"]["Page"] = {
+        "type": "object",
+        "properties": {"labels": {"$ref": "#/components/schemas/Labels"}},
+    }
+    response["content"]["application/json"]["schema"] = {"$ref": "#/components/schemas/Page"}
+    api = shaped(
+        spec,
+        [{"paginate": {"operations": ["repos_list_labels"], "style": "page", "items": "labels"}}],
+    )
+    surface = derive_surface(api, SurfaceOptions(), Diagnostics())
+    method = next(m for m in surface.root.methods if m.operation == "repos_list_labels")
+    assert method.paging is not None and method.paging.item == Ref("Label")
+
+
+PETS: dict[str, Any] = {
+    "openapi": "3.0.3",
+    "info": {"title": "Pets", "version": "1"},
+    "paths": {},
+    "components": {
+        "schemas": {
+            "Cat": {
+                "type": "object",
+                "required": ["petType", "meowVolume"],
+                "properties": {"petType": {"type": "string"}, "meowVolume": {"type": "integer"}},
+            },
+            "Dog": {
+                "type": "object",
+                "required": ["petType"],
+                "properties": {"petType": {"type": "string"}, "barkCount": {"type": "integer"}},
+            },
+            "Pet": {
+                "oneOf": [
+                    {"$ref": "#/components/schemas/Cat"},
+                    {"$ref": "#/components/schemas/Dog"},
+                ],
+                "discriminator": {
+                    "propertyName": "petType",
+                    "mapping": {
+                        "cat": "#/components/schemas/Cat",
+                        "dog": "#/components/schemas/Dog",
+                    },
+                },
+            },
+        }
+    },
+}
+
+
+def test_lenient_decode_keeps_renames_inside_discriminated_variants() -> None:
+    codec = Codec(translate(PETS))
+    decoded, issues = codec.decode_lenient({"petType": "cat", "meowVolume": "loud"}, Ref("Pet"))
+    assert decoded == {"pet_type": "cat", "meow_volume": "loud"}
+    assert [str(i) for i in issues] == ["$.meowVolume: expected an integer"]
+    clean, none = codec.decode_lenient({"petType": "dog", "barkCount": 2}, Ref("Pet"))
+    assert clean == {"pet_type": "dog", "bark_count": 2} and none == []
+    raw, problems = codec.decode_lenient(5, Ref("Pet"))
+    assert raw == 5 and "matches no variant of Pet" in str(problems[0])
+
+
+def test_unwrap_strips_nullable_and_aliases() -> None:
+    from codapact.model import ListOf, Nullable
+    from codapact.model.rewrite import unwrap
+
+    api = translate(_named_array_spec())
+    assert unwrap(api, Nullable(Ref("Labels"))) == ListOf(Ref("Label"))
+    assert unwrap(api, Ref("Label")) == Ref("Label")
+
+
+def test_lenient_decode_reports_list_size_and_map_shape() -> None:
+    from codapact.model import Constraints, ListOf, MapOf, Primitive, ScalarKind
+
+    codec = Codec(translate(GITHUBISH))
+    bounded = ListOf(Primitive(ScalarKind.INTEGER), Constraints(max_items=1))
+    assert codec.decode_lenient([1, 2], bounded)[1][0].path == "$"
+    mapping = MapOf(Primitive(ScalarKind.INTEGER))
+    value, issues = codec.decode_lenient([1], mapping)
+    assert value == [1] and [str(i) for i in issues] == ["$: expected an object"]
+    assert codec.decode_lenient({"a": "x"}, mapping)[1][0].path == "$.a"
+    named = Codec(translate(_named_array_spec()))
+    decoded, problems = named.decode_lenient([{"name": "x"}], Ref("Labels"))
+    assert decoded == [{"name": "x"}] and problems[0].path == "$[0].description"
+
+
+def test_oversized_connect_response_is_refused() -> None:
+    chatty = _FakeProxy(b"HTTP/1.1 200 OK\r\n" + b"X: " + b"y" * 70_000)
+    try:
+        client = SafeHttpClient(proxy=f"http://127.0.0.1:{chatty.port}")
+        with pytest.raises(TransportError, match="too large"):
+            client.send(HttpRequest("GET", "https://api.example.com/"))
+    finally:
+        chatty.close()
+
+
+def test_leading_comment_needs_locations() -> None:
+    from graphql import OperationDefinitionNode, parse
+
+    from codapact.sources.graphql.translator import _leading_comment
+
+    document = parse("# about\nquery Q { a }", no_location=True)
+    operation = document.definitions[0]
+    assert isinstance(operation, OperationDefinitionNode)
+    assert _leading_comment(operation) is None
+
+
+def test_enum_path_params_render_as_positional_choices() -> None:
+    from codapact.commands.model import Arg, ArgKind
+    from codapact.core.naming import Name
+    from codapact.model import Primitive, ScalarKind
+    from codapact.targets.python.cli import _argument, _positional
+
+    arg = Arg(
+        Name(("state",)),
+        Name(("state",)),
+        ArgKind.ENUM,
+        Primitive(ScalarKind.STRING),
+        required=True,
+        choices=("open", "closed"),
+        docs="Issue state.",
+        positional=0,
+    )
+    assert "choices=['open', 'closed']" in _positional(arg)
+    assert "help='Issue state.'" in _positional(arg)
+    flag = _argument(arg)
+    assert "choices=['open', 'closed']" in flag and "default=argparse.SUPPRESS" in flag

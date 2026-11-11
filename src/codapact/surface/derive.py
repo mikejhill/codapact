@@ -11,7 +11,8 @@ from codapact.core.diagnostics import Diagnostics
 from codapact.core.errors import ConfigError
 from codapact.core.naming import Name
 from codapact.model.api import Api, Operation, Pagination
-from codapact.model.types import ListOf, Nullable, Record, Ref, TypeExpr
+from codapact.model.rewrite import unwrap
+from codapact.model.types import ListOf, Record, Ref, TypeExpr
 from codapact.surface.model import Method, Namespace, Paging, ParamSource, Surface, SurfaceParam
 
 
@@ -278,8 +279,7 @@ def _page_item(api: Api, result: TypeExpr | None, pagination: Pagination) -> Typ
     current = result
     path = pagination.items
     for part in path:
-        if isinstance(current, Nullable):
-            current = current.inner
+        current = unwrap(api, current) if current is not None else None
         if not isinstance(current, Ref):
             return None
         definition = api.type(current.name)
@@ -289,6 +289,5 @@ def _page_item(api: Api, result: TypeExpr | None, pagination: Pagination) -> Typ
         if match is None:
             return None
         current = match.type
-    if isinstance(current, Nullable):
-        current = current.inner
+    current = unwrap(api, current) if current is not None else None
     return current.item if isinstance(current, ListOf) else None

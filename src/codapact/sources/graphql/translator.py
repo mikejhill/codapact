@@ -57,9 +57,9 @@ from graphql import (
     type_from_ast,
     validate,
     validate_schema,
+    value_from_ast,
     visit,
 )
-from graphql.utilities import value_from_ast_untyped
 from graphql.validation.validate import validate_sdl
 
 from codapact.core.diagnostics import Diagnostics
@@ -123,6 +123,25 @@ class GraphQLSource:
 
 
 MAX_REPORTED_SCHEMA_ERRORS = 5
+
+
+def _variable_default(node: Any, gql_type: Any) -> Any:
+    """Coerce a variable's default to its declared type (``$id: ID = 123`` is ``"123"``).
+
+    Only scalars and lists of scalars are kept as parameter defaults; anything else
+    (input objects, enums the runtime cannot name) is left for the server to apply.
+    """
+    if node is None:
+        return None
+    value = value_from_ast(node, gql_type)
+    if value is Undefined:  # pragma: no cover - validated documents have valid defaults
+        return None
+    scalar = str | int | float | bool
+    if isinstance(value, scalar) or (
+        isinstance(value, list) and all(isinstance(v, scalar) for v in value)
+    ):
+        return value
+    return None
 
 
 def _leading_comment(definition: OperationDefinitionNode) -> str | None:
@@ -383,17 +402,13 @@ class _Translator:
             if gql_type is None:  # pragma: no cover - validated documents have known types
                 raise ContractError(f"unknown variable type for ${var_name}")
             param = _identifier(var_name)
-            default = (
-                value_from_ast_untyped(variable.default_value)
-                if variable.default_value is not None
-                else None
-            )
+            has_default = variable.default_value is not None
             params.append(
                 m.Param(
                     param,
                     self.input_expr(gql_type),
-                    required=isinstance(gql_type, GraphQLNonNull) and default is None,
-                    default=default if isinstance(default, str | int | float | bool) else None,
+                    required=isinstance(gql_type, GraphQLNonNull) and not has_default,
+                    default=_variable_default(variable.default_value, gql_type),
                 )
             )
             variables.append((param, var_name))
