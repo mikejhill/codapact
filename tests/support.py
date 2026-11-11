@@ -275,6 +275,7 @@ def import_generated(src: Path, package: str) -> tuple[Any, Any]:
 def find_tsc() -> list[str] | None:
     """The TypeScript compiler, if installed (``tsc`` on PATH or a local node_modules)."""
     import shutil
+    import sys
 
     # npm writes an extensionless shell script plus a tsc.cmd shim on Windows.
     name = "tsc.cmd" if sys.platform == "win32" else "tsc"
