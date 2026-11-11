@@ -261,3 +261,31 @@ def test_global_options_before_or_after_command() -> None:
     assert parser.parse_args(["--output", "yaml", "go"]).output == "yaml"
     assert parser.parse_args(["go", "--output", "table"]).output == "table"
     assert not hasattr(parser.parse_args(["go"]), "output")
+
+
+def test_settings_defaults_satisfy_required_options(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    runtime = CliRuntime("acme", "ACME", {"XDG_CONFIG_HOME": str(tmp_path / "xdg")})
+
+    def parser() -> argparse.ArgumentParser:
+        root = argparse.ArgumentParser(prog="acme")
+        runtime.add_global_options(root)
+        sub = root.add_subparsers(dest="command", required=True)
+        go = sub.add_parser("go")
+        go.add_argument("--plan-id", dest="p_plan_id", required=True)
+        return root
+
+    with pytest.raises(SystemExit):
+        runtime.parse(parser(), ["go"])
+    config = tmp_path / "c.json"
+    config.write_text('{"defaults": {"plan-id": "p1"}}')
+    args = runtime.parse(parser(), ["--config", str(config), "go"])
+    runtime.apply_defaults(args)
+    assert args.p_plan_id == "p1"
+    assert (
+        runtime.parse(parser(), ["--config", str(config), "go", "--plan-id", "p2"]).p_plan_id
+        == "p2"
+    )
+    config.write_text("not json")
+    with pytest.raises(SystemExit):
+        runtime.parse(parser(), ["--config", str(config), "go"])

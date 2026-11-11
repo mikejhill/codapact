@@ -12,7 +12,7 @@ import json
 import os
 import re
 import sys
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
@@ -173,6 +173,26 @@ class CliRuntime:
             raise CodapactError(f"{path}: 'defaults' must map option names to values")
         return data
 
+    def parse(
+        self, parser: argparse.ArgumentParser, argv: Sequence[str] | None = None
+    ) -> argparse.Namespace:
+        """Parse ``argv``; settings-file ``defaults`` satisfy otherwise required options.
+
+        A settings file that cannot be read is ignored here and reported by ``run``.
+        """
+        pre = argparse.ArgumentParser(add_help=False)
+        pre.add_argument("--config")
+        known, _ = pre.parse_known_args(argv)
+        try:
+            defaults = self._file_settings(known.config).get("defaults", {})
+        except CodapactError:
+            defaults = {}
+        dests = {"p_" + str(key).replace("-", "_") for key in defaults}
+        for action in _actions(parser):
+            if action.required and action.dest in dests:
+                action.required = False
+        return parser.parse_args(argv)
+
     def apply_defaults(self, args: argparse.Namespace) -> None:
         """Fill options the user omitted from the settings file's ``defaults``.
 
@@ -232,6 +252,15 @@ class CliRuntime:
             return EXIT_USAGE
         render(result, getattr(args, "output", "json"), out)
         return EXIT_OK
+
+
+def _actions(parser: argparse.ArgumentParser) -> Iterator[argparse.Action]:
+    """Yield every action of ``parser`` and of its nested subcommand parsers."""
+    for action in parser._actions:
+        yield action
+        if isinstance(action, argparse._SubParsersAction):
+            for sub in dict.fromkeys(action.choices.values()):
+                yield from _actions(sub)
 
 
 def describe_invalid(error: ValidationError, flags: dict[str, str]) -> str:

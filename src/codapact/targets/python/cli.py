@@ -104,7 +104,7 @@ def render_cli(tree: CommandTree, description: str, auth_help: str = "") -> str:
         "    return parser\n",
         "\ndef main(argv: Sequence[str] | None = None) -> int:",
         '    """Parse arguments, run one command, and return the exit code."""',
-        "    args = build_parser().parse_args(argv)",
+        "    args = RUNTIME.parse(build_parser(), argv)",
         "    return RUNTIME.run(args, lambda options: Client(**options), args.handler)",
     ]
     return "\n".join(head + handlers + build) + "\n"

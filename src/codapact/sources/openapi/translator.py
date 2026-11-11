@@ -446,6 +446,14 @@ class _Translator:
         except Unsupported:
             return t.Primitive(t.ScalarKind.ANY)
 
+    def check_keywords(self, schema: dict[str, Any], where: str) -> None:
+        """Reject schema keywords the model cannot represent."""
+        unknown = {k for k in schema if not k.startswith("x-")} - (
+            SCHEMA_KEYS_SUPPORTED | SCHEMA_KEYS_IGNORED
+        )
+        if unknown:
+            self.unsupported(f"schema keywords {sorted(unknown)} are not supported", where)
+
     def structural(self, schema: Any, hint: str, where: str, *, named: bool) -> t.TypeExpr:
         if schema is True or schema == {}:
             return t.Primitive(t.ScalarKind.ANY)
@@ -453,11 +461,7 @@ class _Translator:
             raise ContractError(f"{where}: schema must be an object")
         if "$ref" in schema:
             return self.reference(schema, hint, where)
-        unknown = {k for k in schema if not k.startswith("x-")} - (
-            SCHEMA_KEYS_SUPPORTED | SCHEMA_KEYS_IGNORED
-        )
-        if unknown:
-            self.unsupported(f"schema keywords {sorted(unknown)} are not supported", where)
+        self.check_keywords(schema, where)
         raw_type = schema.get("type")
         types_listed = raw_type if isinstance(raw_type, list) else [raw_type] if raw_type else []
         nullable = bool(schema.get("nullable")) or "null" in types_listed
@@ -615,6 +619,7 @@ class _Translator:
                 continue
             if _is_plain_object(part):
                 # Inline object members merge directly; they never become public types.
+                self.check_keywords(part, f"{where}.allOf[{index}]")
                 for f in self.fields(part, name, f"{where}.allOf[{index}]"):
                     fields[f.name] = f
                 continue

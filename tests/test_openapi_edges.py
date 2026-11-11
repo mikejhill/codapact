@@ -275,3 +275,15 @@ def test_signed_and_colliding_property_names() -> None:
         ("a_b", "a-b"),
         ("a_b_2", "a_b"),
     ]
+
+
+def test_inline_all_of_members_keep_keyword_checks() -> None:
+    inline = {"type": "object", "properties": {"x": {"type": "string"}}, "not": {}}
+    schemas = {
+        "Base": {"type": "object", "properties": {"a": {"type": "string"}}},
+        "Odd": {"allOf": [{"$ref": "#/components/schemas/Base"}, inline]},
+    }
+    result = openapi(spec(get(), schemas))
+    assert any("not" in d.message for d in result.diagnostics if d.severity.value == "error")
+    api, _ = ok(spec(get(), schemas), strict=False)
+    assert api.type("Odd") == t.Alias("Odd", t.Primitive(t.ScalarKind.ANY))
