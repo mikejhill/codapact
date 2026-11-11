@@ -25,7 +25,19 @@ from codapact.model.types import Alias, Enum, ListOf, Nullable, Primitive, Ref, 
 from codapact.surface.model import Method, Namespace, Surface
 
 RESERVED_FLAGS = frozenset(
-    {"help", "base-url", "output", "config", "all", "max-items", "timeout", "query", "yes"}
+    {
+        "help",
+        "base-url",
+        "output",
+        "config",
+        "all",
+        "max-items",
+        "timeout",
+        "query",
+        "yes",
+        "allow-private",
+        "response-validation",
+    }
 )
 DESTRUCTIVE_VERBS = frozenset({"delete", "remove", "destroy", "purge"})
 

@@ -89,7 +89,7 @@ class SafeHttpClient:
         if self.max_bytes <= 0:
             raise ConfigError("max_bytes must be positive")
         if self.proxy is not None:
-            validate_url(self.proxy)
+            _validate_proxy(self.proxy)
 
     def proxy_for(self, url: str) -> str | None:
         """Return the proxy URL to use for ``url``, or ``None`` for a direct connection."""
@@ -106,7 +106,7 @@ class SafeHttpClient:
             return None
         if "://" not in chosen:
             chosen = "http://" + chosen
-        validate_url(chosen)
+        _validate_proxy(chosen)
         return chosen
 
     def send(self, request: HttpRequest) -> HttpResponse:
@@ -223,6 +223,12 @@ def bypass_proxy(host: str, no_proxy: str) -> bool:
         if host == domain or host.endswith("." + domain):
             return True
     return False
+
+
+def _validate_proxy(url: str) -> None:
+    """Accept only ``http://`` proxies; TLS to the proxy itself is not supported."""
+    if validate_url(url).scheme != "http":
+        raise ConfigError("proxy URL must use http:// (TLS to the proxy is not supported)")
 
 
 def _is_global(address: str) -> bool:

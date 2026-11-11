@@ -46,7 +46,8 @@ Targets that share an `output` directory share options. When `python-cli` shares
 
 `source.max_bytes` (next to `type` and `path`, not under `options`) caps each contract
 document; the default is 64 MB. Remote contracts and generated clients honour
-`HTTPS_PROXY`, `HTTP_PROXY`, and `NO_PROXY`.
+`HTTPS_PROXY`, `HTTP_PROXY`, and `NO_PROXY`. Proxy URLs must use `http://` without
+credentials; HTTPS traffic is tunnelled with `CONNECT`.
 
 GraphQL with `documents` generates one operation per document operation with exact result
 types. Without documents, it generates one operation per root field. A `#` comment block

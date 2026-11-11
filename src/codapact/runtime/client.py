@@ -105,6 +105,11 @@ class RuntimeClient:
         if strategy is None:
             raise ClientError(f"{operation_name!r} is not paginated")
         arguments = dict(arguments)
+        if isinstance(strategy, PagePagination) and arguments.get(strategy.page_param) is None:
+            # Send the first page explicitly so ``start`` (or the param's default) is honoured.
+            param = next((p for p in operation.params if p.name == strategy.page_param), None)
+            default = param.default if param is not None else None
+            arguments[strategy.page_param] = strategy.start if default is None else default
         produced = 0
         for _ in range(MAX_PAGES):
             page = self.call(operation_name, arguments)
@@ -122,10 +127,7 @@ class RuntimeClient:
             elif isinstance(strategy, PagePagination):
                 if not items:
                     return
-                current = arguments.get(strategy.page_param)
-                arguments[strategy.page_param] = (
-                    int(strategy.start if current is None else current) + 1
-                )
+                arguments[strategy.page_param] = int(arguments[strategy.page_param]) + 1
             else:
                 if not items:
                     return

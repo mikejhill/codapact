@@ -112,6 +112,7 @@ export class Runtime {
     const paging = op.paging;
     if (!paging) throw new Error(`${op.name} is not paginated`);
     const current: Record<string, unknown> = { ...args };
+    if (paging.style === "page" && current[paging.param] == null) current[paging.param] = paging.start ?? 1;
     let produced = 0;
     for (let page = 0; page < 10_000; page++) {
       const result = await this.call(op, current);
@@ -127,7 +128,7 @@ export class Runtime {
         if (!cursor) return;
         current[paging.param] = cursor;
       } else if (paging.style === "page") {
-        current[paging.param] = Number(current[paging.param] ?? paging.start ?? 1) + 1;
+        current[paging.param] = Number(current[paging.param]) + 1;
       } else {
         current[paging.param] = Number(current[paging.param] ?? 0) + items.length;
       }

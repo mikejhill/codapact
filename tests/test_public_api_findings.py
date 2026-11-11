@@ -711,7 +711,7 @@ def test_page_pagination_runtime_and_round_trip() -> None:
     client = RuntimeClient(api, transport=transport, middleware=(), response_validation="off")
     items = list(client.paginate("repos_list_labels", {"owner": "acme", "repo": "app"}))
     assert [i["name"] for i in items] == ["bug", "docs", "p2"]
-    assert [r.url.partition("?")[2] for r in transport.requests] == ["", "page=2", "page=3"]
+    assert [r.url.partition("?")[2] for r in transport.requests] == ["page=1", "page=2", "page=3"]
     started = list(
         client.paginate("repos_list_labels", {"owner": "acme", "repo": "app", "page_number": 2})
     )
@@ -821,3 +821,40 @@ def test_generated_cli_positionals_auth_and_paging(hub_cli, monkeypatch) -> None
         assert "does not match the contract" in err
         code, _, err = run_cli(cli, ["repos", "get", "acme", "app"], monkeypatch, **env)
         assert code == 4 and "--allow-private" in err
+
+
+def test_page_pagination_sends_its_start_page_first() -> None:
+    api = shaped(
+        GITHUBISH,
+        [
+            {
+                "paginate": {
+                    "operations": ["repos_list_labels"],
+                    "style": "page",
+                    "items": "$",
+                    "start": 2,
+                }
+            }
+        ],
+    )
+    transport = FakeTransport(hub)
+    client = RuntimeClient(api, transport=transport, middleware=(), response_validation="off")
+    items = list(client.paginate("repos_list_labels", {"owner": "acme", "repo": "app"}))
+    assert [i["name"] for i in items] == ["p2"]
+    assert [r.url.partition("?")[2] for r in transport.requests] == ["page=2", "page=3"]
+
+
+def test_new_global_options_are_reserved_flags() -> None:
+    from codapact.commands.derive import RESERVED_FLAGS
+
+    assert {"allow-private", "response-validation"} <= RESERVED_FLAGS
+
+
+def test_https_proxies_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ConfigError, match="http://"):
+        SafeHttpClient(proxy="https://proxy.example.com:8443")
+    monkeypatch.setenv("HTTPS_PROXY", "https://proxy.example.com:8443")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    with pytest.raises(ConfigError, match="http://"):
+        SafeHttpClient().proxy_for("https://api.example.com/")
