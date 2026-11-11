@@ -386,7 +386,14 @@ class CliRuntime:
             "--error-format {text,json}, --base-url URL, --timeout SECONDS, --config FILE, "
             "--allow-private, --response-validation {strict,warn,off}"
         )
-        body = textwrap.fill(options, width=76, initial_indent="  ", subsequent_indent="  ")
+        body = textwrap.fill(
+            options,
+            width=76,
+            initial_indent="  ",
+            subsequent_indent="  ",
+            break_on_hyphens=False,
+            break_long_words=False,
+        )
         return f"global options (details: {self.program} --help):\n{body}"
 
     def command_epilog(self, examples: Sequence[str]) -> str:

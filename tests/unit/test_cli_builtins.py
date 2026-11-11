@@ -234,3 +234,21 @@ def test_render_raw_bytes(capsysbinary: pytest.CaptureFixture[bytes]) -> None:
 
     render(b"\x00bin", "raw", io.StringIO())
     assert capsysbinary.readouterr().out == b"\x00bin"
+
+
+def test_graphql_operation_docs_fall_back_to_descriptions() -> None:
+    from codapact.sources.base import SourceInput
+    from codapact.sources.graphql import GraphQLSource
+    from codapact.sources.loader import SourceDocument
+
+    schema = SourceDocument(
+        "s.graphql", b'type Query {\n  "List widgets."\n  widgets: [String!]!\n  one: String\n}'
+    )
+    operations = SourceDocument(
+        "o.graphql", b'"""Every widget."""\nquery Described { widgets }\n\nquery Plain { widgets }'
+    )
+    options = {"name": "W", "url": "https://w.test/graphql"}
+    api = GraphQLSource().parse(SourceInput(schema, (operations,), options)).api
+    assert api is not None
+    docs = {op.name: op.docs for op in api.operations}
+    assert docs == {"described": "Every widget.", "plain": "List widgets."}
