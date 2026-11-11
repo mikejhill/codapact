@@ -137,6 +137,13 @@ def _wrap(text: str, width: int = 78) -> str:
     return "\n\n".join(textwrap.fill(p, width=width) for p in paragraphs if p)
 
 
+def _required_option(arg: Arg) -> str:
+    """Render a required option for usage lines and examples; switches take no value."""
+    if arg.kind is ArgKind.FLAG:
+        return f"--{arg.flag.kebab}"
+    return f"--{arg.flag.kebab} {_example_value(arg)}"
+
+
 def _example_value(arg: Arg) -> str:
     if arg.kind is ArgKind.ENUM and arg.choices:
         return arg.choices[0]
@@ -149,11 +156,7 @@ def command_examples(program: str, words: tuple[str, ...], command: Command) -> 
     """Return example invocations: the minimal call, then paging or safety variants."""
     base = " ".join((program, *words))
     parts = [_metavar(a) for a in _positionals(command)]
-    parts += [
-        f"--{a.flag.kebab} {_example_value(a)}"
-        for a in command.args
-        if a.required and a.positional is None
-    ]
+    parts += [_required_option(a) for a in command.args if a.required and a.positional is None]
     minimal = " ".join((base, *parts))
     found = [minimal]
     if command.paginated:
@@ -300,8 +303,10 @@ def _usage(command: Command) -> str:
     parts = [_metavar(a) for a in _positionals(command)]
     for arg in command.args:
         if arg.required and arg.positional is None:
-            value = "{" + ",".join(arg.choices) + "}" if arg.kind is ArgKind.ENUM else None
-            parts.append(f"--{arg.flag.kebab} {value or _example_value(arg)}")
+            if arg.kind is ArgKind.ENUM:
+                parts.append(f"--{arg.flag.kebab} {{{','.join(arg.choices)}}}")
+            else:
+                parts.append(_required_option(arg))
     return " ".join(["%(prog)s", *(p.replace("%", "%%") for p in parts), "[options]"])
 
 

@@ -131,13 +131,8 @@ def test_main_handles_interrupts_and_builtins() -> None:
 
 def run(rt: CliRuntime, handler, *, fmt: str = "text") -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
-    token = _error_format.set(fmt)
-    try:
-        code = rt.run(
-            argparse.Namespace(), lambda options: options, handler, stdout=out, stderr=err
-        )
-    finally:
-        _error_format.reset(token)
+    args = argparse.Namespace(error_format=fmt)
+    code = rt.run(args, lambda options: options, handler, stdout=out, stderr=err)
     return code, out.getvalue(), err.getvalue()
 
 
@@ -252,3 +247,127 @@ def test_graphql_operation_docs_fall_back_to_descriptions() -> None:
     assert api is not None
     docs = {op.name: op.docs for op in api.operations}
     assert docs == {"described": "Every widget.", "plain": "List widgets."}
+
+
+# ---------------------------------------------------------------- review regressions
+
+
+def test_trace_masks_url_encoded_and_short_secrets() -> None:
+    stream = io.StringIO()
+    rt = runtime(ACME_KEY="abcd+1234/5678=", ACME_PIN="ab")
+    trace = Trace(stream, rt._secrets())
+    request = HttpRequest("GET", "https://a.test/x?key=abcd%2B1234%2F5678%3D&pin=ab")
+    context = CallContext(Operation("get_x", OperationKind.QUERY, (), None))
+    trace(request, context, lambda r: HttpResponse(200, {}, b""))
+    logged = stream.getvalue()
+    assert "abcd" not in logged and "pin=***" in logged
+
+
+def with_error_flag() -> CliParser:
+    parser = tree()
+    commands = cli_tools.subcommands(parser)
+    assert commands is not None
+    things = cli_tools.subcommands(commands.choices["things"])
+    assert things is not None
+    things.choices["get"].add_argument("--error", dest="p_error", action="store_true")
+    return parser
+
+
+def test_prescan_does_not_swallow_api_flags() -> None:
+    args = runtime().parse(with_error_flag(), ["things", "get", "--error"])
+    assert args.p_error is True
+
+
+def test_prescan_failures_use_json_errors(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exit_:
+        runtime().parse(tree(), ["--error-format", "json", "things", "get", "--config"])
+    assert exit_.value.code == 2
+    assert json.loads(capsys.readouterr().err)["error"]["type"] == "usage"
+
+
+def test_unknown_options_are_errors_not_help(capsys: pytest.CaptureFixture[str]) -> None:
+    for argv in (["--bogus"], ["things", "--bogus"]):
+        with pytest.raises(SystemExit) as exit_:
+            runtime().parse(tree(), argv)
+        assert exit_.value.code == 2
+        assert "unrecognized arguments: --bogus" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as exit_:
+        runtime().parse(tree(), ["things"])
+    assert exit_.value.code == 0 and "usage:" in capsys.readouterr().out
+
+
+def test_jsonl_streams_items_verbatim_and_replays_warnings_once() -> None:
+    rt = runtime()
+
+    def items(client, args):
+        def gen():
+            warnings.warn("heads up", UserWarning, stacklevel=1)
+            yield from ([1, 2], [3, 4], None)
+
+        return gen()
+
+    out, err = io.StringIO(), io.StringIO()
+    with pytest.warns(UserWarning, match="heads up"):
+        code = rt.run(
+            argparse.Namespace(output="jsonl"), lambda o: o, items, stdout=out, stderr=err
+        )
+    assert code == 0 and out.getvalue().splitlines() == ["[1, 2]", "[3, 4]", "null"]
+
+
+def test_powershell_completion_passes_empty_words() -> None:
+    script = cli_tools.completion_script("acme", "powershell")
+    assert "$PSNativeCommandArgumentPassing" in script
+    assert cli_tools.complete(tree(), ['""']) == ["completion", "describe", "doctor", "things"]
+
+
+def test_doctor_survives_malformed_base_url() -> None:
+    checks = cli_tools.Doctor(
+        program="acme",
+        version="1",
+        env_prefix="ACME",
+        env={},
+        load_model=lambda: API,
+        settings=lambda: ({"base_url": "https://[bad"}, {"base_url": "flag --base-url"}),
+        config_status=lambda: cli_tools.Check("settings file", "info", "none"),
+    ).run(offline=True)
+    assert {c.check: c.status for c in checks}["base url"] == "fail"
+
+
+def test_doctor_honours_settings_file_output(tmp_path) -> None:
+    config = tmp_path / "c.json"
+    config.write_text('{"output": "yaml"}')
+    out = io.StringIO()
+    argv = ["doctor", "--offline", "--config", str(config)]
+    assert runtime().main(tree, lambda o: None, lambda: API, argv, stdout=out) == 0
+    assert out.getvalue().startswith("- check: cli")
+
+
+def test_required_switches_take_no_value_in_usage_and_examples() -> None:
+    from codapact.commands.model import Arg, ArgKind, Command
+    from codapact.core.naming import Name
+    from codapact.model import Primitive
+    from codapact.model import ScalarKind as Kind
+    from codapact.targets.python.cli import _usage, command_examples
+
+    switch = Arg(
+        Name(("enabled",)), Name(("enabled",)), ArgKind.FLAG, Primitive(Kind.BOOLEAN), required=True
+    )
+    command = Command(Name(("create",)), (Name(("create",)),), (switch,))
+    assert _usage(command) == "%(prog)s --enabled [options]"
+    assert command_examples("acme", ("create",), command)[0] == "acme create --enabled"
+
+
+def test_error_mode_sources(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / "acme").mkdir()
+    (tmp_path / "acme" / "config.json").write_text("{")
+    assert runtime(XDG_CONFIG_HOME=str(tmp_path))._error_mode(None) == "text"
+    assert runtime(ACME_ERROR_FORMAT="json")._error_mode(None) == "json"
+    with pytest.raises(SystemExit) as exit_:
+        runtime().parse(tree(), ["--error-format=json", "things", "nope"])
+    assert exit_.value.code == 2 and json.loads(capsys.readouterr().err)["error"]
+    with pytest.raises(SystemExit) as exit_:
+        runtime().parse(tree(), ["--"])
+    assert exit_.value.code == 0
+    with pytest.raises(SystemExit) as exit_:
+        CliParser(prog="x").error("the following arguments are required: COMMAND")
+    assert exit_.value.code == 0

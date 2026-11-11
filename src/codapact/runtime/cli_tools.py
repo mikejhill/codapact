@@ -149,6 +149,8 @@ def describe(
 def complete(parser: argparse.ArgumentParser, words: Sequence[str]) -> list[str]:
     """Return completion candidates for the last word of ``words`` (may be empty)."""
     *done, current = list(words) or [""]
+    if current == '""':  # an empty word as legacy PowerShell argument passing sends it
+        current = ""
     here = parser
     globals_ = dict(parser._option_string_actions)
     expecting: argparse.Action | None = None
@@ -219,7 +221,11 @@ def completion_script(program: str, shell: str) -> str:
         "    param($wordToComplete, $commandAst, $cursorPosition)\n"
         "    $words = @($commandAst.CommandElements | Select-Object -Skip 1 | "
         "ForEach-Object { $_.ToString() })\n"
-        "    if ($wordToComplete -eq '') { $words += '\"\"' }\n"
+        "    if ($wordToComplete -eq '') {\n"
+        "        # PowerShell 7.3+ passes '' as an empty argument; older versions drop it.\n"
+        "        $legacy = $PSNativeCommandArgumentPassing -in @($null, 'Legacy')\n"
+        "        $words += $(if ($legacy) { '\"\"' } else { '' })\n"
+        "    }\n"
         f"    & {program} __complete @words 2>$null | ForEach-Object {{\n"
         "        [System.Management.Automation.CompletionResult]::new("
         "$_, $_, 'ParameterValue', $_)\n"
@@ -288,7 +294,8 @@ class Doctor:
         base_url = options.get("base_url") or (api.servers[0].url if api.servers else "")
         base_ok = self._base_url(checks, base_url, sources.get("base_url", "contract"), options)
         checks.extend(self._credentials(api))
-        proxy = urllib.request.getproxies_environment().get(urlsplit(base_url).scheme or "https")
+        scheme = urlsplit(base_url).scheme if base_ok else ""
+        proxy = urllib.request.getproxies_environment().get(scheme) if scheme else None
         if proxy:
             checks.append(Check("proxy", "info", f"via {_mask(proxy)} (from environment)"))
         mode = options.get("response_validation", "warn")

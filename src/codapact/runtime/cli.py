@@ -21,6 +21,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn, TextIO, override
+from urllib.parse import quote, quote_plus
 
 import yaml
 
@@ -74,6 +75,9 @@ SETTINGS_KEYS = frozenset(
 )
 
 _error_format: ContextVar[str] = ContextVar("codapact_cli_error_format", default="text")
+_parse_state: ContextVar[tuple[argparse.ArgumentParser, tuple[str, ...]] | None] = ContextVar(
+    "codapact_cli_parse_state", default=None
+)
 
 
 def json_value(text: str) -> Any:
@@ -157,8 +161,11 @@ class CliParser(argparse.ArgumentParser):
     def error(self, message: str) -> NoReturn:
         """Print a usage error (exit 2), or this parser's help when only the command is missing."""
         if message == "the following arguments are required: COMMAND":
-            self.print_help(sys.stdout)
-            self.exit(EXIT_OK)
+            unknown = _unknown_options()
+            if not unknown:
+                self.print_help(sys.stdout)
+                self.exit(EXIT_OK)
+            message = f"unrecognized arguments: {' '.join(unknown)}"
         message, hint = _improve(self, message)
         program = self.prog.split(" ", 1)[0]
         if _error_format.get() != "json":
@@ -173,6 +180,22 @@ class CliParser(argparse.ArgumentParser):
 
 _CHOICE = re.compile(r"invalid choice: '(?P<value>[^']*)' \(choose from (?P<choices>.*)\)$")
 _QUOTED = re.compile(r"'((?:[^'\\]|\\.)*)'")
+
+
+def _unknown_options() -> list[str]:
+    """Return option words of the current command line that no parser in the tree knows."""
+    state = _parse_state.get()
+    if state is None:
+        return []
+    root, words = state
+    known = {option for action in _actions(root) for option in action.option_strings}
+    found = []
+    for word in words:
+        if word == "--":
+            break
+        if word.startswith("-") and word != "-" and word.split("=", 1)[0] not in known:
+            found.append(word)
+    return found
 
 
 def selected(parser: argparse.ArgumentParser, args: argparse.Namespace) -> argparse.ArgumentParser:
@@ -511,15 +534,15 @@ class CliRuntime:
         """Resolve client options: flags, then environment, then the settings file."""
         return self.resolve(args)[0]
 
-    def output_format(self, args: argparse.Namespace) -> str:
-        """Return the output format: flag, environment, settings file, then ``json``."""
+    def output_format(self, args: argparse.Namespace, default: str = "json") -> str:
+        """Return the output format: flag, environment, settings file, then ``default``."""
         try:
             file_settings = self._file_settings(getattr(args, "config", None))
         except CodapactError:
             file_settings = {}
         value, _ = self._setting(args, file_settings, "output")
         if value is None:
-            return "json"
+            return default
         if value not in OUTPUT_FORMATS:
             raise CodapactError(f"output format must be one of {', '.join(OUTPUT_FORMATS)}")
         return str(value)
@@ -556,11 +579,19 @@ class CliRuntime:
         return cli_tools.Check("settings file", "ok", f"{path} ({keys})")
 
     def _pre_scan(self, argv: Sequence[str]) -> argparse.Namespace:
-        pre = argparse.ArgumentParser(add_help=False)
-        pre.add_argument("--config")
-        pre.add_argument("--error-format")
-        known, _ = pre.parse_known_args(argv)
-        return known
+        """Find ``--config`` and ``--error-format`` without failing; the real parser validates."""
+        found: dict[str, str | None] = {"config": None, "error_format": None}
+        words = list(argv)
+        for index, word in enumerate(words):
+            if word == "--":
+                break
+            for key in found:
+                flag = "--" + key.replace("_", "-")
+                if word.startswith(flag + "="):
+                    found[key] = word.split("=", 1)[1]
+                elif word == flag and index + 1 < len(words):
+                    found[key] = words[index + 1]
+        return argparse.Namespace(**found)
 
     def parse(
         self, parser: argparse.ArgumentParser, argv: Sequence[str] | None = None
@@ -569,28 +600,49 @@ class CliRuntime:
 
         A settings file that cannot be read is ignored here and reported by ``run``.
         """
-        known = self._pre_scan(sys.argv[1:] if argv is None else argv)
+        words = list(sys.argv[1:] if argv is None else argv)
+        known = self._pre_scan(words)
         try:
             file_settings = self._file_settings(known.config)
         except CodapactError:
             file_settings = {}
-        fmt = (
-            known.error_format
+        state = _parse_state.set((parser, tuple(words)))
+        mode = _error_format.set(self._error_mode(known.error_format, file_settings))
+        try:
+            defaults = file_settings.get("defaults", {})
+            dests = {"p_" + str(key).replace("-", "_") for key in defaults}
+            for action in _actions(parser):
+                if action.required and action.dest in dests:
+                    action.required = False
+            args, extras = parser.parse_known_args(words)
+            if extras:
+                # Report leftovers against the command they were given to, not the root.
+                selected(parser, args).error(f"unrecognized arguments: {' '.join(extras)}")
+            return args
+        finally:
+            _error_format.reset(mode)
+            _parse_state.reset(state)
+
+    def _error_mode(self, flag: str | None, file_settings: dict[str, Any] | None = None) -> str:
+        """Return the error format: flag, environment, settings file, then ``text``."""
+        if file_settings is None:
+            try:
+                file_settings = self._file_settings(None)
+            except CodapactError:
+                file_settings = {}
+        value = (
+            flag
             or self.env.get(f"{self.env_prefix}_ERROR_FORMAT")
             or file_settings.get("error_format")
         )
-        if fmt in ERROR_FORMATS:
-            _error_format.set(str(fmt))
-        defaults = file_settings.get("defaults", {})
-        dests = {"p_" + str(key).replace("-", "_") for key in defaults}
-        for action in _actions(parser):
-            if action.required and action.dest in dests:
-                action.required = False
-        args, extras = parser.parse_known_args(argv)
-        if extras:
-            # Report leftovers against the command they were given to, not the root.
-            selected(parser, args).error(f"unrecognized arguments: {' '.join(extras)}")
-        return args
+        return str(value) if value in ERROR_FORMATS else "text"
+
+    def _args_error_mode(self, args: argparse.Namespace) -> str:
+        try:
+            file_settings = self._file_settings(getattr(args, "config", None))
+        except CodapactError:
+            file_settings = {}
+        return self._error_mode(getattr(args, "error_format", None), file_settings)
 
     def apply_defaults(self, args: argparse.Namespace) -> None:
         """Fill options the user omitted from the settings file's ``defaults``.
@@ -638,7 +690,7 @@ class CliRuntime:
         words = list(sys.argv[1:] if argv is None else argv)
         out = stdout or sys.stdout
         err = stderr or sys.stderr
-        token = _error_format.set("text")
+        token = _error_format.set(self._error_mode(self._pre_scan(words).error_format))
         try:
             parser = build_parser()
             if words[:1] == ["__complete"]:
@@ -664,6 +716,7 @@ class CliRuntime:
         out: TextIO,
         err: TextIO,
     ) -> int:
+        token = _error_format.set(self._args_error_mode(args))
         try:
             if name == "completion":
                 out.write(cli_tools.completion_script(self.program, args.shell))
@@ -698,12 +751,13 @@ class CliRuntime:
                 config_status=lambda: self._config_check(getattr(args, "config", None)),
             )
             checks = doctor.run(offline=args.offline)
-            explicit = getattr(args, "output", None) or self.env.get(f"{self.env_prefix}_OUTPUT")
             rows = [c.as_dict() for c in checks]
-            render(rows, explicit or ("table" if out.isatty() else "json"), out)
+            render(rows, self.output_format(args, "table" if out.isatty() else "json"), out)
             return EXIT_API if any(c.status == "fail" for c in checks) else EXIT_OK
         except CodapactError as error:
             return emit_error(self.program, "usage", str(error), EXIT_USAGE, err)
+        finally:
+            _error_format.reset(token)
 
     def _environment(self, api: Api) -> dict[str, str]:
         e = self.env_prefix
@@ -741,7 +795,7 @@ class CliRuntime:
         return tuple(
             value
             for key, value in self.env.items()
-            if key.startswith(self.env_prefix + "_") and key not in settings and len(value) >= 4
+            if key.startswith(self.env_prefix + "_") and key not in settings and value
         )
 
     def run(
@@ -754,6 +808,20 @@ class CliRuntime:
         stderr: TextIO | None = None,
     ) -> int:
         """Execute one command and map failures to exit codes."""
+        token = _error_format.set(self._args_error_mode(args))
+        try:
+            return self._run(args, make_client, handler, stdout, stderr)
+        finally:
+            _error_format.reset(token)
+
+    def _run(
+        self,
+        args: argparse.Namespace,
+        make_client: Callable[[dict[str, Any]], Any],
+        handler: Callable[[Any, argparse.Namespace], Any],
+        stdout: TextIO | None,
+        stderr: TextIO | None,
+    ) -> int:
         out = stdout or sys.stdout
         err = stderr or sys.stderr
         p = self.program
@@ -764,22 +832,32 @@ class CliRuntime:
             client = make_client(self._client_options(args, err))
             query = getattr(args, "query", None)
             fields = getattr(args, "pick", None)
-            with warnings.catch_warnings(record=True) as caught:
-                warnings.simplefilter("always", ResponseValidationWarning)
-                result = handler(client, args)
-                if isinstance(result, Iterable) and not isinstance(
-                    result, dict | list | str | bytes
-                ):
-                    if fmt == "jsonl" and not query:
-                        try:
-                            for item in result:
-                                render(pick(item, fields), "jsonl", out)
-                                out.flush()
-                        finally:
-                            self._report_mismatches(caught, err)
-                        return EXIT_OK
-                    result = list(result)
-            self._report_mismatches(caught, err)
+            caught: list[warnings.WarningMessage] = []
+            streamed = False
+            try:
+                with warnings.catch_warnings(record=True) as recorder:
+                    warnings.simplefilter("always", ResponseValidationWarning)
+                    try:
+                        result = handler(client, args)
+                        if isinstance(result, Iterable) and not isinstance(
+                            result, dict | list | str | bytes
+                        ):
+                            if fmt == "jsonl" and not query:
+                                streamed = True
+                                for item in result:
+                                    value = pick(item, fields)
+                                    out.write(json.dumps(value, ensure_ascii=False, default=str))
+                                    out.write("\n")
+                                    out.flush()
+                            else:
+                                result = list(result)
+                    finally:
+                        caught.extend(recorder)
+            finally:
+                # Outside the recording context, so replayed warnings are not re-captured.
+                self._report_mismatches(caught, err)
+            if streamed:
+                return EXIT_OK
             if query:
                 result = select(result, query)
             result = pick(result, fields)
@@ -877,8 +955,9 @@ class Trace:
     def __call__(self, request: HttpRequest, context: CallContext, call_next: Next) -> HttpResponse:
         """Log the request line, then the status, size, and elapsed time."""
         url = request.url
-        for secret in self.secrets:
-            url = url.replace(secret, "***")
+        for secret in sorted(self.secrets, key=len, reverse=True):
+            for form in {secret, quote(secret, safe=""), quote_plus(secret)}:
+                url = url.replace(form, "***")
         print(f"> {request.method} {url}", file=self.stream)
         started = time.monotonic()
         response = call_next(request)
