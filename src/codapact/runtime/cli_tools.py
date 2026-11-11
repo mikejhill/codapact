@@ -251,12 +251,22 @@ class Check:
 
 
 def _mask(url: str) -> str:
-    parts = urlsplit(url)
+    """Hide user information in a URL; raise ``ValueError`` when it cannot be parsed."""
+    scheme_less = "://" not in url
+    parts = urlsplit(f"//{url}" if scheme_less else url)
+    host, port = parts.hostname or "", parts.port
     if parts.username is None and parts.password is None:
         return url
-    host = parts.hostname or ""
-    netloc = f"***@{host}" + (f":{parts.port}" if parts.port else "")
-    return urlunsplit(parts._replace(netloc=netloc))
+    netloc = f"***@{host}" + (f":{port}" if port else "")
+    masked = urlunsplit(parts._replace(netloc=netloc))
+    return masked.removeprefix("//") if scheme_less else masked
+
+
+def _proxy_check(proxy: str) -> Check:
+    try:
+        return Check("proxy", "info", f"via {_mask(proxy)} (from environment)")
+    except ValueError:
+        return Check("proxy", "fail", "proxy address in the environment is malformed")
 
 
 @dataclass(frozen=True, slots=True)
@@ -297,7 +307,7 @@ class Doctor:
         scheme = urlsplit(base_url).scheme if base_ok else ""
         proxy = urllib.request.getproxies_environment().get(scheme) if scheme else None
         if proxy:
-            checks.append(Check("proxy", "info", f"via {_mask(proxy)} (from environment)"))
+            checks.append(_proxy_check(proxy))
         mode = options.get("response_validation", "warn")
         source = sources.get("response_validation", "default")
         checks.append(Check("response validation", "info", f"{mode} (from {source})"))

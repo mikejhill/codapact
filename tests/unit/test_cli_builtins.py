@@ -373,3 +373,22 @@ def test_error_mode_sources(tmp_path, capsys: pytest.CaptureFixture[str]) -> Non
     with pytest.raises(SystemExit) as exit_:
         CliParser(prog="x").error("the following arguments are required: COMMAND")
     assert exit_.value.code == 0
+
+
+@pytest.mark.parametrize(
+    ("proxy", "expected"),
+    [
+        ("user:secret@proxy.test:3128", "***@proxy.test:3128"),
+        ("proxy.test:3128", "proxy.test:3128"),
+        ("http://user:pw@proxy.test", "http://***@proxy.test"),
+    ],
+)
+def test_mask_hides_credentials_without_scheme(proxy: str, expected: str) -> None:
+    assert cli_tools._mask(proxy) == expected
+    assert "secret" not in cli_tools._proxy_check(proxy).detail
+
+
+@pytest.mark.parametrize("proxy", ["http://[bad", "http://user:pw@proxy.test:bad"])
+def test_doctor_reports_malformed_proxy(proxy: str) -> None:
+    check = cli_tools._proxy_check(proxy)
+    assert check.status == "fail" and "pw" not in check.detail
