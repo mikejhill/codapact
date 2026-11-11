@@ -285,7 +285,7 @@ class _Translator:
             errors = validate(self.schema, document)
             if errors:
                 raise ContractError(f"operation {name}: {errors[0].message}")
-            built = self.operation(document, name, _leading_comment(operation) or "")
+            built = self.operation(document, name, _leading_comment(operation))
             if built is not None:
                 result.append(built)
         return result
