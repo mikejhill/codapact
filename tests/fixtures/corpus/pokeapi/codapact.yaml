@@ -1,0 +1,66 @@
+# PokeAPI project used by the e2e suite (Prism mock on every PR, live API nightly).
+version: 1
+source: {type: openapi, path: openapi.yml, options: {strict: true}}
+shape:
+  - group: {by: tag}
+  - paginate:
+      style: offset
+      param: offset
+      limit_param: limit
+      items: results
+      operations:
+        - ability_list
+        - berry_list
+        - berry_firmness_list
+        - berry_flavor_list
+        - characteristic_list
+        - contest_type_list
+        - contest_effect_list
+        - egg_group_list
+        - encounter_method_list
+        - encounter_condition_list
+        - encounter_condition_value_list
+        - evolution_chain_list
+        - evolution_trigger_list
+        - evolution_variable_list
+        - generation_list
+        - gender_list
+        - growth_rate_list
+        - item_list
+        - item_category_list
+        - item_attribute_list
+        - item_fling_effect_list
+        - item_pocket_list
+        - currency_list
+        - language_list
+        - location_list
+        - location_area_list
+        - machine_list
+        - move_list
+        - move_ailment_list
+        - move_battle_style_list
+        - move_category_list
+        - move_damage_class_list
+        - move_learn_method_list
+        - move_target_list
+        - nature_list
+        - pal_park_area_list
+        - pokedex_list
+        - pokemon_list
+        - pokemon_color_list
+        - pokemon_form_list
+        - pokemon_habitat_list
+        - pokemon_shape_list
+        - pokemon_species_list
+        - pokeathlon_stat_list
+        - region_list
+        - stat_list
+        - super_contest_effect_list
+        - type_list
+        - version_list
+        - version_group_list
+cli: {program: poke}
+targets:
+  - {name: python, output: generated/python, options: {package: pokeapi}}
+  - {name: python-cli, output: generated/python}
+  - {name: typescript, output: generated/typescript, options: {package: pokeapi}}

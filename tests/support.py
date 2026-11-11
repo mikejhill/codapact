@@ -17,11 +17,12 @@ from codapact.core.net import HttpRequest, HttpResponse
 from codapact.model.api import Api
 from codapact.sources.base import SourceInput
 from codapact.sources.graphql import GraphQLSource
-from codapact.sources.loader import Fetcher
+from codapact.sources.loader import Fetcher, SourceDocument
 from codapact.sources.openapi import OpenApiSource
 
 ROOT = Path(__file__).resolve().parent.parent
 EXAMPLES = ROOT / "examples"
+FIXTURES = ROOT / "tests" / "fixtures"
 Handler = Callable[[HttpRequest], HttpResponse]
 
 
@@ -204,3 +205,164 @@ def serve(handler: Handler) -> Generator[str]:
     finally:
         server.shutdown()
         server.server_close()
+
+
+def openapi(doc: dict[str, Any], **options: object):
+    """Translate an in-memory OpenAPI document."""
+    document = SourceDocument("test.json", json.dumps(doc).encode())
+    return OpenApiSource().parse(SourceInput(document, options=options))
+
+
+def project_config(
+    contract: Path,
+    out: Path,
+    *,
+    package: str,
+    source_type: str = "openapi",
+    options: dict[str, Any] | None = None,
+    shape: list[dict[str, Any]] | None = None,
+    targets: tuple[str, ...] = ("python", "python-cli", "typescript"),
+):
+    """A ``ProjectConfig`` generating every built-in target for one contract into ``out``."""
+    from codapact.pipeline.config import ProjectConfig
+
+    outputs = {"python": "python", "python-cli": "python", "typescript": "typescript"}
+    return ProjectConfig.from_data(
+        {
+            "version": 1,
+            "source": {"type": source_type, "path": str(contract), "options": options or {}},
+            "shape": shape or [],
+            "cli": {"program": package.replace("_", "-")},
+            "targets": [
+                {
+                    "name": name,
+                    "output": outputs[name],
+                    **({"options": {"package": package}} if name != "python-cli" else {}),
+                }
+                for name in targets
+            ],
+        },
+        base=out,
+    )
+
+
+def generate_contract(contract: Path, out: Path, *, package: str, **kwargs: Any):
+    """Run the whole pipeline; fail on error diagnostics. Returns the pipeline result."""
+    from codapact.pipeline.defaults import default_registry
+    from codapact.pipeline.pipeline import Pipeline
+
+    result = Pipeline(default_registry()).run(
+        project_config(contract, out, package=package, **kwargs)
+    )
+    assert not result.diagnostics.has_errors, [str(d) for d in result.diagnostics]
+    return result
+
+
+def import_generated(src: Path, package: str) -> tuple[Any, Any]:
+    """Import a freshly generated package and its CLI module from ``src``."""
+    import importlib
+    import sys
+
+    sys.path.insert(0, str(src))
+    try:
+        for module in [m for m in sys.modules if m == package or m.startswith(package + ".")]:
+            del sys.modules[module]
+        return importlib.import_module(package), importlib.import_module(f"{package}.cli")
+    finally:
+        sys.path.remove(str(src))
+
+
+def find_tsc() -> list[str] | None:
+    """The TypeScript compiler, if installed (``tsc`` on PATH or a local node_modules)."""
+    import shutil
+
+    local = ROOT / "node_modules" / ".bin" / "tsc"
+    if local.exists():
+        return [str(local)]
+    tsc = shutil.which("tsc")
+    return [tsc] if tsc else None
+
+
+def typecheck_typescript(root: Path) -> None:
+    """Type-check a generated TypeScript package with its own strict tsconfig."""
+    import subprocess
+
+    tsc = find_tsc()
+    assert tsc is not None, "tsc is not installed"
+    completed = subprocess.run(
+        [*tsc, "-p", str(root / "tsconfig.json")],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+ECHOED_HEADERS = ("x-trace", "x-langs", "cookie", "content-type")
+
+
+def echo(request: HttpRequest) -> HttpResponse:
+    """Answer with the request as the server saw it, for wire-format comparisons."""
+    parts = urlsplit(request.url)
+    headers = {k.lower(): v for k, v in request.headers.items() if k.lower() in ECHOED_HEADERS}
+    body = json.loads(request.body) if request.body else None
+    return json_response(
+        200,
+        {
+            "method": request.method,
+            "path": parts.path,
+            "query": parts.query,
+            "headers": headers,
+            "body": body,
+        },
+    )
+
+
+def node_with_strip_types() -> str | None:
+    """A ``node`` that runs TypeScript directly (>= 22.6), or None.
+
+    Set ``CODAPACT_REQUIRE_NODE=1`` (CI does) to fail instead of skipping when it is missing.
+    """
+    import os
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    usable = node is not None and (
+        subprocess.run(
+            [node, "--experimental-strip-types", "--no-warnings", "-e", "0"],
+            capture_output=True,
+            timeout=30,
+            check=False,
+        ).returncode
+        == 0
+    )
+    if not usable and os.environ.get("CODAPACT_REQUIRE_NODE") == "1":
+        raise RuntimeError("CODAPACT_REQUIRE_NODE=1 but node >= 22.6 is not available")
+    return node if usable else None
+
+
+def run_node(script: str, index: Path, url: str, *extra: str) -> Any:
+    """Run a TypeScript fixture script against a generated package; return its JSON output."""
+    import subprocess
+
+    node = node_with_strip_types()
+    assert node is not None
+    completed = subprocess.run(
+        [
+            node,
+            "--experimental-strip-types",
+            "--no-warnings",
+            str(FIXTURES / script),
+            index.as_uri(),
+            url,
+            *extra,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout)

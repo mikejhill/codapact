@@ -11,7 +11,7 @@ from codapact.model.api import HttpBinding, Operation, ParamLocation
 from codapact.model.api import HttpResponse as BoundResponse
 from codapact.runtime.abstractions import HttpRequest, HttpResponse
 from codapact.runtime.auth import resolve_auth
-from codapact.runtime.errors import ApiError
+from codapact.runtime.errors import ApiError, ValidationError
 from codapact.runtime.protocols.base import Exchange, parse_json
 
 
@@ -40,10 +40,11 @@ class HttpAdapter:
             if placement.param not in arguments:
                 continue
             value = arguments[placement.param]
+            where = f"{operation.name}.{placement.param}"
             match placement.location:
                 case ParamLocation.PATH:
                     path = path.replace(
-                        "{" + placement.wire_name + "}", quote(_text(value), safe="")
+                        "{" + placement.wire_name + "}", quote(_simple(value), safe="")
                     )
                 case ParamLocation.QUERY:
                     if value is None:
@@ -57,10 +58,10 @@ class HttpAdapter:
                         query.append((placement.wire_name, _text(value)))
                 case ParamLocation.HEADER:
                     if value is not None:
-                        headers[placement.wire_name] = _header(value)
+                        headers[placement.wire_name] = _header(value, where)
                 case ParamLocation.COOKIE:
                     if value is not None:
-                        cookies[placement.wire_name] = _header(value)
+                        cookies[placement.wire_name] = _cookie(value, where)
                 case ParamLocation.BODY:
                     body = json.dumps(value, allow_nan=False).encode("utf-8")
                     headers["Content-Type"] = binding.request_media_type or "application/json"
@@ -125,8 +126,28 @@ def _text(value: Any) -> str:
     return str(value)
 
 
-def _header(value: Any) -> str:
-    text = _text(value)
+def _simple(value: Any) -> str:
+    """OpenAPI ``simple`` style (path and header parameters): arrays are comma-separated."""
+    if isinstance(value, list | tuple):
+        return ",".join(_text(v) for v in value)
+    return _text(value)
+
+
+def _header(value: Any, where: str) -> str:
+    text = _simple(value)
     if any(ord(c) < 32 or ord(c) == 127 for c in text):
-        raise ValueError("header values cannot contain control characters")
+        raise ValidationError(where, "header values cannot contain control characters")
+    return text
+
+
+# RFC 6265 cookie-octet excludes these; allowing them would let a value inject cookies.
+_COOKIE_FORBIDDEN = frozenset(' ",;\\')
+
+
+def _cookie(value: Any, where: str) -> str:
+    text = _header(value, where)
+    if any(c in _COOKIE_FORBIDDEN for c in text):
+        raise ValidationError(
+            where, "cookie values cannot contain spaces, quotes, ',', ';' or '\\'"
+        )
     return text

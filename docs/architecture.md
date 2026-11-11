@@ -51,7 +51,7 @@ place that names concrete implementations.
 
 ### Dependency rules
 
-Enforced by `tests/test_architecture.py` (AST import scan):
+Enforced by `tests/unit/test_architecture.py` (AST import scan):
 
 - `core` depends on nothing in the package.
 - `model` depends only on `core`.
@@ -139,8 +139,12 @@ Deliberate differences:
 
 ## Testing strategy
 
+Summary; the full strategy, suites, and gates are in [testing](testing.md).
+
 - Each layer has unit tests against hand-built inputs from the layer below.
-- `tests/support.py` provides in-memory petstore (REST) and library (GraphQL) servers and a
-  `FakeTransport`; generated clients are also exercised over real loopback HTTP.
-- Generated Python is type checked with `ty`; generated TypeScript runs under Node.
-- The external plugin fixture uses only the public protocol helpers.
+- Property tests check translation against an independent JSON Schema oracle, and fuzz
+  whole contracts through every target.
+- Generated Python and TypeScript are compiled, type-checked, and run against loopback
+  servers; the two runtimes must put identical requests on the wire.
+- Real contracts (PokeAPI, YNAB) are generated in strict mode on every PR; public APIs are
+  called nightly.

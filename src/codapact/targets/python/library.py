@@ -12,7 +12,7 @@ from codapact.model.api import Api, AuthKind, AuthScheme
 from codapact.model.serialize import dumps
 from codapact.model.types import Enum, Record, TypeDef, Union
 from codapact.plugins.protocol import GeneratedFile, GenerationRequest, GenerationResponse
-from codapact.surface.model import Method, Namespace, SurfaceParam
+from codapact.surface.model import Method, Namespace, SurfaceParam, required_sources
 from codapact.targets.python.naming import (
     annotation,
     default_package,
@@ -181,7 +181,7 @@ def render_client(api: Api, root: Namespace) -> str:
         out.append("        self._runtime = runtime")
         out.extend(_children(namespace, path, "        "))
         for method in namespace.methods:
-            out.append(_method(method))
+            out.append(_method(api, method))
     out.append(_client_class(api, root))
     return "\n".join(out) + "\n"
 
@@ -233,7 +233,7 @@ def _client_class(api: Api, root: Namespace) -> str:
     lines.extend(_children(root, (), "        "))
     text = "\n".join(lines)
     for method in root.methods:
-        text += "\n" + _method(method)
+        text += "\n" + _method(api, method)
     return text
 
 
@@ -249,7 +249,7 @@ def _signature(params: tuple[SurfaceParam, ...]) -> list[str]:
     return parts
 
 
-def _arguments(method: Method) -> str:
+def _arguments(api: Api, method: Method) -> str:
     flat: list[str] = []
     nested: dict[str, list[str]] = {}
     wrapped: dict[tuple[str, str], list[str]] = {}
@@ -270,11 +270,7 @@ def _arguments(method: Method) -> str:
             nested[param_name] = [
                 e.replace(f"<{index}>", "_fields({" + ", ".join(items) + "})") for e in entries
             ]
-    required = sorted(
-        source
-        for source in nested
-        if any(p.required for p in method.params if p.source.param == source)
-    )
+    required = sorted(required_sources(api, method))
     text = "call_args({" + ", ".join(flat) + "}"
     if nested:
         groups = ", ".join(f"{k!r}: {{{', '.join(v)}}}" for k, v in nested.items())
@@ -284,7 +280,7 @@ def _arguments(method: Method) -> str:
     return text + ")"
 
 
-def _method(method: Method) -> str:
+def _method(api: Api, method: Method) -> str:
     name = method_ident(method.name)
     signature = ", ".join(["self", "*", *_signature(method.params)]) if method.params else "self"
     returns = annotation(method.returns, "_t.") if method.returns is not None else "None"
@@ -295,7 +291,7 @@ def _method(method: Method) -> str:
         doc = (doc + "\n\n" if doc else "") + "Deprecated."
     lines = [f"\n    def {name}({signature}) -> {returns}:"]
     lines.append(docstring(doc or f"Call ``{method.operation}``.", "        ").rstrip("\n"))
-    call = f"self._runtime.call({method.operation!r}, {_arguments(method)})"
+    call = f"self._runtime.call({method.operation!r}, {_arguments(api, method)})"
     lines.append(
         f"        return cast({returns!r}, {call})" if returns != "None" else f"        {call}"
     )
@@ -307,7 +303,7 @@ def _method(method: Method) -> str:
         lines.append(f'        """Iterate every item across pages of ``{name}``."""')
         lines.append(
             f'        return cast("Iterator[{item}]", self._runtime.paginate('
-            f"{method.operation!r}, {_arguments(method)}, max_items=max_items))"
+            f"{method.operation!r}, {_arguments(api, method)}, max_items=max_items))"
         )
     return "\n".join(lines)
 

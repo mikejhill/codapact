@@ -10,7 +10,6 @@ import subprocess
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -18,7 +17,15 @@ from codapact.pipeline.config import ProjectConfig
 from codapact.pipeline.defaults import default_registry
 from codapact.pipeline.pipeline import Pipeline
 from codapact.runtime import StaticAuth
-from tests.support import EXAMPLES, FakeTransport, Library, Petstore, serve
+from tests.support import (
+    EXAMPLES,
+    FakeTransport,
+    Library,
+    Petstore,
+    node_with_strip_types,
+    run_node,
+    serve,
+)
 
 
 def generate(example: str, tmp_path: Path) -> Path:
@@ -183,43 +190,7 @@ def test_regeneration_is_idempotent_and_protects_edits(tmp_path: Path) -> None:
         again.run(config)
 
 
-def _node_with_strip_types() -> str | None:
-    node = shutil.which("node")
-    if node is None:
-        return None
-    probe = subprocess.run(
-        [node, "--experimental-strip-types", "--no-warnings", "-e", "0"],
-        capture_output=True,
-        timeout=30,
-        check=False,
-    )
-    return node if probe.returncode == 0 else None
-
-
-NODE = _node_with_strip_types()
-
-
-FIXTURES = Path(__file__).parent / "fixtures"
-
-
-def run_node(script: str, index: Path, url: str) -> dict[str, Any]:
-    assert NODE is not None
-    completed = subprocess.run(
-        [
-            NODE,
-            "--experimental-strip-types",
-            "--no-warnings",
-            str(FIXTURES / script),
-            index.as_uri(),
-            url,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-    return json.loads(completed.stdout)
+NODE = node_with_strip_types()
 
 
 @pytest.mark.skipif(NODE is None, reason="node >= 22.6 is not installed")

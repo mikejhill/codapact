@@ -10,10 +10,11 @@ review:
 # Contributing
 
 Use Python 3.13 or newer and uv. Run `uv sync`, then `uv run poe check` before
-opening a PR. Keep the 90% coverage gate and strict type checks intact.
+opening a PR. Keep the 95% branch-coverage gate, 100% coverage of changed lines, and
+strict type checks intact. See [testing](docs/testing.md) for the suites and gates.
 Use Conventional Commit titles; squash merges drive release-please versioning.
 
-Respect the layer map in [architecture](docs/architecture.md). `tests/test_architecture.py`
+Respect the layer map in [architecture](docs/architecture.md). `tests/unit/test_architecture.py`
 fails the build when a module imports a layer it must not depend on.
 
 - New contract format: add a `Source` under `sources/`; it may only produce the semantic model.

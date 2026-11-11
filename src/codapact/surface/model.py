@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from codapact.core.naming import Name
-from codapact.model.api import Pagination
+from codapact.model.api import Api, Pagination
 from codapact.model.types import TypeExpr
 from codapact.model.values import JsonValue
 
@@ -94,3 +94,16 @@ class Surface:
 
     name: Name
     root: Namespace
+
+
+def required_sources(api: Api, method: Method) -> frozenset[str]:
+    """Model params a method flattens into fields that must be sent even when all are omitted.
+
+    A required request body whose fields are all optional is still required: calling
+    the method with no fields sends an empty object rather than nothing.
+    """
+    operation = api.operation(method.operation)
+    flattened = {p.source.param for p in method.params if p.source.field is not None}
+    required = {p.name for p in operation.params if p.required}
+    explicit = {p.source.param for p in method.params if p.source.field is not None and p.required}
+    return frozenset((flattened & required) | explicit)

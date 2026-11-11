@@ -85,6 +85,15 @@ export class GraphQLResponseError extends Error {
 
 export class AuthError extends Error {}
 
+/** A value cannot be sent as declared. ``path`` locates it (``operation.param``). */
+export class ValidationError extends Error {
+  readonly path: string;
+  constructor(path: string, message: string) {
+    super(`${path}: ${message}`);
+    this.path = path;
+  }
+}
+
 const RETRY_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 
 export class Runtime {
@@ -183,14 +192,15 @@ export class Runtime {
     for (const [param, location, wire, explode] of op.params) {
       const value = args[param];
       if (value === undefined) continue;
-      if (location === "path") path = path.replace(`{${wire}}`, encodeURIComponent(text(value)));
+      const where = `${op.name}.${param}`;
+      if (location === "path") path = path.replace(`{${wire}}`, encodeURIComponent(simple(value)));
       else if (location === "query" && value !== null) {
         if (Array.isArray(value)) {
           if (explode) value.forEach((v) => query.append(wire, text(v)));
           else query.append(wire, value.map(text).join(","));
         } else query.append(wire, text(value));
-      } else if (location === "header" && value !== null) headers[wire] = text(value);
-      else if (location === "cookie" && value !== null) cookies.push(`${wire}=${text(value)}`);
+      } else if (location === "header" && value !== null) headers[wire] = header(value, where);
+      else if (location === "cookie" && value !== null) cookies.push(`${wire}=${cookie(value, where)}`);
       else if (location === "body") {
         body = JSON.stringify(value);
         headers["Content-Type"] = op.requestMediaType ?? "application/json";
@@ -234,9 +244,40 @@ export class Runtime {
   }
 }
 
+/**
+ * A flattened record argument: dropped when every field is omitted, unless the
+ * record itself is required (then an empty object is sent).
+ */
+export function present(record: Record<string, unknown>, required: boolean): Record<string, unknown> | undefined {
+  const kept = Object.fromEntries(Object.entries(record).filter(([, v]) => v !== undefined));
+  return Object.keys(kept).length || required ? kept : undefined;
+}
+
 function text(value: unknown): string {
   if (typeof value === "object" && value !== null) return JSON.stringify(value);
   return String(value);
+}
+
+/** OpenAPI ``simple`` style (path and header parameters): arrays are comma-separated. */
+function simple(value: unknown): string {
+  return Array.isArray(value) ? value.map(text).join(",") : text(value);
+}
+
+function header(value: unknown, where: string): string {
+  const result = simple(value);
+  if (/[\x00-\x1f\x7f]/.test(result)) {
+    throw new ValidationError(where, "header values cannot contain control characters");
+  }
+  return result;
+}
+
+// RFC 6265 cookie-octet excludes these; allowing them would let a value inject cookies.
+function cookie(value: unknown, where: string): string {
+  const result = header(value, where);
+  if (/[ ",;\\]/.test(result)) {
+    throw new ValidationError(where, "cookie values cannot contain spaces, quotes, ',', ';' or '\\'");
+  }
+  return result;
 }
 
 function dig(value: unknown, path: string[]): unknown {

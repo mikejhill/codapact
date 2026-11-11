@@ -8,7 +8,7 @@ import pytest
 
 from codapact.model import types as t
 from codapact.model.api import ParamLocation
-from tests.test_sources import get, openapi, spec
+from tests.unit.test_sources import get, openapi, spec
 
 
 def ok(doc: dict[str, Any], **options: object):
@@ -287,3 +287,56 @@ def test_inline_all_of_members_keep_keyword_checks() -> None:
     assert any("not" in d.message for d in result.diagnostics if d.severity.value == "error")
     api, _ = ok(spec(get(), schemas), strict=False)
     assert api.type("Odd") == t.Alias("Odd", t.Primitive(t.ScalarKind.ANY))
+
+
+def test_colliding_property_names_are_suffixed_and_keep_wire_names() -> None:
+    # Found by the property tests (fooBar vs foo_bar); every collision is reported.
+    schemas = {
+        "Rollup": {
+            "type": "object",
+            "properties": {
+                "+1": {"type": "integer"},
+                "-1": {"type": "integer"},
+                "fooBar": {"type": "string"},
+                "foo_bar": {"type": "string"},
+            },
+        },
+        "Merged": {
+            "allOf": [
+                {"$ref": "#/components/schemas/Rollup"},
+                {"type": "object", "properties": {"foo-bar": {"type": "boolean"}}},
+            ]
+        },
+    }
+    api, diagnostics = ok(spec(get(), schemas))
+    rollup = api.type("Rollup")
+    assert isinstance(rollup, t.Record)
+    assert [(f.name, f.wire) for f in rollup.fields] == [
+        ("plus_1", "+1"),
+        ("minus_1", "-1"),
+        ("foo_bar", "fooBar"),
+        ("foo_bar_2", "foo_bar"),
+    ]
+    merged = api.type("Merged")
+    assert isinstance(merged, t.Record)
+    assert [f.wire for f in merged.fields] == ["+1", "-1", "fooBar", "foo_bar", "foo-bar"]
+    assert len({f.name for f in merged.fields}) == 5
+    assert sum(d.code == "openapi.name-collision" for d in diagnostics) == 2
+
+
+def test_colliding_parameter_names_are_suffixed() -> None:
+    parameters = [
+        {"name": "fooBar", "in": "query", "schema": {"type": "string"}},
+        {"name": "foo_bar", "in": "query", "schema": {"type": "string"}},
+        {"name": "body", "in": "query", "schema": {"type": "string"}},
+        {"name": "request_body", "in": "header", "schema": {"type": "string"}},
+    ]
+    doc = spec(
+        get(
+            parameters=parameters,
+            requestBody={"content": {"application/json": {"schema": {"type": "string"}}}},
+        )
+    )
+    api, _ = ok(doc)
+    names = [p.name for p in api.operations[0].params]
+    assert names == ["foo_bar", "query_foo_bar", "body", "request_body", "request_body_2"]
