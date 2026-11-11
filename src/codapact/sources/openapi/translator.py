@@ -553,8 +553,9 @@ class _Translator:
         properties = schema.get("properties") or {}
         required = set(schema.get("required", []))
         fields = []
+        used: set[str] = set()
         for wire, prop in properties.items():
-            field_name = _identifier(wire)
+            field_name = _unique_identifier(str(wire), used)
             prop_hint = name + Name.parse(field_name).pascal
             fields.append(
                 t.Field(
@@ -759,12 +760,28 @@ def _type_name(raw: str) -> str:
     return f"T{name}" if name[0].isdigit() else name
 
 
+_SIGNS = {"+": "plus", "-": "minus"}
+
+
 def _identifier(raw: str) -> str:
+    sign = _SIGNS.get(raw[:1], "") if raw[1:2].isdigit() else ""
     try:
         name = Name.parse(raw).snake
     except ValueError:
         name = "value"
+    if sign:
+        return f"{sign}_{name}"
     return f"n{name}" if name[0].isdigit() else name
+
+
+def _unique_identifier(raw: str, used: set[str]) -> str:
+    """Return ``_identifier(raw)``, suffixed with ``_2``, ``_3``… if already ``used``."""
+    base = _identifier(raw)
+    name, index = base, 2
+    while name in used:
+        name, index = f"{base}_{index}", index + 1
+    used.add(name)
+    return name
 
 
 def _derive_operation_name(method: str, path: str) -> str:

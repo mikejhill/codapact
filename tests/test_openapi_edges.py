@@ -250,3 +250,28 @@ def test_all_of_required_overlay_must_name_declared_fields() -> None:
     }
     result = openapi(spec(get(), schemas))
     assert any("'zz'" in str(d) for d in result.diagnostics)
+
+
+def test_signed_and_colliding_property_names() -> None:
+    schemas = {
+        "Reactions": {
+            "type": "object",
+            "properties": {
+                "+1": {"type": "integer"},
+                "-1": {"type": "integer"},
+                "1": {"type": "integer"},
+                "a-b": {"type": "string"},
+                "a_b": {"type": "string"},
+            },
+        }
+    }
+    api, _ = ok(spec(get(), schemas))
+    record = api.type("Reactions")
+    assert isinstance(record, t.Record)
+    assert [(f.name, f.wire) for f in record.fields] == [
+        ("plus_1", "+1"),
+        ("minus_1", "-1"),
+        ("n1", "1"),
+        ("a_b", "a-b"),
+        ("a_b_2", "a_b"),
+    ]
