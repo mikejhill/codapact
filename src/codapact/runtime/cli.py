@@ -214,7 +214,9 @@ def _improve(parser: argparse.ArgumentParser, message: str) -> tuple[str, str | 
     found = _CHOICE.search(message)
     if found:
         value = found.group("value")
-        choices = _QUOTED.findall(found.group("choices"))
+        listed_text = found.group("choices")
+        # Python 3.13 quotes each choice; 3.14 lists them bare.
+        choices = _QUOTED.findall(listed_text) or [c for c in listed_text.split(", ") if c]
         close = difflib.get_close_matches(value, choices, n=3, cutoff=0.6)
         close += [c for c in choices if value and value in c and c not in close][: 3 - len(close)]
         head = message[: found.start()]

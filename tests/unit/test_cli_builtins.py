@@ -74,6 +74,8 @@ def test_improve_messages() -> None:
     assert "12 choices; see acme --help" in message and hint is None
     message, hint = _improve(parser, "argument X: invalid choice: 'tw' (choose from 'one', 'two')")
     assert "choose from one, two" in message and hint == "did you mean 'two'?"
+    bare = "argument X: invalid choice: 'tw' (choose from one, two)"  # Python 3.14 format
+    assert _improve(parser, bare)[1] == "did you mean 'two'?"
     assert _improve(parser, "unrecognized arguments: stray")[1] == (
         "run 'acme --help' for usage and examples"
     )
