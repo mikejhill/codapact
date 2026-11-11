@@ -92,7 +92,7 @@ source_paths = ["src/codapact/"]
 # Mutants are judged by the fast suites; e2e and perf add minutes per mutant, not signal.
 pytest_add_cli_args_test_selection = ["tests/unit/", "tests/integration/"]
 pytest_add_cli_args = ["-p", "no:cacheprovider", "-x", "-q"]
-also_copy = ["examples/", "tests/"]
+also_copy = ["examples/", "scripts/", "tests/"]
 mutate_only_covered_lines = true
 
 [tool.poe.tasks]
