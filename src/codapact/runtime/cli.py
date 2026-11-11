@@ -327,6 +327,12 @@ class CliRuntime:
             help=text("print only this part of the result, e.g. items[].name ([].name with --all)"),
         )
         group.add_argument(
+            "--pick",
+            default=keep,
+            metavar="KEYS",
+            help=text("keep only these keys of each result object, e.g. number,title,user.login"),
+        )
+        group.add_argument(
             "--dry-run",
             action="store_true",
             default=keep,
@@ -375,7 +381,8 @@ class CliRuntime:
     def global_help(self) -> str:
         """Return the reminder of global options shown on every command's help."""
         options = (
-            f"-o/--output {{{','.join(OUTPUT_FORMATS)}}}, --query PATH, --dry-run, -v/--verbose, "
+            f"-o/--output {{{','.join(OUTPUT_FORMATS)}}}, --query PATH, --pick KEYS, "
+            "--dry-run, -v/--verbose, "
             "--error-format {text,json}, --base-url URL, --timeout SECONDS, --config FILE, "
             "--allow-private, --response-validation {strict,warn,off}"
         )
@@ -749,6 +756,7 @@ class CliRuntime:
             fmt = self.output_format(args)
             client = make_client(self._client_options(args, err))
             query = getattr(args, "query", None)
+            fields = getattr(args, "pick", None)
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always", ResponseValidationWarning)
                 result = handler(client, args)
@@ -758,7 +766,7 @@ class CliRuntime:
                     if fmt == "jsonl" and not query:
                         try:
                             for item in result:
-                                render(item, "jsonl", out)
+                                render(pick(item, fields), "jsonl", out)
                                 out.flush()
                         finally:
                             self._report_mismatches(caught, err)
@@ -767,6 +775,7 @@ class CliRuntime:
             self._report_mismatches(caught, err)
             if query:
                 result = select(result, query)
+            result = pick(result, fields)
         except DryRun as dry:
             render(dry.describe(), fmt if fmt != "table" else "json", out)
             return EXIT_OK
@@ -1029,9 +1038,25 @@ def _rows(value: Any) -> list[dict[str, Any]] | None:
     return None
 
 
+MAX_CELL = 60
+
+
 def _cell(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, bool):
         return "true" if value else "false"
-    return str(value)
+    text = " ".join(str(value).split())
+    return text if len(text) <= MAX_CELL else text[: MAX_CELL - 1] + "…"
+
+
+def pick(value: Any, fields: str | None) -> Any:
+    """Keep only ``fields`` (comma-separated dotted paths) of an object or list of objects."""
+    if not fields:
+        return value
+    if isinstance(value, list):
+        return [pick(item, fields) for item in value]
+    if not isinstance(value, dict):
+        return value
+    names = [name.strip() for name in fields.split(",") if name.strip()]
+    return {name: select(value, name) for name in names}

@@ -34,6 +34,7 @@ RESERVED_FLAGS = frozenset(
         "max-items",
         "timeout",
         "query",
+        "pick",
         "yes",
         "allow-private",
         "response-validation",

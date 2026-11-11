@@ -216,3 +216,21 @@ def test_doctor_edge_cases(monkeypatch: pytest.MonkeyPatch) -> None:
     assert checks["connectivity"].detail.startswith("reached https://acme.test: HTTP 204")
     assert "ACME_LOGIN_USERNAME and ACME_LOGIN_PASSWORD" in checks["credentials: login"].detail
     assert cli_tools._mask("http://proxy.test") == "http://proxy.test"
+
+
+def test_pick_and_table_cells() -> None:
+    from codapact.runtime.cli import pick, table
+
+    rows = [{"n": 1, "title": "a\nb", "user": {"login": "m"}, "x": 0}, "raw"]
+    assert pick(rows, "n, user.login") == [{"n": 1, "user.login": "m"}, "raw"]
+    assert pick({"n": 1}, None) == {"n": 1}
+    assert pick({"n": 1}, "n") == {"n": 1}
+    rendered = table([{"title": "a\nb", "body": "x" * 80}])
+    assert "a b" in rendered and "…" in rendered and "x" * 61 not in rendered
+
+
+def test_render_raw_bytes(capsysbinary: pytest.CaptureFixture[bytes]) -> None:
+    from codapact.runtime.cli import render
+
+    render(b"\x00bin", "raw", io.StringIO())
+    assert capsysbinary.readouterr().out == b"\x00bin"

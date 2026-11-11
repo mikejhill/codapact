@@ -156,6 +156,12 @@ def test_output_formats_and_streaming(cli, monkeypatch, server) -> None:
         cli, ["pets", "list", "--all", "-o", "jsonl", "--query", "[].name"], monkeypatch, **server
     )
     assert out.splitlines()[0] == '"Miso"'
+    code, out, _ = run_cli(
+        cli, ["pets", "list", "--all", "-o", "jsonl", "--pick", "id"], monkeypatch, **server
+    )
+    assert out.splitlines()[0] == '{"id": 1}'
+    code, out, _ = run_cli(cli, ["pets", "get", "2", "--pick", "name"], monkeypatch, **server)
+    assert json.loads(out) == {"name": "Tofu"}
     code, out, _ = run_cli(cli, ["pets", "get", "2"], monkeypatch, **server, PETSTORE_OUTPUT="yaml")
     assert code == 0 and "name: Tofu" in out
 
