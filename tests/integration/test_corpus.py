@@ -95,7 +95,7 @@ def test_typescript_type_checks(generated) -> None:
     typecheck_typescript(out / "typescript")
 
 
-def walk(group, prefix: tuple = ()) -> list[tuple[tuple, Any]]:
+def walk(group: Any, prefix: tuple[Any, ...] = ()) -> list[tuple[tuple[Any, ...], Any]]:
     here = (*prefix, group.name) if group.name is not None else prefix
     found = [(here, command) for command in group.commands]
     for child in group.groups:
