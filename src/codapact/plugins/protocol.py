@@ -26,6 +26,7 @@ from codapact.model.api import (
     CursorPagination,
     HttpBinding,
     OffsetPagination,
+    PagePagination,
 )
 from codapact.model.migrations import migrate
 from codapact.model.rewrite import iter_nodes
@@ -107,6 +108,8 @@ def required_capabilities(api: Api) -> frozenset[str]:
             needed.add("pagination:cursor")
         elif isinstance(operation.pagination, OffsetPagination):
             needed.add("pagination:offset")
+        elif isinstance(operation.pagination, PagePagination):
+            needed.add("pagination:page")
     for scheme in api.auth_schemes:
         needed.add(f"auth:{scheme.kind.value}")
     for definition in api.types:

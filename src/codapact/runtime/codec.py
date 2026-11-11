@@ -45,6 +45,76 @@ class Codec:
         """Convert a wire value into its library form, validating it."""
         return self._convert(value, expr, path, encode=False)
 
+    def decode_lenient(
+        self, value: Any, expr: TypeExpr, path: str = "$"
+    ) -> tuple[Any, list[ValidationError]]:
+        """Decode like ``decode`` but keep going: mismatching values pass through as-is.
+
+        Returns the decoded value (field names mapped wherever the shape allows)
+        and every mismatch found, so a caller can warn instead of failing.
+        """
+        issues: list[ValidationError] = []
+        return self._lenient(value, expr, path, issues), issues
+
+    def _lenient(self, value: Any, expr: TypeExpr, path: str, issues: list[ValidationError]) -> Any:
+        match expr:
+            case Nullable(inner=inner):
+                return None if value is None else self._lenient(value, inner, path, issues)
+            case ListOf(item=item, constraints=constraints):
+                if not isinstance(value, list | tuple):
+                    issues.append(ValidationError(path, "expected a list"))
+                    return value
+                try:
+                    _check_size(
+                        len(value), constraints.min_items, constraints.max_items, path, "items"
+                    )
+                except ValidationError as error:
+                    issues.append(error)
+                return [self._lenient(v, item, f"{path}[{i}]", issues) for i, v in enumerate(value)]
+            case MapOf(value=inner):
+                if not isinstance(value, dict):
+                    issues.append(ValidationError(path, "expected an object"))
+                    return value
+                return {
+                    str(k): self._lenient(v, inner, f"{path}.{k}", issues) for k, v in value.items()
+                }
+            case Ref(name=name):
+                definition = self._types.get(name)
+                if isinstance(definition, Alias):
+                    return self._lenient(value, definition.target, path, issues)
+                if isinstance(definition, Record):
+                    return self._lenient_record(value, definition, path, issues)
+        try:
+            return self._convert(value, expr, path, encode=False)
+        except ValidationError as error:
+            issues.append(error)
+            return value
+
+    def _lenient_record(
+        self, value: Any, record: Record, path: str, issues: list[ValidationError]
+    ) -> Any:
+        if not isinstance(value, dict):
+            issues.append(ValidationError(path, f"expected an object ({record.name})"))
+            return value
+        result: dict[str, Any] = {}
+        consumed: set[str] = set()
+        for f in record.fields:
+            if f.wire not in value:
+                if f.required:
+                    issues.append(ValidationError(f"{path}.{f.wire}", "is required"))
+                continue
+            consumed.add(f.wire)
+            result[f.name] = self._lenient(value[f.wire], f.type, f"{path}.{f.wire}", issues)
+        for key, item in value.items():
+            if key in consumed:
+                continue
+            result[key] = (
+                self._lenient(item, record.additional, f"{path}.{key}", issues)
+                if record.additional is not None
+                else item
+            )
+        return result
+
     def _convert(self, value: Any, expr: TypeExpr, path: str, *, encode: bool) -> Any:
         match expr:
             case Nullable(inner=inner):

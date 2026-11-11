@@ -22,6 +22,7 @@ from codapact.model.api import (
     HttpBinding,
     OffsetPagination,
     Operation,
+    PagePagination,
 )
 from codapact.model.types import (
     Enum,
@@ -68,6 +69,7 @@ class TypeScriptLibraryTarget:
             "binding:graphql",
             "pagination:cursor",
             "pagination:offset",
+            "pagination:page",
             "auth:bearer",
             "auth:basic",
             "auth:api_key",
@@ -177,6 +179,13 @@ def _operation_spec(api: Api, operation: Operation) -> dict[str, Any]:
             "style": "offset",
             "param": paging.offset_param,
             "items": _wire_path(api, operation.result, paging.items),
+        }
+    elif isinstance(paging, PagePagination):
+        spec["paging"] = {
+            "style": "page",
+            "param": paging.page_param,
+            "items": _wire_path(api, operation.result, paging.items),
+            "start": paging.start,
         }
     http = operation.binding(HttpBinding)
     if http is not None:

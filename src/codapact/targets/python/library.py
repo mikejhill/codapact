@@ -29,6 +29,7 @@ CAPABILITIES = frozenset(
         "binding:graphql",
         "pagination:cursor",
         "pagination:offset",
+        "pagination:page",
         "auth:bearer",
         "auth:basic",
         "auth:api_key",
@@ -218,6 +219,8 @@ def _client_class(api: Api, root: Namespace) -> str:
         "        validate: bool = True,",
         "        timeout: float = 30.0,",
         "        allow_private: bool = False,",
+        '        response_validation: str = "strict",',
+        "        proxy: str | None = None,",
         "    ) -> None:",
         "        self._runtime = RuntimeClient(",
         "            _model(),",
@@ -228,6 +231,8 @@ def _client_class(api: Api, root: Namespace) -> str:
         "            validate=validate,",
         "            timeout=timeout,",
         "            allow_private=allow_private,",
+        "            response_validation=response_validation,",
+        "            proxy=proxy,",
         "        )",
     ]
     lines.extend(_children(root, (), "        "))

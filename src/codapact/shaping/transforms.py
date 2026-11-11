@@ -1,4 +1,4 @@
-"""Built-in shaping transforms: select, rename, group, paginate, prune."""
+"""Built-in shaping transforms: select, rename, group, paginate, defaults, auth, prune."""
 
 from __future__ import annotations
 
@@ -13,11 +13,17 @@ from codapact.core.errors import ConfigError
 from codapact.core.naming import Name
 from codapact.model.api import (
     Api,
+    AuthKind,
+    AuthRequirement,
+    AuthScheme,
     CursorPagination,
     HttpBinding,
     OffsetPagination,
     Operation,
     OperationKind,
+    PagePagination,
+    Pagination,
+    ParamLocation,
 )
 from codapact.model.rewrite import reachable_types, rename_types
 from codapact.model.types import ListOf, Nullable, Record, Ref, TypeExpr
@@ -208,6 +214,8 @@ def _rename_param(op: Operation, old: str, new: str) -> Operation:
             pagination = dataclasses.replace(pagination, offset_param=new)
         if pagination.limit_param == old:
             pagination = dataclasses.replace(pagination, limit_param=new)
+    if isinstance(pagination, PagePagination) and pagination.page_param == old:
+        pagination = dataclasses.replace(pagination, page_param=new)
     return dataclasses.replace(op, params=params, bindings=tuple(bindings), pagination=pagination)
 
 
@@ -255,7 +263,12 @@ def _first_literal_segment(path: str) -> str | None:
 
 
 class Paginate:
-    """Declare cursor or offset pagination for operations matching ``operations`` globs."""
+    """Declare cursor, offset, or page pagination for operations matching ``operations``.
+
+    An operation named exactly is checked strictly. One matched only by a pattern
+    (a glob or a selector mapping) that lacks the param or items path is skipped
+    with a warning, so ``"*_list"`` can cover a family of operations.
+    """
 
     name = "paginate"
 
@@ -265,44 +278,81 @@ class Paginate:
         """Attach a validated ``Pagination`` to each matching operation."""
         patterns = _selectors(config, "operations")
         style = config.get("style", "cursor")
-        items = _path(config.get("items"), "items")
-        applied = []
+        if style not in {"cursor", "offset", "page"}:
+            raise ConfigError("paginate 'style' must be 'cursor', 'offset', or 'page'")
+        items = _path(config.get("items"), "items", allow_root=True)
+        applied: list[str] = []
+        skipped: list[str] = []
         operations = []
         for op in api.operations:
-            if any(_matches(op, p) for p in patterns):
-                where = f"operations.{op.name}"
-                pagination: CursorPagination | OffsetPagination
-                if style == "cursor":
-                    pagination = CursorPagination(
-                        str(config.get("param", "cursor")), _path(config.get("next"), "next"), items
-                    )
-                    param = pagination.cursor_param
-                    _resolve(api, op.result, pagination.next_cursor, diagnostics, where)
-                elif style == "offset":
-                    limit = config.get("limit_param")
-                    pagination = OffsetPagination(
-                        str(config.get("param", "offset")), items, str(limit) if limit else None
-                    )
-                    param = pagination.offset_param
-                else:
-                    raise ConfigError("paginate 'style' must be 'cursor' or 'offset'")
-                if param not in {p.name for p in op.params}:
-                    diagnostics.error("shape.paginate", f"operation has no param {param!r}", where)
-                item = _resolve(api, op.result, items, diagnostics, where)
-                if item is not None and not isinstance(_strip(item), ListOf):
-                    diagnostics.error("shape.paginate", "items path must resolve to a list", where)
-                op = dataclasses.replace(op, pagination=pagination)
-                applied.append(op.name)
-            operations.append(op)
-        if not applied:
+            if not any(_matches(op, p) for p in patterns):
+                operations.append(op)
+                continue
+            where = f"operations.{op.name}"
+            explicit = op.name in patterns
+            checks = Diagnostics()
+            pagination = _pagination(api, op, config, style, items, checks, where)
+            if checks.has_errors and not explicit:
+                reasons = "; ".join(d.message for d in checks)
+                diagnostics.warning("shape.paginate.skipped", f"not paginated: {reasons}", where)
+                skipped.append(op.name)
+                operations.append(op)
+                continue
+            diagnostics.extend(checks)
+            operations.append(dataclasses.replace(op, pagination=pagination))
+            applied.append(op.name)
+        if not applied and not skipped:
             diagnostics.warning("shape.paginate.unmatched", f"{patterns!r} matched nothing")
         api = dataclasses.replace(api, operations=tuple(operations))
-        return TransformResult(api, [{"transform": self.name, "operations": applied}])
+        report = {"transform": self.name, "operations": applied, "skipped": skipped}
+        return TransformResult(api, [report])
 
 
-def _path(value: Any, key: str) -> tuple[str, ...]:
+def _pagination(
+    api: Api,
+    op: Operation,
+    config: Mapping[str, Any],
+    style: str,
+    items: tuple[str, ...],
+    diagnostics: Diagnostics,
+    where: str,
+) -> Pagination:
+    pagination: Pagination
+    if style == "cursor":
+        pagination = CursorPagination(
+            str(config.get("param", "cursor")), _path(config.get("next"), "next"), items
+        )
+        param = pagination.cursor_param
+        _resolve(api, op.result, pagination.next_cursor, diagnostics, where)
+    elif style == "offset":
+        limit = config.get("limit_param")
+        pagination = OffsetPagination(
+            str(config.get("param", "offset")), items, str(limit) if limit else None
+        )
+        param = pagination.offset_param
+    else:
+        start = config.get("start", 1)
+        if not isinstance(start, int) or isinstance(start, bool):
+            raise ConfigError("paginate 'start' must be an integer")
+        pagination = PagePagination(str(config.get("param", "page")), items, start)
+        param = pagination.page_param
+    if param not in {p.name for p in op.params}:
+        diagnostics.error("shape.paginate", f"operation has no param {param!r}", where)
+    item = _resolve(api, op.result, items, diagnostics, where)
+    if not items and op.result is None:
+        diagnostics.error("shape.paginate", "operation has no result to page through", where)
+    if item is not None and not isinstance(_strip(item), ListOf):
+        diagnostics.error("shape.paginate", "items path must resolve to a list", where)
+    return pagination
+
+
+def _path(value: Any, key: str, *, allow_root: bool = False) -> tuple[str, ...]:
+    """Split a dotted path; with ``allow_root``, ``$`` means the result itself."""
+    if allow_root and value == "$":
+        return ()
     if not isinstance(value, str) or not value:
-        raise ConfigError(f"paginate {key!r} must be a dotted field path")
+        hint = " ('$' for the result itself)" if allow_root else ""
+        raise ConfigError(f"paginate {key!r} must be a dotted field path{hint}")
     return tuple(value.split("."))
 
 
@@ -371,7 +421,76 @@ class Defaults:
         return TransformResult(api, [{"transform": self.name, "params": hits}])
 
 
-BUILTIN_TRANSFORMS = (Select(), Rename(), Group(), Paginate(), Defaults(), Prune())
+class Auth:
+    """Add auth schemes and attach them to operations (for contracts that omit them).
+
+    ```yaml
+    - auth:
+        schemes: {token: bearer}          # bearer | basic | {api_key: HEADER, in: query}
+        operations: ["*"]                 # globs or selectors; default every operation
+        optional: true                    # also allow anonymous calls (default false)
+    ```
+
+    Every listed scheme is required together; with ``optional`` the credential is
+    sent when configured and the call goes out anonymously otherwise.
+    """
+
+    name = "auth"
+
+    def apply(
+        self, api: Api, config: Mapping[str, Any], diagnostics: Diagnostics
+    ) -> TransformResult:
+        """Register the schemes and set each matching operation's requirement."""
+        unknown = set(config) - {"schemes", "operations", "optional"}
+        if unknown:
+            raise ConfigError(f"unknown auth keys {sorted(unknown)}")
+        raw = config.get("schemes")
+        if not isinstance(raw, Mapping) or not raw:
+            raise ConfigError("auth.schemes must map scheme names to kinds")
+        schemes = tuple(_auth_scheme(str(name), spec) for name, spec in raw.items())
+        existing = {s.name for s in api.auth_schemes}
+        clash = sorted(existing & {s.name for s in schemes})
+        if clash:
+            raise ConfigError(f"auth schemes already defined: {clash}")
+        patterns = _selectors(config, "operations") if "operations" in config else ["*"]
+        required = tuple(sorted(s.name for s in schemes))
+        alternatives: tuple[tuple[str, ...], ...] = (required,)
+        if config.get("optional", False):
+            alternatives += ((),)
+        applied: list[str] = []
+        operations = []
+        for op in api.operations:
+            if any(_matches(op, p) for p in patterns):
+                op = dataclasses.replace(op, auth=AuthRequirement(alternatives))
+                applied.append(op.name)
+            operations.append(op)
+        if not applied:
+            diagnostics.warning("shape.auth.unmatched", f"{patterns!r} matched nothing")
+        api = dataclasses.replace(
+            api, auth_schemes=api.auth_schemes + schemes, operations=tuple(operations)
+        )
+        return TransformResult(
+            api, [{"transform": self.name, "schemes": list(required), "operations": applied}]
+        )
+
+
+def _auth_scheme(name: str, spec: Any) -> AuthScheme:
+    if spec in ("bearer", "basic", "oauth2"):
+        return AuthScheme(name, AuthKind(spec))
+    if isinstance(spec, Mapping) and isinstance(spec.get("api_key"), str):
+        extra = set(spec) - {"api_key", "in"}
+        if extra:
+            raise ConfigError(f"auth scheme {name!r}: unknown keys {sorted(extra)}")
+        location = ParamLocation(spec.get("in", "header"))
+        if location not in {ParamLocation.HEADER, ParamLocation.QUERY, ParamLocation.COOKIE}:
+            raise ConfigError(f"auth scheme {name!r}: 'in' must be header, query, or cookie")
+        return AuthScheme(name, AuthKind.API_KEY, location, wire_name=spec["api_key"])
+    raise ConfigError(
+        f"auth scheme {name!r} must be bearer, basic, oauth2, or {{api_key: NAME, in: header}}"
+    )
+
+
+BUILTIN_TRANSFORMS = (Select(), Rename(), Group(), Paginate(), Defaults(), Auth(), Prune())
 
 
 def _pattern_renames(patterns: Any, names: set[str], diagnostics: Diagnostics) -> dict[str, str]:

@@ -7,6 +7,7 @@ source:
   path: petstore.yaml      # local path (relative to this file) or URL
   documents: []            # companion documents, e.g. GraphQL operations
   options: {strict: true}
+  max_bytes: 64000000      # optional size cap per document
 shape:                     # ordered L3 transforms
   - group: {by: tag}
   - paginate: {operations: [list_pets], items: items, next: next_cursor}
@@ -40,6 +41,7 @@ class SourceConfig:
     location: str
     documents: tuple[str, ...] = ()
     options: Mapping[str, Any] = field(default_factory=dict)
+    max_bytes: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +86,14 @@ class ProjectConfig:
         documents = source.get("documents", [])
         if not isinstance(documents, list) or not all(isinstance(d, str) for d in documents):
             raise ConfigError("source.documents must be a list of paths")
+        extra_source = set(source) - {"type", "path", "url", "documents", "options", "max_bytes"}
+        if extra_source:
+            raise ConfigError(f"source: unknown keys {sorted(extra_source)}")
+        max_bytes = source.get("max_bytes")
+        if max_bytes is not None and (
+            not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes <= 0
+        ):
+            raise ConfigError("source.max_bytes must be a positive integer")
         shape = data.get("shape", [])
         if not isinstance(shape, list):
             raise ConfigError("shape must be a list of steps")
@@ -120,6 +130,7 @@ class ProjectConfig:
                 location=location,
                 documents=tuple(documents),
                 options=_mapping(source.get("options", {}), "source.options"),
+                max_bytes=max_bytes,
             ),
             targets=tuple(targets),
             shape=tuple(shape),

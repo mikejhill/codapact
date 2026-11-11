@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from collections.abc import Callable
 from typing import Any, cast
 
 from graphql import (
@@ -40,10 +41,12 @@ from graphql import (
     OperationDefinitionNode,
     OperationType,
     SelectionSetNode,
+    TokenKind,
     TypeInfo,
     TypeInfoVisitor,
     Undefined,
     Visitor,
+    build_ast_schema,
     build_client_schema,
     build_schema,
     get_named_type,
@@ -53,8 +56,11 @@ from graphql import (
     print_ast,
     type_from_ast,
     validate,
+    validate_schema,
     visit,
 )
+from graphql.utilities import value_from_ast_untyped
+from graphql.validation.validate import validate_sdl
 
 from codapact.core.diagnostics import Diagnostics
 from codapact.core.errors import ContractError, expect
@@ -87,7 +93,7 @@ class GraphQLSource:
             if type(depth) is not int or not 0 <= depth <= 8:
                 raise ContractError("option 'depth' must be an integer from 0 to 8")
             strict = option_bool(options, "strict", True)
-            schema = _load_schema(source.document.text)
+            schema = _load_schema(source.document.text, strict=strict, diagnostics=diagnostics)
             translator = _Translator(schema, diagnostics, strict=strict)
             if source.companions:
                 documents = [parse(doc.text) for doc in source.companions]
@@ -116,7 +122,46 @@ class GraphQLSource:
         return SourceResult(api, diagnostics)
 
 
-def _load_schema(text: str) -> GraphQLSchema:
+MAX_REPORTED_SCHEMA_ERRORS = 5
+
+
+def _leading_comment(definition: OperationDefinitionNode) -> str | None:
+    """Return the ``#`` comment block directly above a document operation, if any."""
+    if definition.loc is None:
+        return None
+    lines: list[str] = []
+    token = definition.loc.start_token.prev
+    line = definition.loc.start_token.line
+    while token is not None and token.kind is TokenKind.COMMENT and token.line == line - 1:
+        lines.append((token.value or "").strip())
+        line = token.line
+        token = token.prev
+    text = "\n".join(reversed(lines)).strip()
+    return text or None
+
+
+def _strict(build: Callable[[], GraphQLSchema]) -> GraphQLSchema:
+    hint = "(source option strict: false builds it anyway)"
+    try:
+        schema = build()
+    except (GraphQLError, TypeError) as error:
+        raise ContractError(f"{str(error).splitlines()[0]} {hint}") from None
+    problems = validate_schema(schema)
+    if problems:
+        more = f" (+{len(problems) - 1} more)" if len(problems) > 1 else ""
+        raise ContractError(f"{str(problems[0]).splitlines()[0]}{more} {hint}")
+    return schema
+
+
+def _load_schema(
+    text: str, *, strict: bool = True, diagnostics: Diagnostics | None = None
+) -> GraphQLSchema:
+    """Build the schema. Without ``strict``, spec violations become warnings.
+
+    Real schemas served in production sometimes break rules that graphql-core
+    enforces (duplicate fields, deprecation rules on interface fields). Lenient
+    mode builds them anyway and reports what it ignored.
+    """
     stripped = text.lstrip()
     if stripped.startswith("{"):
         try:
@@ -126,8 +171,28 @@ def _load_schema(text: str) -> GraphQLSchema:
         data = data.get("data", data) if isinstance(data, dict) else data
         if not isinstance(data, dict) or "__schema" not in data:
             raise ContractError("introspection JSON must contain __schema")
-        return build_client_schema(cast(Any, data))
-    return build_schema(text)
+        if strict:
+            return _strict(lambda: build_client_schema(cast(Any, data)))
+        problems = validate_schema(build_client_schema(cast(Any, data)))
+        schema = build_client_schema(cast(Any, data), assume_valid=True)
+    elif strict:
+        return _strict(lambda: build_schema(text))
+    else:
+        document = parse(text)
+        problems = [
+            *validate_sdl(document),
+            *validate_schema(build_ast_schema(document, assume_valid_sdl=True)),
+        ]
+        schema = build_ast_schema(document, assume_valid=True, assume_valid_sdl=True)
+    if problems and diagnostics is not None:
+        for problem in problems[:MAX_REPORTED_SCHEMA_ERRORS]:
+            diagnostics.warning("graphql.schema-invalid", str(problem).splitlines()[0])
+        if len(problems) > MAX_REPORTED_SCHEMA_ERRORS:
+            diagnostics.warning(
+                "graphql.schema-invalid",
+                f"{len(problems) - MAX_REPORTED_SCHEMA_ERRORS} more schema problems ignored",
+            )
+    return schema
 
 
 def _auth_schemes(raw: object) -> tuple[m.AuthScheme, ...]:
@@ -201,7 +266,7 @@ class _Translator:
             errors = validate(self.schema, document)
             if errors:
                 raise ContractError(f"operation {name}: {errors[0].message}")
-            built = self.operation(document, name, None)
+            built = self.operation(document, name, _leading_comment(operation) or "")
             if built is not None:
                 result.append(built)
         return result
@@ -318,12 +383,17 @@ class _Translator:
             if gql_type is None:  # pragma: no cover - validated documents have known types
                 raise ContractError(f"unknown variable type for ${var_name}")
             param = _identifier(var_name)
+            default = (
+                value_from_ast_untyped(variable.default_value)
+                if variable.default_value is not None
+                else None
+            )
             params.append(
                 m.Param(
                     param,
                     self.input_expr(gql_type),
-                    required=isinstance(gql_type, GraphQLNonNull)
-                    and variable.default_value is None,
+                    required=isinstance(gql_type, GraphQLNonNull) and default is None,
+                    default=default if isinstance(default, str | int | float | bool) else None,
                 )
             )
             variables.append((param, var_name))

@@ -23,10 +23,11 @@ export interface SchemeSpec {
 }
 
 export interface Paging {
-  style: "cursor" | "offset";
+  style: "cursor" | "offset" | "page";
   param: string;
   items: string[];
   next?: string[];
+  start?: number;
 }
 
 interface BaseOperation {
@@ -125,6 +126,8 @@ export class Runtime {
         const cursor = dig(result, paging.next ?? []);
         if (!cursor) return;
         current[paging.param] = cursor;
+      } else if (paging.style === "page") {
+        current[paging.param] = Number(current[paging.param] ?? paging.start ?? 1) + 1;
       } else {
         current[paging.param] = Number(current[paging.param] ?? 0) + items.length;
       }

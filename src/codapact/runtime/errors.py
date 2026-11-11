@@ -11,6 +11,8 @@ __all__ = [
     "AuthError",
     "ClientError",
     "GraphQLResponseError",
+    "ResponseValidationError",
+    "ResponseValidationWarning",
     "TransportError",
     "ValidationError",
 ]
@@ -27,6 +29,26 @@ class ValidationError(ClientError):
         """Keep the location separately for programmatic handling."""
         self.path = path
         super().__init__(f"{path}: {message}")
+
+
+class ResponseValidationError(ValidationError):
+    """A server response does not match the contract.
+
+    ``data`` holds the response decoded leniently (mismatching values kept as
+    received) so callers can still use it; ``issues`` lists every mismatch.
+    """
+
+    def __init__(self, issues: list[ValidationError], data: Any) -> None:
+        """Report the first mismatch and keep the rest."""
+        first = issues[0]
+        self.issues = issues
+        self.data = data
+        more = f" (+{len(issues) - 1} more)" if len(issues) > 1 else ""
+        super().__init__(first.path, str(first).removeprefix(f"{first.path}: ") + more)
+
+
+class ResponseValidationWarning(UserWarning):
+    """Emitted per mismatch when response validation is set to ``warn``."""
 
 
 class AuthError(ClientError):

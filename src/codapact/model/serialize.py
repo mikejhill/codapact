@@ -41,6 +41,7 @@ _TAGGED: dict[str, type] = {
     "graphql": api.GraphQLBinding,
     "cursor": api.CursorPagination,
     "offset": api.OffsetPagination,
+    "page": api.PagePagination,
 }
 _TAG_OF: dict[type, str] = {cls: tag for tag, cls in _TAGGED.items()}
 

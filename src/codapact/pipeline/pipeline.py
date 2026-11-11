@@ -15,7 +15,7 @@ from typing import Any
 from codapact import __version__
 from codapact.commands.derive import derive_commands
 from codapact.commands.model import CommandTree
-from codapact.core.diagnostics import Diagnostics
+from codapact.core.diagnostics import Diagnostics, Severity
 from codapact.core.errors import PluginError, expect
 from codapact.model.api import Api
 from codapact.model.validate import validate
@@ -55,17 +55,32 @@ class Pipeline:
     def model(self, config: ProjectConfig, result: PipelineResult) -> Api | None:
         """L0-L3: read, translate, validate, and shape the contract."""
         source = self.registry.source(config.source.type)
-        document = self.fetcher.fetch(config.source.location, base=config.base)
-        companions = tuple(self.fetcher.fetch(d, base=config.base) for d in config.source.documents)
+        limit = config.source.max_bytes
+        document = self.fetcher.fetch(config.source.location, base=config.base, max_bytes=limit)
+        companions = tuple(
+            self.fetcher.fetch(d, base=config.base, max_bytes=limit)
+            for d in config.source.documents
+        )
         translated = source.parse(SourceInput(document, companions, config.source.options))
         result.diagnostics.extend(translated.diagnostics)
         if translated.api is None:
             return None
         structural = validate(translated.api)
-        result.diagnostics.extend(structural)
-        if structural.has_errors:
+        deferred = structural.has_errors and _selects_first(config.shape)
+        if structural.has_errors and not deferred:
+            result.diagnostics.extend(structural)
             return None
+        if not deferred:
+            result.diagnostics.extend(structural)
         shaped = Shaper(self.registry.transforms.values()).apply(translated.api, config.shape)
+        if deferred and shaped.api is not None:
+            # The leading ``select`` decides what is generated: problems it removed do not
+            # block generation, and problems it kept are re-reported by the shaper.
+            count = len([d for d in structural if d.severity is Severity.ERROR])
+            result.diagnostics.warning(
+                "model.outside-selection",
+                f"{count} model error(s) in parts removed by select were ignored",
+            )
         result.diagnostics.extend(shaped.diagnostics)
         result.shape_report = shaped.report
         result.api = shaped.api
@@ -141,6 +156,11 @@ class Pipeline:
             for plan in result.plans.values():
                 writer.write(plan, generator=f"codapact/{__version__}")
         return result
+
+
+def _selects_first(shape: tuple[Any, ...]) -> bool:
+    """Return whether shaping starts with ``select``, which may drop invalid parts."""
+    return bool(shape) and isinstance(shape[0], dict) and set(shape[0]) == {"select"}
 
 
 def _shared_options(config: ProjectConfig) -> dict[Path, dict[str, Any]]:
