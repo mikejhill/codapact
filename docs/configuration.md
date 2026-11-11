@@ -98,6 +98,8 @@ Precedence: flag, then environment, then settings file.
 | Timeout | `--timeout` | `<PREFIX>_TIMEOUT` | `timeout` |
 | Private network | `--allow-private` | `<PREFIX>_ALLOW_PRIVATE` | `allow_private` |
 | Response validation | `--response-validation strict\|warn\|off` | `<PREFIX>_RESPONSE_VALIDATION` | `response_validation` |
+| Output format | `-o`/`--output json\|jsonl\|yaml\|table\|raw` | `<PREFIX>_OUTPUT` | `output` |
+| Error format | `--error-format text\|json` | `<PREFIX>_ERROR_FORMAT` | `error_format` |
 | Credentials | none | `<PREFIX>_<SCHEME>`; basic uses `_USERNAME`/`_PASSWORD` | not stored |
 | Option defaults | the option itself | none | `defaults: {plan_id: "…"}` (option names, `_` or `-`) |
 
@@ -106,8 +108,30 @@ The settings file is `--config PATH` or `$XDG_CONFIG_HOME/<program>/config.json`
 credential variables for the contract's auth schemes.
 
 Global options work before or after the command: `--base-url`, `--timeout`, `--config`,
-`--output json|yaml|table|raw`, and `--query PATH` (`data.items[].name`, `data.items[0]`).
+`-o/--output`, `--query PATH` (`data.items[].name`, `data.items[0]`; with `--all` the
+result is the item list, so `[].name`), `--dry-run`, `-v/--verbose`, `--error-format`,
+`--allow-private`, and `--response-validation`. Command help lists them in one line;
+`<program> --help` describes each.
 `table` renders a list of objects, unwrapping single-list envelopes such as `{"data": {"items": [...]}}`.
+`jsonl` prints one JSON value per line and streams `--all` results page by page.
+
+### Conventions every generated CLI follows
+
+| Need | How |
+| --- | --- |
+| Help | `-h`/`--help` on every level; bare `<program>` or `<program> GROUP` prints help (exit `0`). Command help has a usage line with positionals and required options, examples, and a global-options reminder. |
+| Version | `-V`/`--version`: `poke 0.1.0 (PokéAPI 2.10.0; codapact 0.4.0)` |
+| Discovery for agents | `<program> describe [COMMAND…]`: JSON with every command's arguments (type, required, positional, choices, repeated), `read_only`/`destructive`/`paginated`, environment variables, exit codes |
+| Diagnosis | `<program> doctor [--offline]`: version, settings file, base URL and its source, credentials (set or missing, never printed), proxy, connectivity. Table on a terminal, JSON otherwise; exit `1` when a check fails |
+| Completion | `<program> completion bash\|zsh\|fish\|powershell` prints a script that asks the program for candidates |
+| Preview | `--dry-run` prints the HTTP request (method, URL, headers, body) without sending it; credentials appear as `$VARIABLE` placeholders, and destructive commands skip confirmation |
+| Tracing | `-v`/`--verbose` logs each request line and response status, size, and time to stderr, masking credential values |
+| Mistakes | unknown commands, choices, and options get "did you mean" hints; leftovers are reported by the command they were given to |
+| Machine-readable errors | `--error-format json` prints one `{"error": {"type", "message", "exit_code", "status", "hint", "details"}}` object on stderr; contract warnings become `{"warning": …}` lines |
+
+`describe`, `doctor`, and `completion` are skipped when the API has a top-level command
+of the same name; `--version`, `--dry-run`, `--verbose`, and `--error-format` are reserved, so
+API parameters with those names become `--arg-version` and so on.
 
 Commands for HTTP `DELETE` operations, or operations named `delete_*`/`remove_*`/`destroy_*`/`purge_*`,
 ask for confirmation on a terminal and require `--yes` otherwise.
@@ -122,8 +146,9 @@ a warning and the data by default (`warn`). `strict` fails with exit `1`; `off` 
 response checks. Generated libraries default to `strict` and raise
 `ResponseValidationError`, whose `data` holds the response.
 
-Exit codes: `0` success, `1` API error, `2` usage or validation, `3` auth (missing credentials or
-HTTP 401/403), `4` transport.
+Exit codes: `0` success, `1` API error or contract break, `2` usage or validation, `3` auth
+(missing credentials or HTTP 401/403), `4` transport, `130` interrupted. Root help and
+`describe` list them.
 
 ## Generated names by target
 

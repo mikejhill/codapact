@@ -55,7 +55,7 @@ uv run codapact inspect commands -c examples/library/codapact.yaml
 | Output | Contents |
 | --- | --- |
 | `python` | Installable package: `TypedDict` types, a resource-per-namespace client, paging iterators, `py.typed` |
-| `python-cli` | argparse CLI calling the Python library; JSON/YAML/raw output; env + XDG settings |
+| `python-cli` | argparse CLI calling the Python library: `--help` with examples, `--version`, `describe` (JSON catalog for agents), `doctor`, shell `completion`, `--dry-run`, JSON/JSONL/YAML/table output, JSON errors, documented exit codes; env + XDG settings |
 | `typescript` | Fetch-based client with bundled runtime; strict `tsc` clean |
 | external plugin | Any executable speaking the JSON plugin protocol |
 

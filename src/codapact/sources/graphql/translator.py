@@ -285,7 +285,10 @@ class _Translator:
             errors = validate(self.schema, document)
             if errors:
                 raise ContractError(f"operation {name}: {errors[0].message}")
-            built = self.operation(document, name, _leading_comment(operation) or "")
+            # graphql-core 3.2 has no operation descriptions; 3.3 does.
+            node = getattr(operation, "description", None)
+            description = node.value if node else None
+            built = self.operation(document, name, description or _leading_comment(operation))
             if built is not None:
                 result.append(built)
         return result

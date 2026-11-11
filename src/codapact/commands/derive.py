@@ -34,9 +34,14 @@ RESERVED_FLAGS = frozenset(
         "max-items",
         "timeout",
         "query",
+        "pick",
         "yes",
         "allow-private",
         "response-validation",
+        "version",
+        "dry-run",
+        "verbose",
+        "error-format",
     }
 )
 DESTRUCTIVE_VERBS = frozenset({"delete", "remove", "destroy", "purge"})
