@@ -19,11 +19,14 @@ from __future__ import annotations
 from codapact.commands.model import Arg, ArgKind, Command, CommandTree, Group
 from codapact.core.diagnostics import Diagnostics
 from codapact.core.naming import Name
-from codapact.model.api import Api
+from codapact.model.api import Api, HttpBinding
 from codapact.model.types import Alias, Enum, ListOf, Nullable, Primitive, Ref, ScalarKind, TypeExpr
 from codapact.surface.model import Method, Namespace, Surface
 
-RESERVED_FLAGS = frozenset({"help", "base-url", "output", "config", "all", "max-items", "timeout"})
+RESERVED_FLAGS = frozenset(
+    {"help", "base-url", "output", "config", "all", "max-items", "timeout", "query", "yes"}
+)
+DESTRUCTIVE_VERBS = frozenset({"delete", "remove", "destroy", "purge"})
 
 
 def derive_commands(
@@ -67,6 +70,13 @@ def _command(api: Api, method: Method, path: tuple[Name, ...], diagnostics: Diag
                 scalar=scalar,
                 choices=choices,
                 docs=param.docs,
+                default=param.default,
+                format=_format(api, param.type),
+                source=tuple(
+                    part
+                    for part in (param.source.param, param.source.field, param.source.subfield)
+                    if part is not None
+                ),
             )
         )
     return Command(
@@ -78,7 +88,32 @@ def _command(api: Api, method: Method, path: tuple[Name, ...], diagnostics: Diag
         read_only=method.read_only,
         paginated=method.paging is not None,
         deprecated=method.deprecated,
+        destructive=_destructive(api, method),
     )
+
+
+def _destructive(api: Api, method: Method) -> bool:
+    """Whether a command deletes data: an HTTP DELETE or a delete-like verb."""
+    if method.read_only:
+        return False
+    try:
+        operation = api.operation(method.operation)
+    except KeyError:
+        operation = None
+    binding = operation.binding(HttpBinding) if operation is not None else None
+    if binding is not None and binding.method.upper() == "DELETE":
+        return True
+    return method.operation.split("_", 1)[0] in DESTRUCTIVE_VERBS
+
+
+def _format(api: Api, expr: TypeExpr) -> str | None:
+    resolved = _resolve(api, expr)
+    if isinstance(resolved, Primitive) and resolved.scalar in (
+        ScalarKind.DATE,
+        ScalarKind.DATETIME,
+    ):
+        return resolved.scalar.value
+    return None
 
 
 def _resolve(api: Api, expr: TypeExpr) -> TypeExpr | Enum | None:

@@ -1,0 +1,13 @@
+version: 1
+source:
+  type: openapi
+  path: openapi.yaml
+shape:
+  - group: {by: tag}
+  - defaults:
+      params: {"*.plan_id": last-used}
+cli: {program: ynab}
+targets:
+  - {name: python, output: generated/python, options: {package: ynab_api}}
+  - {name: python-cli, output: generated/python}
+  - {name: typescript, output: generated/typescript, options: {package: ynab-api}}

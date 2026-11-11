@@ -301,13 +301,26 @@ def _method(api: Api, method: Method) -> str:
     returns = _qualified(method.returns) if method.returns is not None else "void"
     flat = []
     nested: dict[str, list[str]] = {}
+    wrapped: dict[tuple[str, str], list[str]] = {}
     for param in method.params:
         value = f"params.{_ident(param.name)}"
-        if param.source.field is None:
-            flat.append(f"{json.dumps(param.source.param)}: {value}")
+        source = param.source
+        if source.field is None and param.default is not None and not param.required:
+            # Same rule as the Python runtime: an omitted model param sends its default.
+            value = f"({value} ?? {json.dumps(param.default)})"
+        if source.field is None:
+            flat.append(f"{json.dumps(source.param)}: {value}")
+        elif source.subfield is None:
+            wire = _field_wire(api, method, source.param, source.field)
+            nested.setdefault(source.param, []).append(f"{json.dumps(wire)}: {value}")
         else:
-            wire = _field_wire(api, method, param.source.param, param.source.field)
-            nested.setdefault(param.source.param, []).append(f"{json.dumps(wire)}: {value}")
+            wire = _field_wire(api, method, source.param, source.field)
+            inner_wire = _inner_wire(api, method, source.param, source.field, source.subfield)
+            wrapped.setdefault((source.param, wire), []).append(
+                f"{json.dumps(inner_wire)}: {value}"
+            )
+    for (source, wire), items in wrapped.items():
+        nested.setdefault(source, []).append(f"{json.dumps(wire)}: {{ {', '.join(items)} }}")
     for source, items in nested.items():
         flat.append(f"{json.dumps(source)}: {{ {', '.join(items)} }}")
     args = "{ " + ", ".join(flat) + " }" if flat else "{}"
@@ -338,6 +351,20 @@ def _field_wire(api: Api, method: Method, param: str, field: str) -> str:
             if f.name == field:
                 return f.wire
     return field
+
+
+def _inner_wire(api: Api, method: Method, param: str, field: str, subfield: str) -> str:
+    operation = api.operation(method.operation)
+    expr = next(p.type for p in operation.params if p.name == param)
+    outer = api.type(expr.name) if isinstance(expr, Ref) else None
+    if isinstance(outer, Record):
+        inner_expr = next((f.type for f in outer.fields if f.name == field), None)
+        inner = api.type(inner_expr.name) if isinstance(inner_expr, Ref) else None
+        if isinstance(inner, Record):
+            for f in inner.fields:
+                if f.name == subfield:
+                    return f.wire
+    return subfield
 
 
 def _index() -> str:

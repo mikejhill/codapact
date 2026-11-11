@@ -540,6 +540,17 @@ class _Translator:
             return t.MapOf(t.Primitive(t.ScalarKind.ANY))
         name = hint if named else self.unique_name(hint)
         self.pending.add(name)
+        fields = self.fields(schema, name, where)
+        extra: t.TypeExpr | None = None
+        if isinstance(additional, dict) and additional:
+            extra = self.expr(additional, name + "Value", where)
+        return self.add(
+            t.Record(name, tuple(fields), _docs(schema), extra, closed=additional is False)
+        )
+
+    def fields(self, schema: dict[str, Any], name: str, where: str) -> list[t.Field]:
+        """Translate ``properties``; nested shapes are named after ``name``."""
+        properties = schema.get("properties") or {}
         required = set(schema.get("required", []))
         fields = []
         for wire, prop in properties.items():
@@ -556,12 +567,7 @@ class _Translator:
                     default=prop.get("default") if isinstance(prop, dict) else None,
                 )
             )
-        extra: t.TypeExpr | None = None
-        if isinstance(additional, dict) and additional:
-            extra = self.expr(additional, name + "Value", where)
-        return self.add(
-            t.Record(name, tuple(fields), _docs(schema), extra, closed=additional is False)
-        )
+        return fields
 
     def enum(self, schema: dict[str, Any], hint: str, where: str, *, named: bool) -> t.TypeExpr:
         values = [v for v in schema["enum"] if v is not None]
@@ -605,6 +611,11 @@ class _Translator:
             if _is_required_overlay(part):
                 # ``{required: [...]}`` without properties tightens fields from other members.
                 overlay_required.update(part["required"])
+                continue
+            if _is_plain_object(part):
+                # Inline object members merge directly; they never become public types.
+                for f in self.fields(part, name, f"{where}.allOf[{index}]"):
+                    fields[f.name] = f
                 continue
             expr = self.structural(part, f"{name}Part{index}", where, named=False)
             record = self.resolve_record(expr)
@@ -685,6 +696,15 @@ def _admits_null(schema: Any) -> bool:
 def _object_or_null_type(raw_type: Any) -> bool:
     types = raw_type if isinstance(raw_type, list) else [raw_type]
     return bool(types) and all(x in {"object", "null"} for x in types)
+
+
+def _is_plain_object(part: Any) -> bool:
+    if not isinstance(part, dict) or not part.get("properties"):
+        return False
+    if part.get("additionalProperties") not in (None, True, False):
+        return False
+    structural = {"$ref", "allOf", "oneOf", "anyOf", "enum", "const", "nullable"}
+    return not (set(part) & structural) and part.get("type", "object") == "object"
 
 
 def _is_required_overlay(part: Any) -> bool:
