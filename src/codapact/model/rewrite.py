@@ -7,7 +7,31 @@ from collections.abc import Callable, Iterator, Mapping
 from typing import Any
 
 from codapact.model.api import Api, Operation
-from codapact.model.types import Ref, TypeDef, definition_refs, walk_refs
+from codapact.model.types import (
+    Alias,
+    Nullable,
+    Ref,
+    TypeDef,
+    TypeExpr,
+    definition_refs,
+    walk_refs,
+)
+
+
+def unwrap(api: Api, expr: TypeExpr) -> TypeExpr:
+    """Strip ``Nullable`` and follow references to aliases until something else remains."""
+    seen: set[str] = set()
+    while True:
+        if isinstance(expr, Nullable):
+            expr = expr.inner
+            continue
+        if isinstance(expr, Ref) and expr.name not in seen:
+            seen.add(expr.name)
+            definition = next((d for d in api.types if d.name == expr.name), None)
+            if isinstance(definition, Alias):
+                expr = definition.target
+                continue
+        return expr
 
 
 def rewrite(node: Any, fn: Callable[[Any], Any]) -> Any:

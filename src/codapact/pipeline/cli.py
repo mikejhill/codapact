@@ -13,6 +13,7 @@ from codapact import __version__
 from codapact.core.diagnostics import Severity
 from codapact.core.errors import CodapactError
 from codapact.model.serialize import dumps, to_data
+from codapact.pipeline import writer
 from codapact.pipeline.config import ProjectConfig
 from codapact.pipeline.defaults import default_registry
 from codapact.pipeline.pipeline import Pipeline, PipelineResult
@@ -85,6 +86,14 @@ def _report(result: PipelineResult, err: TextIO) -> None:
             print(diagnostic, file=err)
 
 
+def _report_unchanged(config: ProjectConfig, err: TextIO) -> None:
+    """Say that nothing was written, and where earlier output still sits."""
+    print("codapact: generation failed; no files were written", file=err)
+    for root in dict.fromkeys(t.output for t in config.targets):
+        if (root / writer.MANIFEST).is_file():
+            print(f"codapact: {root} still holds output from an earlier run", file=err)
+
+
 def main(
     argv: Sequence[str] | None = None, *, out: TextIO | None = None, err: TextIO | None = None
 ) -> int:
@@ -114,6 +123,7 @@ def main(
         result = pipeline.run(config, dry_run=args.dry_run)
         _report(result, err)
         if result.diagnostics.has_errors:
+            _report_unchanged(config, err)
             return 1
         for root, plan in result.plans.items():
             summary = plan.summary()

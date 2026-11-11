@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import warnings
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +22,14 @@ import yaml
 
 from codapact.core.errors import CodapactError, TransportError
 from codapact.runtime.auth import EnvAuth
-from codapact.runtime.errors import ApiError, AuthError, GraphQLResponseError, ValidationError
+from codapact.runtime.errors import (
+    ApiError,
+    AuthError,
+    GraphQLResponseError,
+    ResponseValidationError,
+    ResponseValidationWarning,
+    ValidationError,
+)
 
 EXIT_OK = 0
 EXIT_API = 1
@@ -107,6 +115,23 @@ class CliRuntime:
             metavar="PATH",
             help="print only this part of the result, e.g. data.items[].name",
         )
+        group.add_argument(
+            "--allow-private",
+            action="store_true",
+            default=keep,
+            help=f"allow plain HTTP and private hosts (env {self.env_prefix}_ALLOW_PRIVATE)",
+        )
+        group.add_argument(
+            "--response-validation",
+            choices=("strict", "warn", "off"),
+            default=keep,
+            help="on a response that breaks the contract: fail, warn (default), or ignore",
+        )
+
+    def require(self, args: argparse.Namespace, dest: str, label: str) -> None:
+        """Fail with a usage error when a required positional argument is missing."""
+        if getattr(args, dest, None) is None:
+            raise CodapactError(f"missing required argument {label}")
 
     def add_confirm_option(self, parser: argparse.ArgumentParser) -> None:
         """Add ``--yes`` to a destructive command."""
@@ -146,11 +171,22 @@ class CliRuntime:
         )
         if timeout:
             options["timeout"] = float(timeout)
-        allow_private = env.get(f"{self.env_prefix}_ALLOW_PRIVATE") or file_settings.get(
-            "allow_private"
+        allow_private = (
+            getattr(args, "allow_private", None)
+            or env.get(f"{self.env_prefix}_ALLOW_PRIVATE")
+            or file_settings.get("allow_private")
         )
         if allow_private in (True, "1", "true", "yes"):
             options["allow_private"] = True
+        mode = (
+            getattr(args, "response_validation", None)
+            or env.get(f"{self.env_prefix}_RESPONSE_VALIDATION")
+            or file_settings.get("response_validation")
+            or "warn"
+        )
+        if mode not in ("strict", "warn", "off"):
+            raise CodapactError("response validation must be strict, warn, or off")
+        options["response_validation"] = mode
         options["auth"] = EnvAuth(self.env_prefix, env)
         return options
 
@@ -166,7 +202,7 @@ class CliRuntime:
             data = json.loads(path.read_text("utf-8"))
         except (OSError, ValueError):
             raise CodapactError(f"cannot read settings file {path}") from None
-        allowed = {"base_url", "timeout", "allow_private", "defaults"}
+        allowed = {"base_url", "timeout", "allow_private", "response_validation", "defaults"}
         if not isinstance(data, dict) or set(data) - allowed:
             raise CodapactError(f"{path}: allowed keys are {', '.join(sorted(allowed))}")
         if not isinstance(data.get("defaults", {}), dict):
@@ -199,10 +235,23 @@ class CliRuntime:
         Keys are option names without dashes (``plan_id`` or ``plan-id``).
         """
         defaults = self._file_settings(getattr(args, "config", None)).get("defaults", {})
+        # Positional arguments leave no attribute when omitted, so also accept every
+        # option the command declares (``flags`` maps sources to ``--option`` names).
+        declared = {
+            "p_" + flag.removeprefix("--").replace("-", "_")
+            for flag in (getattr(args, "flags", None) or {}).values()
+        }
         for key, value in defaults.items():
             dest = "p_" + str(key).replace("-", "_")
-            if hasattr(args, dest) and getattr(args, dest) is None:
+            if (hasattr(args, dest) or dest in declared) and getattr(args, dest, None) is None:
                 setattr(args, dest, value)
+
+    def _report_mismatches(self, caught: list[warnings.WarningMessage], err: TextIO) -> None:
+        for line in _mismatch_lines(self.program, caught):
+            print(line, file=err)
+        for w in caught:
+            if not issubclass(w.category, ResponseValidationWarning):
+                warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
 
     def run(
         self,
@@ -219,12 +268,24 @@ class CliRuntime:
         try:
             self.apply_defaults(args)
             client = make_client(self.settings(args))
-            result = handler(client, args)
-            if isinstance(result, Iterable) and not isinstance(result, dict | list | str | bytes):
-                result = list(result)
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always", ResponseValidationWarning)
+                result = handler(client, args)
+                if isinstance(result, Iterable) and not isinstance(
+                    result, dict | list | str | bytes
+                ):
+                    result = list(result)
+            self._report_mismatches(caught, err)
             query = getattr(args, "query", None)
             if query:
                 result = select(result, query)
+        except ResponseValidationError as error:
+            print(f"{self.program}: response does not match the contract: {error}", file=err)
+            print(
+                f"{self.program}: hint: --response-validation warn prints the data anyway",
+                file=err,
+            )
+            return EXIT_API
         except ValidationError as error:
             if error.path.startswith("$result"):
                 print(f"{self.program}: response does not match the contract: {error}", file=err)
@@ -261,6 +322,20 @@ def _actions(parser: argparse.ArgumentParser) -> Iterator[argparse.Action]:
         if isinstance(action, argparse._SubParsersAction):
             for sub in dict.fromkeys(action.choices.values()):
                 yield from _actions(sub)
+
+
+MAX_REPORTED_MISMATCHES = 5
+
+
+def _mismatch_lines(program: str, caught: list[warnings.WarningMessage]) -> list[str]:
+    messages = [str(w.message) for w in caught if issubclass(w.category, ResponseValidationWarning)]
+    lines = [
+        f"{program}: warning: response does not match the contract: {m}"
+        for m in messages[:MAX_REPORTED_MISMATCHES]
+    ]
+    if len(messages) > MAX_REPORTED_MISMATCHES:
+        lines.append(f"{program}: warning: {len(messages) - MAX_REPORTED_MISMATCHES} more")
+    return lines
 
 
 def describe_invalid(error: ValidationError, flags: dict[str, str]) -> str:

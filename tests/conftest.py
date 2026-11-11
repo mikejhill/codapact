@@ -35,3 +35,19 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(getattr(pytest.mark, parts[0]))
         if "live" in item.keywords and not LIVE:
             item.add_marker(skip_live)
+
+
+PROXY_VARIABLES = ("HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "ALL_PROXY")
+
+
+@pytest.fixture(autouse=True)
+def _no_ambient_proxy(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep hermetic tests independent of the machine's proxy settings.
+
+    Live tests keep them: on a proxied network they are the only way out.
+    """
+    if "live" in request.keywords:
+        return
+    for name in PROXY_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+        monkeypatch.delenv(name.lower(), raising=False)

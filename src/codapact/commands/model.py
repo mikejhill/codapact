@@ -39,6 +39,8 @@ class Arg:
     default: JsonValue = None
     format: str | None = None
     source: tuple[str, ...] = ()
+    positional: int | None = None
+    """Position among positional arguments (required path params without a default)."""
 
 
 @dataclass(frozen=True, slots=True)

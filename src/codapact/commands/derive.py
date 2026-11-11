@@ -6,6 +6,7 @@ Mapping rules:
 | -------------------------- | ------------------------------------ |
 | namespace                  | command group                        |
 | method                     | command                              |
+| required path param        | positional ``VALUE`` (or ``--flag``) |
 | scalar argument            | ``--flag VALUE``                     |
 | boolean argument           | ``--flag`` / ``--no-flag``           |
 | enum argument              | ``--flag {choices}``                 |
@@ -19,12 +20,24 @@ from __future__ import annotations
 from codapact.commands.model import Arg, ArgKind, Command, CommandTree, Group
 from codapact.core.diagnostics import Diagnostics
 from codapact.core.naming import Name
-from codapact.model.api import Api, HttpBinding
+from codapact.model.api import Api, HttpBinding, ParamLocation
 from codapact.model.types import Alias, Enum, ListOf, Nullable, Primitive, Ref, ScalarKind, TypeExpr
 from codapact.surface.model import Method, Namespace, Surface
 
 RESERVED_FLAGS = frozenset(
-    {"help", "base-url", "output", "config", "all", "max-items", "timeout", "query", "yes"}
+    {
+        "help",
+        "base-url",
+        "output",
+        "config",
+        "all",
+        "max-items",
+        "timeout",
+        "query",
+        "yes",
+        "allow-private",
+        "response-validation",
+    }
 )
 DESTRUCTIVE_VERBS = frozenset({"delete", "remove", "destroy", "purge"})
 
@@ -54,12 +67,21 @@ def _group(
 def _command(api: Api, method: Method, path: tuple[Name, ...], diagnostics: Diagnostics) -> Command:
     args = []
     used: set[str] = set()
+    positions = _path_positions(api, method)
     for param in method.params:
         flag = param.name
         if flag.kebab in RESERVED_FLAGS or flag.kebab in used:
             flag = Name(("arg",) + flag.words)
         used.add(flag.kebab)
         kind, scalar, choices = classify(api, param.type)
+        position = (
+            positions.get(param.source.param)
+            if param.required
+            and param.default is None
+            and param.source.field is None
+            and kind in (ArgKind.SCALAR, ArgKind.ENUM)
+            else None
+        )
         args.append(
             Arg(
                 flag,
@@ -77,6 +99,7 @@ def _command(api: Api, method: Method, path: tuple[Name, ...], diagnostics: Diag
                     for part in (param.source.param, param.source.field, param.source.subfield)
                     if part is not None
                 ),
+                positional=position,
             )
         )
     return Command(
@@ -90,6 +113,19 @@ def _command(api: Api, method: Method, path: tuple[Name, ...], diagnostics: Diag
         deprecated=method.deprecated,
         destructive=_destructive(api, method),
     )
+
+
+def _path_positions(api: Api, method: Method) -> dict[str, int]:
+    """Map path-param names to their order in the URL template."""
+    binding = api.operation(method.operation).binding(HttpBinding)
+    if binding is None:
+        return {}
+    found = [
+        (binding.path.find("{" + p.wire_name + "}"), p.param)
+        for p in binding.params
+        if p.location is ParamLocation.PATH
+    ]
+    return {param: index for index, (_, param) in enumerate(sorted(found))}
 
 
 def _destructive(api: Api, method: Method) -> bool:

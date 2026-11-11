@@ -53,6 +53,11 @@ class CursorPagination:
     next_cursor: tuple[str, ...]
     items: tuple[str, ...]
 
+    @property
+    def param(self) -> str:
+        """The request param this strategy advances."""
+        return self.cursor_param
+
 
 @dataclass(frozen=True, slots=True)
 class OffsetPagination:
@@ -62,8 +67,31 @@ class OffsetPagination:
     items: tuple[str, ...]
     limit_param: str | None = None
 
+    @property
+    def param(self) -> str:
+        """The request param this strategy advances."""
+        return self.offset_param
 
-Pagination = CursorPagination | OffsetPagination
+
+@dataclass(frozen=True, slots=True)
+class PagePagination:
+    """Page-number pagination: advance ``page_param`` by one until a page is empty.
+
+    ``start`` is the first page number when the caller does not pass one. An
+    empty ``items`` path means the result itself is the list of items.
+    """
+
+    page_param: str
+    items: tuple[str, ...]
+    start: int = 1
+
+    @property
+    def param(self) -> str:
+        """The request param this strategy advances."""
+        return self.page_param
+
+
+Pagination = CursorPagination | OffsetPagination | PagePagination
 
 
 class ParamLocation(StrEnum):

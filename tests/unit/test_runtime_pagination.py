@@ -98,7 +98,7 @@ def test_offset_pagination_advances_by_page_size() -> None:
 
 def test_pagination_stops_when_items_are_missing() -> None:
     c, transport = client(
-        {"style": "offset", "param": "cursor"},
+        {"style": "offset", "param": "limit"},
         handler=lambda _: json_response(200, {"items": [], "next_cursor": None}),
     )
     assert list(c.paginate("list_pets", {})) == []

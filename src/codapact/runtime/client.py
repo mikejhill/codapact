@@ -15,13 +15,13 @@ from typing import Any
 from codapact import __version__
 from codapact.core.errors import ConfigError
 from codapact.core.net import SafeHttpClient, validate_url
-from codapact.model.api import Api, CursorPagination, Operation
+from codapact.model.api import Api, CursorPagination, Operation, PagePagination
 from codapact.model.serialize import loads
 from codapact.runtime.abstractions import AuthProvider, Middleware, ProtocolAdapter, Transport
 from codapact.runtime.codec import Codec
 from codapact.runtime.errors import ClientError, ValidationError
 from codapact.runtime.middleware import Retry
-from codapact.runtime.protocols.base import Exchange
+from codapact.runtime.protocols.base import RESPONSE_VALIDATION_MODES, Exchange
 from codapact.runtime.protocols.graphql import GraphQLAdapter
 from codapact.runtime.protocols.http import HttpAdapter
 
@@ -51,8 +51,19 @@ class RuntimeClient:
         timeout: float = 30.0,
         allow_private: bool = False,
         user_agent: str | None = None,
+        response_validation: str = "strict",
+        proxy: str | None = None,
     ) -> None:
-        """Configure the client; ``base_url`` defaults to the model's first server."""
+        """Configure the client; ``base_url`` defaults to the model's first server.
+
+        ``response_validation`` is ``strict`` (mismatching responses raise
+        ``ResponseValidationError``), ``warn`` (emit ``ResponseValidationWarning`` and
+        return the data), or ``off``. ``proxy`` overrides the ``HTTPS_PROXY`` environment.
+        """
+        if response_validation not in RESPONSE_VALIDATION_MODES:
+            raise ConfigError(
+                f"response_validation must be one of {', '.join(RESPONSE_VALIDATION_MODES)}"
+            )
         url = base_url or (api.servers[0].url if api.servers else None)
         if not url:
             raise ConfigError("base_url is required: the contract declares no server")
@@ -66,11 +77,13 @@ class RuntimeClient:
             api=api,
             codec=self._codec,
             base_url=self.base_url,
-            transport=transport or SafeHttpClient(allow_private=allow_private, timeout=timeout),
+            transport=transport
+            or SafeHttpClient(allow_private=allow_private, timeout=timeout, proxy=proxy),
             auth=auth,
             middleware=tuple(middleware) if middleware is not None else (Retry(),),
             validate=validate,
             user_agent=user_agent or f"codapact/{__version__}",
+            response_validation=response_validation,
         )
         self._adapters = tuple(factory(exchange) for factory in adapters)
 
@@ -92,6 +105,11 @@ class RuntimeClient:
         if strategy is None:
             raise ClientError(f"{operation_name!r} is not paginated")
         arguments = dict(arguments)
+        if isinstance(strategy, PagePagination) and arguments.get(strategy.page_param) is None:
+            # Send the first page explicitly so ``start`` (or the param's default) is honoured.
+            param = next((p for p in operation.params if p.name == strategy.page_param), None)
+            default = param.default if param is not None else None
+            arguments[strategy.page_param] = strategy.start if default is None else default
         produced = 0
         for _ in range(MAX_PAGES):
             page = self.call(operation_name, arguments)
@@ -106,6 +124,10 @@ class RuntimeClient:
                 if not cursor or not items:
                     return
                 arguments[strategy.cursor_param] = cursor
+            elif isinstance(strategy, PagePagination):
+                if not items:
+                    return
+                arguments[strategy.page_param] = int(arguments[strategy.page_param]) + 1
             else:
                 if not items:
                     return

@@ -2,21 +2,23 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast, override
 
 import yaml
-from yaml.nodes import MappingNode
-from yaml.tokens import AliasToken, AnchorToken
+from yaml.nodes import MappingNode, Node
 
 from codapact.core.errors import ContractError
 from codapact.core.net import HttpRequest, SafeHttpClient
 
-MAX_DOCUMENT_BYTES = 10_000_000
+MAX_DOCUMENT_BYTES = 64_000_000
+"""Default size cap for one contract document; ``source.max_bytes`` overrides it."""
 MAX_DEPTH = 64
 MAX_NODES = 500_000
+"""Minimum parsed-node budget; larger documents get one node per 8 bytes."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,10 +44,21 @@ class Fetcher:
         """Bind the HTTP client used for remote contracts."""
         self._http = http or SafeHttpClient(max_bytes=MAX_DOCUMENT_BYTES)
 
-    def fetch(self, location: str, *, base: Path | None = None) -> SourceDocument:
-        """Return the bytes at ``location``; relative paths resolve against ``base``."""
+    def fetch(
+        self, location: str, *, base: Path | None = None, max_bytes: int | None = None
+    ) -> SourceDocument:
+        """Return the bytes at ``location``; relative paths resolve against ``base``.
+
+        ``max_bytes`` overrides the size cap (default ``MAX_DOCUMENT_BYTES``).
+        """
+        limit = MAX_DOCUMENT_BYTES if max_bytes is None else max_bytes
+        if limit <= 0:
+            raise ContractError("max_bytes must be positive")
         if location.startswith(("http://", "https://")):
-            response = self._http.send(HttpRequest("GET", location, {"Accept": "*/*"}))
+            http = self._http
+            if max_bytes is not None and http.max_bytes != limit:
+                http = dataclasses.replace(http, max_bytes=limit)
+            response = http.send(HttpRequest("GET", location, {"Accept": "*/*"}))
             if response.status != 200:
                 raise ContractError(f"{location}: download returned HTTP {response.status}")
             return SourceDocument(location, response.body)
@@ -54,26 +67,53 @@ class Fetcher:
             path = base / path
         try:
             with path.open("rb") as handle:
-                content = handle.read(MAX_DOCUMENT_BYTES + 1)
+                content = handle.read(limit + 1)
         except OSError:
             raise ContractError(f"{location}: cannot read file") from None
-        if len(content) > MAX_DOCUMENT_BYTES:
-            raise ContractError(f"{location}: exceeds {MAX_DOCUMENT_BYTES} bytes")
+        if len(content) > limit:
+            raise ContractError(
+                f"{location}: exceeds {limit} bytes (raise it with source.max_bytes)"
+            )
         return SourceDocument(str(path), content)
 
 
-class _UniqueKeyLoader(yaml.SafeLoader):
+_BaseLoader: Any = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+
+class _UniqueKeyLoader(_BaseLoader):
+    """Data-only YAML: no aliases, no custom tags, no duplicate keys.
+
+    Uses libyaml when available (about 20x faster on large contracts). Aliases are
+    detected at construction: an alias is the same node reached twice.
+    """
+
+    @override
+    def construct_object(self, node: Node, deep: bool = False) -> Any:
+        if node in self.constructed_objects or node in self.recursive_objects:
+            raise ContractError("YAML anchors and aliases are not supported")
+        return super().construct_object(node, deep=deep)
+
     @override
     def construct_mapping(self, node: MappingNode, deep: bool = False) -> dict[Any, Any]:
-        keys = [self.construct_object(key, deep=deep) for key, _ in node.value]
-        if len(set(map(str, keys))) != len(keys):
-            raise ContractError("duplicate mapping keys")
-        return cast(dict[Any, Any], super().construct_mapping(node, deep=deep))
+        # Keys are compared after construction, so ``1`` and ``01`` (both 1) collide.
+        self.flatten_mapping(node)
+        mapping: dict[Any, Any] = {}
+        seen: set[str] = set()
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            text = str(key)
+            if text in seen:
+                raise ContractError("duplicate mapping keys")
+            seen.add(text)
+            if isinstance(key, list | dict):
+                raise ContractError("mapping keys must be scalars")
+            mapping[key] = self.construct_object(value_node, deep=deep)
+        return mapping
 
 
 def _normalize(value: Any, depth: int, budget: list[int]) -> Any:
-    budget[0] += 1
-    if depth > MAX_DEPTH or budget[0] > MAX_NODES:
+    budget[0] -= 1
+    if depth > MAX_DEPTH or budget[0] < 0:
         raise ContractError("document is too deep or too large")
     if isinstance(value, dict):
         # YAML may produce non-string keys such as response codes (200); stringify them.
@@ -93,8 +133,6 @@ def parse_structured(document: SourceDocument) -> dict[str, Any]:
         try:
             value = json.loads(content, object_pairs_hook=_unique_pairs)
         except json.JSONDecodeError:
-            if any(isinstance(t, AliasToken | AnchorToken) for t in yaml.scan(content)):
-                raise ContractError("YAML anchors and aliases are not supported") from None
             value = yaml.load(content, Loader=_UniqueKeyLoader)  # noqa: S506 - SafeLoader subclass
     except ContractError as error:
         raise ContractError(f"{document.uri}: {error}") from None
@@ -102,7 +140,8 @@ def parse_structured(document: SourceDocument) -> dict[str, Any]:
         raise ContractError(f"{document.uri}: invalid JSON or YAML") from None
     if not isinstance(value, dict):
         raise ContractError(f"{document.uri}: document root must be an object")
-    return cast(dict[str, Any], _normalize(value, 0, [0]))
+    budget = max(MAX_NODES, len(content) // 8)
+    return cast(dict[str, Any], _normalize(value, 0, [budget]))
 
 
 def _unique_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

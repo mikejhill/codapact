@@ -148,11 +148,17 @@ def _dest(arg: Arg) -> str:
 def _handler(command: Command) -> str:
     *namespaces, method = command.method_path
     attribute = ".".join([*(ident(n) for n in namespaces), method_ident(method)])
-    kwargs = ", ".join(f"{ident(a.param)!r}: args.{_dest(a)}" for a in command.args)
-    lines = [
-        f"\n\ndef {_handler_name(command)}(client: Client, args: argparse.Namespace) -> Any:",
-        f"    kwargs = compact({{{kwargs}}})",
-    ]
+    kwargs = ", ".join(
+        f"{ident(a.param)!r}: getattr(args, {_dest(a)!r}, None)"
+        if a.positional is not None
+        else f"{ident(a.param)!r}: args.{_dest(a)}"
+        for a in command.args
+    )
+    lines = [f"\n\ndef {_handler_name(command)}(client: Client, args: argparse.Namespace) -> Any:"]
+    for arg in _positionals(command):
+        label = f"{_metavar(arg)} (or --{arg.flag.kebab})"
+        lines.append(f"    RUNTIME.require(args, {_dest(arg)!r}, {label!r})")
+    lines.append(f"    kwargs = compact({{{kwargs}}})")
     if command.destructive:
         label = " ".join(n.kebab for n in command.method_path)
         lines.append(f"    RUNTIME.confirm(args, {label!r})")
@@ -171,6 +177,8 @@ def _command_parser(command: Command, container: str) -> list[str]:
         f"    {var} = {container}.add_parser({command.name.kebab!r}, parents=[common], "
         f"help={help_text!r}, description={description!r})"
     ]
+    for arg in _positionals(command):
+        lines.append(f"    {var}.add_argument({', '.join(_positional(arg))})")
     for arg in command.args:
         lines.append(f"    {var}.add_argument({', '.join(_argument(arg))})")
     if command.paginated:
@@ -182,8 +190,41 @@ def _command_parser(command: Command, container: str) -> list[str]:
     return lines
 
 
+def _positionals(command: Command) -> list[Arg]:
+    found = [a for a in command.args if a.positional is not None]
+    return sorted(found, key=lambda a: a.positional or 0)
+
+
+def _metavar(arg: Arg) -> str:
+    return METAVARS.get(arg.format or "", arg.flag.screaming)
+
+
+def _positional(arg: Arg) -> list[str]:
+    """A required path param as an optional positional; ``--flag`` stays as an alias."""
+    parts = [repr(_dest(arg)), f"metavar={_metavar(arg)!r}", "nargs='?'"]
+    parts.append("default=argparse.SUPPRESS")
+    if arg.kind is ArgKind.ENUM:
+        parts.extend(_choices(arg))
+    else:
+        parts.extend(_scalar(arg.scalar))
+    help_text = arg.docs.strip().splitlines()[0] if arg.docs.strip() else ""
+    if help_text:
+        parts.append(f"help={help_text.replace('%', '%%')!r}")
+    return parts
+
+
 def _argument(arg: Arg) -> list[str]:
     parts = [repr("--" + arg.flag.kebab), f"dest={_dest(arg)!r}"]
+    if arg.positional is not None:
+        # Alias of the positional: no default, not required, help points at it.
+        parts.append("default=argparse.SUPPRESS")
+        if arg.kind is ArgKind.ENUM:
+            parts.extend(_choices(arg))
+        else:
+            parts.extend(_scalar(arg.scalar))
+            parts.append(f"metavar={_metavar(arg)!r}")
+        parts.append(f"help={'same as ' + _metavar(arg)!r}")
+        return parts
     match arg.kind:
         case ArgKind.FLAG:
             parts.append("action=argparse.BooleanOptionalAction")
@@ -198,7 +239,7 @@ def _argument(arg: Arg) -> list[str]:
             parts += ["type=json_value", 'metavar="JSON"']
         case ArgKind.SCALAR:
             parts.extend(_scalar(arg.scalar))
-            parts.append(f"metavar={METAVARS.get(arg.format or '', arg.flag.screaming)!r}")
+            parts.append(f"metavar={_metavar(arg)!r}")
     if arg.required:
         parts.append("required=True")
     help_text = arg.docs.strip().splitlines()[0] if arg.docs.strip() else ""

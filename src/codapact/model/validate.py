@@ -90,9 +90,7 @@ def validate(model: Api) -> Diagnostics:
         _check_bindings(operation, diagnostics, where)
         if operation.pagination is not None:
             param_names = {p.name for p in operation.params}
-            cursor = getattr(operation.pagination, "cursor_param", None) or getattr(
-                operation.pagination, "offset_param", None
-            )
+            cursor = operation.pagination.param
             if cursor not in param_names:
                 diagnostics.error(
                     "model.pagination", f"pagination parameter {cursor!r} is not a param", where

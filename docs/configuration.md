@@ -37,15 +37,25 @@ Targets that share an `output` directory share options. When `python-cli` shares
 
 | Source | Option | Default | Meaning |
 | --- | --- | --- | --- |
-| both | `strict` | `true` | Unsupported features are errors; when `false`, they degrade with a warning |
+| both | `strict` | `true` | Unsupported features are errors; when `false`, they degrade with a warning. For GraphQL, `false` also builds schemas that break spec rules (as GitHub's does) and lists the problems as warnings |
 | `graphql` | `name` | `GraphQL API` | API name |
 | `graphql` | `version` | empty | API version |
 | `graphql` | `url` | none | Endpoint; becomes the default server |
 | `graphql` | `auth` | none | `bearer`, `basic`, or `{api_key: HEADER}`; required on every operation |
 | `graphql` | `depth` | `1` | Object nesting synthesized in schema mode (0–8) |
 
+`source.max_bytes` (next to `type` and `path`, not under `options`) caps each contract
+document; the default is 64 MB. Remote contracts and generated clients honour
+`HTTPS_PROXY`, `HTTP_PROXY`, and `NO_PROXY`. Proxy URLs must use `http://` without
+credentials; HTTPS traffic is tunnelled with `CONNECT`.
+
 GraphQL with `documents` generates one operation per document operation with exact result
-types. Without documents, it generates one operation per root field.
+types. Without documents, it generates one operation per root field. A `#` comment block
+directly above a document operation becomes its description; variable defaults
+(`$first: Int = 5`) become parameter defaults.
+
+When the first shaping step is `select`, model errors in operations it removes are reported
+as one warning instead of blocking generation.
 
 ## Shaping transforms
 
@@ -54,8 +64,9 @@ types. Without documents, it generates one operation per root field.
 | `select` | `include`, `exclude`: lists of globs or `{name, tag, kind, namespace, read_only}` selectors |
 | `rename` | `operations`, `types`, `fields` (`Type.field`), `params` (`op.param`), `patterns` (`[{match: regex, replace: template}]` over operation names; explicit `operations` entries win); wire names are kept |
 | `group` | `by: tag` or `by: path`, and/or `operations: {glob: dotted.namespace}` |
-| `paginate` | `operations`, `style: cursor` (`param`, `next`) or `offset` (`param`, `limit_param`), `items` |
+| `paginate` | `operations`, `style: cursor` (`param`, `next`), `offset` (`param`, `limit_param`), or `page` (`param`, default `page`; `start`, default `1`), and `items` (`$` when the result itself is the list). Operations matched only by a pattern that lack the param or items are skipped with a warning; operations named exactly are errors |
 | `defaults` | `params: {"op_glob.param": value}`; the param becomes optional and the runtime sends `value` when it is omitted |
+| `auth` | `schemes: {name: bearer \| basic \| oauth2 \| {api_key: NAME, in: header\|query\|cookie}}`, `operations` (default all), `optional` (send credentials when set, call anonymously otherwise). For contracts that omit `securitySchemes` |
 | `prune` | none; removes unreachable types (also run by `select`) |
 
 ## Surface options
@@ -85,7 +96,8 @@ Precedence: flag, then environment, then settings file.
 | --- | --- | --- | --- |
 | Base URL | `--base-url` | `<PREFIX>_BASE_URL` | `base_url` |
 | Timeout | `--timeout` | `<PREFIX>_TIMEOUT` | `timeout` |
-| Private network | none | `<PREFIX>_ALLOW_PRIVATE` | `allow_private` |
+| Private network | `--allow-private` | `<PREFIX>_ALLOW_PRIVATE` | `allow_private` |
+| Response validation | `--response-validation strict\|warn\|off` | `<PREFIX>_RESPONSE_VALIDATION` | `response_validation` |
 | Credentials | none | `<PREFIX>_<SCHEME>`; basic uses `_USERNAME`/`_PASSWORD` | not stored |
 | Option defaults | the option itself | none | `defaults: {plan_id: "…"}` (option names, `_` or `-`) |
 
@@ -101,6 +113,14 @@ Commands for HTTP `DELETE` operations, or operations named `delete_*`/`remove_*`
 ask for confirmation on a terminal and require `--yes` otherwise.
 
 Validation errors name the command-line option (`--amount: expected an integer`).
+
+Required path parameters without a default are positional, in URL order
+(`repos get OWNER REPO`); the `--owner` form still works.
+
+Responses that break the contract (a `null` where the contract promises a string) print
+a warning and the data by default (`warn`). `strict` fails with exit `1`; `off` skips
+response checks. Generated libraries default to `strict` and raise
+`ResponseValidationError`, whose `data` holds the response.
 
 Exit codes: `0` success, `1` API error, `2` usage or validation, `3` auth (missing credentials or
 HTTP 401/403), `4` transport.

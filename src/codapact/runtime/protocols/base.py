@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -17,8 +18,14 @@ from codapact.runtime.abstractions import (
     Transport,
 )
 from codapact.runtime.codec import Codec
-from codapact.runtime.errors import ClientError
+from codapact.runtime.errors import (
+    ClientError,
+    ResponseValidationError,
+    ResponseValidationWarning,
+)
 from codapact.runtime.middleware import chain
+
+RESPONSE_VALIDATION_MODES = ("strict", "warn", "off")
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +40,7 @@ class Exchange:
     middleware: Sequence[Middleware]
     validate: bool
     user_agent: str
+    response_validation: str = "strict"
 
     def send(self, operation: Operation, request: HttpRequest) -> HttpResponse:
         """Run the request through middleware, then the transport."""
@@ -41,12 +49,22 @@ class Exchange:
         return chain(self.middleware, CallContext(operation), self.transport.send)(request)
 
     def decode(self, value: Any, expr: Any, path: str) -> Any:
-        """Decode a response value, validating unless disabled."""
-        if expr is None:
+        """Decode a response value according to ``response_validation``.
+
+        ``strict`` raises ``ResponseValidationError`` (carrying the leniently decoded
+        data); ``warn`` emits one ``ResponseValidationWarning`` per mismatch and returns
+        the data; ``off`` returns the wire value untouched.
+        """
+        if expr is None or not self.validate or self.response_validation == "off":
             return value
-        if not self.validate:
-            return value
-        return self.codec.decode(value, expr, path)
+        decoded, issues = self.codec.decode_lenient(value, expr, path)
+        if not issues:
+            return decoded
+        if self.response_validation == "warn":
+            for issue in issues:
+                warnings.warn(str(issue), ResponseValidationWarning, stacklevel=2)
+            return decoded
+        raise ResponseValidationError(issues, decoded)
 
 
 def parse_json(response: HttpResponse, operation: str) -> Any:
