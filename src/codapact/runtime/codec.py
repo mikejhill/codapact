@@ -125,13 +125,12 @@ class Codec:
             consumed.add(f.wire)
             result[f.name] = self._lenient(value[f.wire], f.type, f"{path}.{f.wire}", issues)
         for key, item in value.items():
-            if key in consumed:
-                continue
-            result[key] = (
-                self._lenient(item, record.additional, f"{path}.{key}", issues)
-                if record.additional is not None
-                else item
-            )
+            if key not in consumed:
+                result[key] = (
+                    self._lenient(item, record.additional, f"{path}.{key}", issues)
+                    if record.additional is not None
+                    else item
+                )
         return result
 
     def _convert(self, value: Any, expr: TypeExpr, path: str, *, encode: bool) -> Any:

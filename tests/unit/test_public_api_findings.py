@@ -307,6 +307,8 @@ def test_codec_lenient_decode_keeps_data_and_collects_issues() -> None:
     ]
     assert codec.decode_lenient({"id": 1}, Ref("Repo"))[1][0].path == "$.full_name"
     assert codec.decode_lenient("x", ListOf(Ref(label)))[1][0].path == "$"
+    extra = codec.decode_lenient({"id": 1, "full_name": "a/b", "fork": True}, Ref("Repo"))
+    assert extra == ({"id": 1, "full_name": "a/b", "fork": True}, [])
 
 
 def _hub_client(mode: str) -> RuntimeClient:
@@ -378,6 +380,20 @@ def test_cli_caps_the_number_of_reported_mismatches() -> None:
     ] + [warnings.WarningMessage("other", UserWarning, "f", 1)]
     lines = _mismatch_lines("hub", caught)
     assert len(lines) == 6 and lines[-1] == "hub: warning: 3 more"
+
+
+def test_cli_reraises_unrelated_warnings() -> None:
+    from types import SimpleNamespace
+
+    caught = [
+        warnings.WarningMessage("bad", ResponseValidationWarning, "f", 1),
+        warnings.WarningMessage("other", DeprecationWarning, "f", 1),
+    ]
+    err = io.StringIO()
+    with pytest.warns(DeprecationWarning, match="other"):
+        stub: Any = SimpleNamespace(program="hub")
+        CliRuntime._report_mismatches(stub, caught, err)
+    assert "bad" in err.getvalue() and "other" not in err.getvalue()
 
 
 # ------------------------------------------------------------- #6 auth transform
@@ -482,6 +498,20 @@ def test_graphql_strict_schema_errors_point_to_lenient_mode() -> None:
     assert result.api is None
     message = next(d.message for d in result.diagnostics if d.code == "graphql.invalid")
     assert "strict: false" in message
+
+
+def test_graphql_strict_reports_schema_validation_problems() -> None:
+    sdl = (
+        "type Query { a: I b: J }\n"
+        "interface I { x: Int }\ninterface J { y: Int }\n"
+        "type T implements I & J { z: Int }\n"
+    )
+    result = GraphQLSource().parse(
+        SourceInput(SourceDocument("s.graphql", sdl.encode()), (), {"strict": True})
+    )
+    assert result.api is None
+    message = next(d.message for d in result.diagnostics if d.code == "graphql.invalid")
+    assert "(+1 more)" in message and "strict: false" in message
 
 
 def test_graphql_lenient_builds_invalid_production_schemas() -> None:
