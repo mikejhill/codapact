@@ -94,3 +94,16 @@ class Surface:
 
     name: Name
     root: Namespace
+
+
+def required_sources(method: Method) -> frozenset[str]:
+    """Flattened record params that must be sent even when every field is omitted.
+
+    A record is sent when any field was given, or when one of its fields is
+    required (so the runtime reports which field is missing). A required record
+    whose fields are all optional is not sent empty: the runtime reports the
+    record as missing instead, naming the options (see the YNAB contract tests).
+    """
+    return frozenset(
+        p.source.param for p in method.params if p.source.field is not None and p.required
+    )

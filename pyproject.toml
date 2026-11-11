@@ -25,12 +25,24 @@ build-backend = "uv_build"
 source-include = ["tests/**", "docs/**", "examples/**", "scripts/**", "uv.lock", "CHANGELOG.md", "release-please-config.json", ".release-please-manifest.json", ".github/**"]
 
 [dependency-groups]
-dev = ["pytest>=9", "pytest-cov>=7", "hypothesis>=6", "ruff>=0.14", "ty>=0.0.1", "poethepoet>=0.37", "build>=1.3", "twine>=6"]
+mutation = ["mutmut>=3.8.0,<4; sys_platform != 'win32'"]
+dev = [
+    "pytest>=9",
+    "pytest-cov>=7",
+    "hypothesis>=6",
+    "ruff>=0.14",
+    "ty>=0.0.1",
+    "poethepoet>=0.37",
+    "build>=1.3",
+    "twine>=6",
+    "hypothesis-jsonschema>=0.23.2",
+    "diff-cover>=11.0.1",
+]
 
 [tool.ruff]
 target-version = "py313"
 line-length = 100
-extend-exclude = [".tmp", ".venv*", "dist"]
+extend-exclude = [".tmp", ".venv*", "dist", "mutants", "mutation-report"]
 
 [tool.ty.src]
 include = ["src", "tests", "scripts"]
@@ -56,14 +68,32 @@ convention = "google"
 testpaths = ["tests"]
 addopts = ["--strict-markers", "--strict-config", "-ra", "--import-mode=importlib"]
 xfail_strict = true
+markers = [
+    "unit: fast, isolated tests of one layer (tests/unit)",
+    "integration: layers composed in-process, including generated code (tests/integration)",
+    "e2e: the installed codapact CLI and generated CLIs as subprocesses (tests/e2e)",
+    "perf: scaling and throughput budgets (tests/perf)",
+    "live: calls real public APIs over the network; opt in with CODAPACT_LIVE=1",
+]
 
 [tool.coverage.run]
 source = ["codapact"]
 branch = true
+# Count code run by subprocesses too (the e2e suite runs `python -m codapact`).
+patch = ["subprocess"]
+parallel = true
 
 [tool.coverage.report]
-fail_under = 90
+fail_under = 95
 show_missing = true
+
+[tool.mutmut]
+source_paths = ["src/codapact/"]
+# Mutants are judged by the fast suites; e2e and perf add minutes per mutant, not signal.
+pytest_add_cli_args_test_selection = ["tests/unit/", "tests/integration/"]
+pytest_add_cli_args = ["-p", "no:cacheprovider", "-x", "-q"]
+also_copy = ["examples/", "scripts/", "tests/"]
+mutate_only_covered_lines = true
 
 [tool.poe.tasks]
 format = "ruff format ."
@@ -71,7 +101,18 @@ format-check = "ruff format --check ."
 lint = "ruff check ."
 source-lint = "ruff check src --extend-select ANN,D,FA,T20,G,PGH --ignore ANN401"
 typecheck = "ty check"
-test = "pytest --cov --cov-report=term-missing"
+# Default gate: unit + integration + e2e with branch coverage (perf and live run separately).
+test = "pytest -m 'not perf' --cov --cov-report=term-missing --cov-report=xml"
+test-unit = "pytest -m unit"
+test-integration = "pytest -m integration"
+test-e2e = "pytest -m e2e"
+test-perf = "pytest -m perf"
+test-live = { cmd = "pytest -m live", env = { CODAPACT_LIVE = "1" } }
+test-deep = { cmd = "pytest -m integration", env = { HYPOTHESIS_PROFILE = "deep", CODAPACT_CODEGEN_EXAMPLES = "300" } }
+# Every changed line on this branch must be covered (CI compares against origin/main).
+diff-coverage = "diff-cover coverage.xml --compare-branch=origin/main --fail-under=100"
+mutation = "mutmut run --max-children 4"
+mutation-score = { shell = "mkdir -p mutation-report && mutmut results --all true > mutation-report/results.txt && python scripts/mutation_score.py --results mutation-report/results.txt" }
 lint-fix = "ruff check . --fix"
 source-lint-fix = "ruff check src --extend-select ANN,D,FA,T20,G,PGH --ignore ANN401 --fix"
 fix = ["format", "lint-fix", "source-lint-fix"]

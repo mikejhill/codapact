@@ -23,9 +23,13 @@ jobs:
     name: Python ${{ matrix.python }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
         python: ['3.13', '3.14']
+    env:
+      # TypeScript runtime tests must run, not skip, in CI.
+      CODAPACT_REQUIRE_NODE: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,20 +38,111 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           enable-cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Install TypeScript compiler
+        shell: bash
+        run: |
+          npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/tools" typescript@6.0.2
+          echo "$RUNNER_TEMP/tools/node_modules/.bin" >> "$GITHUB_PATH"
       - run: uv sync --locked
       - run: uv run poe check
       - run: uv build
       - run: uv run twine check --strict dist/*
+
+  coverage:
+    name: Coverage of changed lines
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      CODAPACT_REQUIRE_NODE: '1'
+      HYPOTHESIS_PROFILE: ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - run: |
+          npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/tools" typescript@6.0.2
+          echo "$RUNNER_TEMP/tools/node_modules/.bin" >> "$GITHUB_PATH"
+      - run: uv sync --locked
+      - name: Full suite with more property examples
+        run: uv run poe test
+      - name: Every changed source line is covered
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          uv run diff-cover coverage.xml --compare-branch="origin/$BASE_REF" --fail-under=100 \
+            --markdown-report diff-coverage.md
+          cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
+
+  prism:
+    name: E2E against Prism mock (PokeAPI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - run: npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/tools" @stoplight/prism-cli@5.16.0
+      - run: uv sync --locked
+      - name: Start Prism (validates every request against the pinned spec)
+        run: |
+          "$RUNNER_TEMP/tools/node_modules/.bin/prism" mock --errors -p 4010 \
+            tests/fixtures/corpus/pokeapi/openapi.yml > "$RUNNER_TEMP/prism.log" 2>&1 &
+          for _ in $(seq 60); do curl -s -o /dev/null http://127.0.0.1:4010/ && break; sleep 1; done
+      - run: uv run pytest tests/e2e/test_public_apis.py -v
+        env:
+          CODAPACT_PRISM_URL: http://127.0.0.1:4010
+      - if: always()
+        run: cat "$RUNNER_TEMP/prism.log"
+
+  perf:
+    name: Performance budgets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - run: uv sync --locked
+      - run: uv run poe test-perf
+        env:
+          CODAPACT_PERF_REPORT: perf-report.json
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: perf-report
+          path: perf-report.json
+          if-no-files-found: warn
+          retention-days: 30
+
   passed:
     name: CI passed
     if: always()
-    needs: [check, title]
+    needs: [check, coverage, prism, perf, title]
     runs-on: ubuntu-latest
     steps:
       - name: Require all checks
         env:
-          RESULT: ${{ needs.check.result }}
-          TITLE_RESULT: ${{ needs.title.result }}
+          RESULTS: ${{ toJSON(needs) }}
         run: |
-          test "$RESULT" = success
-          test "$TITLE_RESULT" = success || test "$TITLE_RESULT" = skipped
+          echo "$RESULTS" | jq -e 'to_entries | all(.value.result == "success" or .value.result == "skipped")'

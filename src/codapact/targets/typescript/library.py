@@ -37,7 +37,7 @@ from codapact.model.types import (
     Union,
 )
 from codapact.plugins.protocol import GeneratedFile, GenerationRequest, GenerationResponse
-from codapact.surface.model import Method, Namespace
+from codapact.surface.model import Method, Namespace, required_sources
 
 RESERVED = frozenset(
     "break case catch class const continue debugger default delete do else enum export extends "
@@ -163,6 +163,7 @@ def _operation_spec(api: Api, operation: Operation) -> dict[str, Any]:
         "name": operation.name,
         "auth": [list(a) for a in operation.auth.alternatives],
         "idempotent": operation.idempotent,
+        "required": [p.name for p in operation.params if p.required],
     }
     paging = operation.pagination
     if isinstance(paging, CursorPagination):
@@ -245,7 +246,7 @@ def render_client(api: Api, root: Namespace) -> str:
     """Render ``client.ts``."""
     out = [
         "// Client generated from the library surface. Do not edit.",
-        'import { Runtime, type ClientOptions } from "./runtime.ts";',
+        'import { Runtime, present, type ClientOptions } from "./runtime.ts";',
         'import { DEFAULT_BASE_URL, OPERATIONS, SCHEMES } from "./operations.ts";',
         'import type * as T from "./types.ts";\n',
     ]
@@ -321,8 +322,10 @@ def _method(api: Api, method: Method) -> str:
             )
     for (source, wire), items in wrapped.items():
         nested.setdefault(source, []).append(f"{json.dumps(wire)}: {{ {', '.join(items)} }}")
+    required = required_sources(method)
     for source, items in nested.items():
-        flat.append(f"{json.dumps(source)}: {{ {', '.join(items)} }}")
+        record = f"{{ {', '.join(items)} }}"
+        flat.append(f"{json.dumps(source)}: present({record}, {json.dumps(source in required)})")
     args = "{ " + ", ".join(flat) + " }" if flat else "{}"
     op = f"OPERATIONS[{json.dumps(method.operation)}]"
     doc = _comment(method.summary or method.docs, "  ")
@@ -370,7 +373,7 @@ def _inner_wire(api: Api, method: Method, param: str, field: str, subfield: str)
 def _index() -> str:
     return (
         'export { Client } from "./client.ts";\n'
-        "export { ApiError, AuthError, GraphQLResponseError, type ClientOptions } "
+        "export { ApiError, AuthError, GraphQLResponseError, ValidationError, type ClientOptions } "
         'from "./runtime.ts";\n'
         'export type * from "./types.ts";\n'
     )

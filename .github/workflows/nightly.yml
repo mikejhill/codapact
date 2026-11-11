@@ -1,0 +1,46 @@
+name: Nightly
+# Slow and networked suites that should not gate every PR:
+# live public APIs, deep property-based fuzzing, and the full TypeScript fuzz.
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live:
+    name: Live public APIs (PokeAPI, Countries)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - run: uv sync --locked
+      - run: uv run poe test-live -v
+  deep:
+    name: Deep property-based fuzzing
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CODAPACT_REQUIRE_NODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - run: |
+          npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/tools" typescript@6.0.2
+          echo "$RUNNER_TEMP/tools/node_modules/.bin" >> "$GITHUB_PATH"
+      - run: uv sync --locked
+      - run: uv run poe test-deep

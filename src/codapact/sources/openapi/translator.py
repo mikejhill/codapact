@@ -139,6 +139,20 @@ class _Translator:
             node = self.pointer(ref, where)
         return node
 
+    def distinct(self, name: str, taken: set[str], where: str) -> str:
+        """Claim ``name`` in ``taken``, suffixing it when two wire names normalize alike."""
+        unique, counter = name, 2
+        while unique in taken:
+            unique, counter = f"{name}_{counter}", counter + 1
+        if unique != name:
+            self.diagnostics.warning(
+                "openapi.name-collision",
+                f"{name!r} is already used here; renamed to {unique!r}",
+                where,
+            )
+        taken.add(unique)
+        return unique
+
     def unique_name(self, base: str) -> str:
         name = base
         counter = 2
@@ -297,7 +311,7 @@ class _Translator:
             param_name = _identifier(wire)
             if param_name in taken:
                 param_name = f"{location}_{param_name}"
-            taken.add(param_name)
+            param_name = self.distinct(param_name, taken, pwhere)
             schema = parameter.get("schema", {})
             expr = self.expr(schema, type_base + Name.parse(param_name).pascal, pwhere)
             required = bool(parameter.get("required", location == "path"))
@@ -327,6 +341,7 @@ class _Translator:
                 self.unsupported("request bodies must be JSON", f"{where}.requestBody")
             request_media = media
             body_name = "body" if "body" not in taken else "request_body"
+            body_name = self.distinct(body_name, taken, f"{where}.requestBody")
             params.append(
                 m.Param(
                     body_name,
@@ -557,9 +572,9 @@ class _Translator:
         properties = schema.get("properties") or {}
         required = set(schema.get("required", []))
         fields = []
-        used: set[str] = set()
+        taken: set[str] = set()
         for wire, prop in properties.items():
-            field_name = _unique_identifier(str(wire), used)
+            field_name = self.distinct(_identifier(wire), taken, f"{where}.properties.{wire}")
             prop_hint = name + Name.parse(field_name).pascal
             fields.append(
                 t.Field(
@@ -621,7 +636,7 @@ class _Translator:
                 # Inline object members merge directly; they never become public types.
                 self.check_keywords(part, f"{where}.allOf[{index}]")
                 for f in self.fields(part, name, f"{where}.allOf[{index}]"):
-                    fields[f.name] = f
+                    fields[f.wire] = f
                 continue
             expr = self.structural(part, f"{name}Part{index}", where, named=False)
             record = self.resolve_record(expr)
@@ -629,8 +644,14 @@ class _Translator:
                 self.unsupported("allOf members must all be objects", where)
                 raise AssertionError  # pragma: no cover - unsupported always raises
             for f in record.fields:
-                fields[f.name] = f
-        by_wire = {f.wire: key for key, f in fields.items()}
+                # Members are merged by wire name; a later member overrides an earlier one.
+                fields[f.wire] = f
+        taken: set[str] = set()
+        for wire, f in fields.items():
+            unique = self.distinct(f.name, taken, f"{where}.allOf.{wire}")
+            if unique != f.name:
+                fields[wire] = dataclasses.replace(f, name=unique, wire_name=wire)
+        by_wire = {wire: wire for wire in fields}
         for wire in sorted(overlay_required):
             if wire not in by_wire:
                 self.unsupported(f"allOf requires {wire!r}, which no member declares", where)
@@ -777,16 +798,6 @@ def _identifier(raw: str) -> str:
     if sign:
         return f"{sign}_{name}"
     return f"n{name}" if name[0].isdigit() else name
-
-
-def _unique_identifier(raw: str, used: set[str]) -> str:
-    """Return ``_identifier(raw)``, suffixed with ``_2``, ``_3``… if already ``used``."""
-    base = _identifier(raw)
-    name, index = base, 2
-    while name in used:
-        name, index = f"{base}_{index}", index + 1
-    used.add(name)
-    return name
 
 
 def _derive_operation_name(method: str, path: str) -> str:

@@ -22,7 +22,7 @@ from codapact.model.api import (
     ParamLocation,
 )
 from codapact.model.types import ListOf, Primitive, ScalarKind
-from codapact.runtime import ApiError, RuntimeClient
+from codapact.runtime import ApiError, RuntimeClient, ValidationError
 from codapact.runtime.cli import CliRuntime, integer, json_value, number, render
 from tests.support import FakeTransport, json_response
 
@@ -37,6 +37,7 @@ def api() -> Api:
         Param("flag", Primitive(ScalarKind.BOOLEAN), required=False),
         Param("trace", S, required=False),
         Param("session", S, required=False),
+        Param("langs", LIST, required=False),
     )
     binding = HttpBinding(
         "GET",
@@ -47,6 +48,7 @@ def api() -> Api:
             HttpParam("flag", ParamLocation.QUERY, "flag"),
             HttpParam("trace", ParamLocation.HEADER, "X-Trace"),
             HttpParam("session", ParamLocation.COOKIE, "sid"),
+            HttpParam("langs", ParamLocation.HEADER, "Accept-Language"),
         ),
         (
             HttpResponse("200", "result", "text/plain"),
@@ -87,9 +89,26 @@ def test_param_placement() -> None:
 
 
 def test_header_control_characters_rejected() -> None:
-    c, _ = client(lambda r: Wire(200, {}, b""))
-    with pytest.raises(ValueError, match="control"):
+    c, transport = client(lambda r: Wire(200, {}, b""))
+    # A ValidationError (CLI exit 2) naming the parameter, not a bare ValueError traceback.
+    with pytest.raises(ValidationError, match=r"list_things\.trace: .*control") as caught:
         c.call("list_things", {"trace": "a\nb"})
+    assert caught.value.path == "list_things.trace"
+    assert transport.requests == []
+
+
+@pytest.mark.parametrize("value", ["s; admin=1", "a b", 'a"b', "a,b", "a\\b"])
+def test_cookie_values_cannot_inject_cookies(value: str) -> None:
+    c, transport = client(lambda r: Wire(200, {}, b""))
+    with pytest.raises(ValidationError, match="list_things.session: cookie"):
+        c.call("list_things", {"session": value})
+    assert transport.requests == []
+
+
+def test_header_arrays_use_simple_style() -> None:
+    c, transport = client(lambda r: Wire(200, {"Content-Type": "text/plain"}, b"ok"))
+    c.call("list_things", {"langs": ["en", "fr"]})
+    assert transport.requests[0].headers["Accept-Language"] == "en,fr"
 
 
 def test_outcomes() -> None:
