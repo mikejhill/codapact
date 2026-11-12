@@ -2,6 +2,18 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.5.0](https://github.com/mikejhill/codapact/compare/v0.4.0...v0.5.0) (2026-11-12)
+
+
+### Features
+
+* **cli:** pick unwraps envelopes; keyring for generated CLIs ([#32](https://github.com/mikejhill/codapact/issues/32)) ([f1c5104](https://github.com/mikejhill/codapact/commit/f1c51040a9bd5c21aa3e634955f2b5c0b7a4a6a1))
+
+
+### Bug Fixes
+
+* **e2e:** fill a required body whose fields are all optional in dry-run cases ([#31](https://github.com/mikejhill/codapact/issues/31)) ([c9a4ebb](https://github.com/mikejhill/codapact/commit/c9a4ebbad4338443689c0bf732c4b1e4cb266826))
+
 ## [0.4.0](https://github.com/mikejhill/codapact/compare/v0.3.0...v0.4.0) (2026-11-12)
 
 
