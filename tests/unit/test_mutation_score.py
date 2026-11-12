@@ -46,6 +46,24 @@ def test_count_filters_by_prefix() -> None:
     assert mutation_score.count(RESULTS, "codapact.model.") == {"not_checked": 1, "no_tests": 1}
 
 
+def test_count_filters_by_pattern() -> None:
+    assert mutation_score.count(RESULTS, patterns=("codapact.core.*",)) == {
+        "killed": 4,
+        "survived": 1,
+    }
+    # Patterns match the way ``mutmut run`` selects mutants, character classes included.
+    assert mutation_score.count(RESULTS, patterns=("codapact.core.a__mutmut_[!5]",)) == {
+        "killed": 4
+    }
+    both = ("codapact.core.a__mutmut_5", "codapact.model.*")
+    assert mutation_score.count(RESULTS, patterns=both) == {
+        "survived": 1,
+        "not_checked": 1,
+        "no_tests": 1,
+    }
+    assert mutation_score.count(RESULTS, "codapact.model.", ("codapact.core.*",)) == {}
+
+
 def test_main_writes_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     stats = tmp_path / "results.txt"
     stats.write_text(RESULTS, "utf-8")
@@ -55,6 +73,10 @@ def test_main_writes_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert mutation_score.main([*core, "--floor", "80"]) == 0
     assert "80.0%" in summary.read_text("utf-8")
     assert mutation_score.main([*core, "--floor", "81"]) == 1
+    pattern = ["--results", str(stats), "--pattern", "codapact.core.*"]
+    assert mutation_score.main([*pattern, "--floor", "80"]) == 0
+    assert "Mutation score: codapact.core.*" in summary.read_text("utf-8")
+    assert mutation_score.main([*pattern, "--floor", "81"]) == 1
     # Unchecked mutants in the shard make the run incomplete.
     assert mutation_score.main(["--results", str(stats), "--floor", "0"]) == 1
     assert mutation_score.main(["--results", str(tmp_path / "missing.txt")]) == 1
