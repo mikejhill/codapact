@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, override
 
@@ -465,8 +466,9 @@ def test_dig_and_subset() -> None:
 
 def test_real_invoke_runs_the_package(tmp_path: Path) -> None:
     suite = Suite({**SUITE, "package": "codapact"}, {})
-    result = suite.invoke(
-        ["--version"], {"PATH": "", "PYTHONPATH": str(Path(selftest.__file__).parents[2])}
-    )
+    environ = {"PATH": "", "PYTHONPATH": str(Path(selftest.__file__).parents[2])}
+    # Windows processes need SYSTEMROOT to initialise sockets (asyncio imports them).
+    environ.update({k: v for k, v in os.environ.items() if k.upper() == "SYSTEMROOT"})
+    result = suite.invoke(["--version"], environ)
     assert result.code == 0 and result.argv == ("zoo", "--version")
     assert "exit 0" in result.describe()

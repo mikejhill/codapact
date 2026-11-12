@@ -45,6 +45,7 @@ from codapact.runtime.credentials import (
     describe_source,
     load_plugin,
     scheme_settings,
+    split_command,
 )
 from codapact.runtime.errors import AuthError
 from codapact.runtime.oauth import ClientAuth, MemoryTokenStore, OAuth2, Token, TokenEndpoint
@@ -181,6 +182,12 @@ def test_command_auth() -> None:
     assert command("").credential(BEARER) is None
     assert command("get tok").credential(CUSTOM) is None
     assert command("x").hint(CUSTOM) == ""
+
+
+def test_split_command() -> None:
+    assert split_command("op read 'a b' c\\ d", windows=False) == ["op", "read", "a b", "c d"]
+    windows = split_command("C:\\Py\\python.exe -c \"print(1)\" 'x y'", windows=True)
+    assert windows == [r"C:\Py\python.exe", "-c", "print(1)", "x y"]
 
 
 def test_command_runner(monkeypatch: pytest.MonkeyPatch) -> None:

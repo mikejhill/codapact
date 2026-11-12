@@ -15,6 +15,7 @@ Resolution order for a generated CLI (first hit wins):
 from __future__ import annotations
 
 import importlib
+import os
 import shlex
 import subprocess
 from collections.abc import Callable, Mapping
@@ -70,7 +71,7 @@ class CommandAuth:
         if not command:
             return None
         if scheme.name not in self._cache:
-            output = (self.run or _run)(shlex.split(command))
+            output = (self.run or _run)(split_command(command))
             line = output.strip().splitlines()[0].strip() if output.strip() else ""
             if not line:
                 raise AuthError(f"{self.variable(scheme)} printed nothing")
@@ -82,6 +83,18 @@ class CommandAuth:
             else:
                 self._cache[scheme.name] = Credential(line)
         return self._cache[scheme.name]
+
+
+def split_command(command: str, *, windows: bool = os.name == "nt") -> list[str]:
+    """Split a command line into argv without a shell.
+
+    POSIX rules apply except on Windows, where backslashes are path separators:
+    there, quotes (single or double) group words and are removed, nothing else.
+    """
+    if not windows:
+        return shlex.split(command)
+    words = shlex.split(command, posix=False)
+    return [w[1:-1] if len(w) > 1 and w[0] == w[-1] and w[0] in "'\"" else w for w in words]
 
 
 def _run(argv: list[str]) -> str:
@@ -314,4 +327,5 @@ __all__ = [
     "describe_source",
     "load_plugin",
     "scheme_settings",
+    "split_command",
 ]
