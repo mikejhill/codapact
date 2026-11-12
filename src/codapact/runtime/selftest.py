@@ -321,7 +321,7 @@ def _check_placement(
     elif kind == "basic":
         value = headers.get("authorization", "")
         _check(value.startswith("Basic "), result, f"{name}: no basic Authorization header")
-    elif kind == "api_key":
+    else:  # api_key; custom schemes are never listed in a dry-run case
         wire = str(scheme.get("wire") or name)
         where = scheme.get("location") or "header"
         if where == "query":

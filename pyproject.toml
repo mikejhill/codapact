@@ -86,6 +86,8 @@ parallel = true
 [tool.coverage.report]
 fail_under = 95
 show_missing = true
+# Protocol and abstract stubs never run.
+exclude_also = ["^\\s*\\.\\.\\.$", "raise NotImplementedError"]
 
 [tool.mutmut]
 source_paths = ["src/codapact/"]

@@ -22,7 +22,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from codapact.commands.model import Arg, ArgKind, Command, CommandTree
-from codapact.core.errors import ConfigError
+from codapact.core.errors import ConfigError, expect
 from codapact.model.api import Api, AuthKind, GraphQLBinding, HttpBinding, Operation
 from codapact.model.types import (
     Enum,
@@ -238,9 +238,10 @@ def _dry_run(api: Api, operation: Operation, command: Command, words: list[str])
     if http is not None:
         case["method"] = http.method.upper()
         case["path"] = _path_pattern(http.path)
-    elif graphql is not None:
+    else:
+        expect(graphql, "a protocol binding")
         case["method"] = "POST"
-        case["graphql"] = graphql.operation_name
+        case["graphql"] = graphql.operation_name if graphql is not None else ""
     first = operation.auth.alternatives[0] if operation.auth.alternatives else ()
     case["auth"] = [name for name in first if api.scheme(name).kind is not AuthKind.CUSTOM]
     return case

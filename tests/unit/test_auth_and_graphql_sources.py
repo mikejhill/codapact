@@ -75,6 +75,18 @@ def test_graphql_auth_options(auth: Any, kind: AuthKind, wire: str | None) -> No
 
 def test_graphql_auth_option_rejected() -> None:
     rejected(graphql(SDL, auth="digest"), "option 'auth'")
+    rejected(graphql(SDL, auth={"schemes": {"x": "digest"}}), "option 'auth': auth scheme 'x'")
+
+
+def test_graphql_auth_option_names_schemes() -> None:
+    sso = {"oauth2": {"client_credentials": {"token_url": "https://idp/token"}}}
+    api = graphql(SDL, auth={"schemes": {"sso": sso, "sig": {"custom": "HMAC"}}}).api
+    assert api is not None
+    assert [(s.name, s.kind) for s in api.auth_schemes] == [
+        ("sso", AuthKind.OAUTH2),
+        ("sig", AuthKind.CUSTOM),
+    ]
+    assert api.operations[0].auth.alternatives == (("sso",), ("sig",))
 
 
 def capture(api: Any, auth: StaticAuth, op: str, args: dict[str, Any]) -> HttpRequest:

@@ -48,7 +48,8 @@ Notify = Callable[[str], None]
 
 
 def _stderr(message: str) -> None:
-    print(message, file=sys.stderr, flush=True)
+    sys.stderr.write(message + "\n")
+    sys.stderr.flush()
 
 
 # ---------------------------------------------------------------- tokens
@@ -222,8 +223,10 @@ class KeyringTokenStore:
     def _keyring(self) -> Any:
         if self.backend is not None:
             return self.backend
-        import keyring  # type: ignore[import-not-found]  # noqa: PLC0415
-
+        try:
+            import keyring  # type: ignore[import-not-found]  # noqa: PLC0415
+        except ImportError:
+            raise AuthError("the keyring credential store needs the 'keyring' package") from None
         return keyring
 
     def load(self, key: str) -> dict[str, Any] | None:
