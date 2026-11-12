@@ -19,6 +19,19 @@ from codapact import __version__
 from codapact.core.errors import CodapactError
 from codapact.core.net import HttpRequest, SafeHttpClient, validate_url
 from codapact.model.api import Api, AuthKind
+from codapact.model.types import (
+    Enum,
+    ListOf,
+    MapOf,
+    Nullable,
+    Primitive,
+    Record,
+    Ref,
+    ScalarKind,
+    TypeDef,
+    TypeExpr,
+    Union,
+)
 from codapact.runtime.auth import EnvAuth
 
 SHELLS = ("bash", "zsh", "fish", "powershell")
@@ -89,8 +102,14 @@ def _argument(action: argparse.Action, positional: argparse.Action | None) -> di
     return entry
 
 
-def describe_command(program: str, leaf: Leaf) -> dict[str, Any]:
-    """Return the machine-readable description of one command."""
+def describe_command(
+    program: str, leaf: Leaf, *, api: Api | None = None, schema: bool = False
+) -> dict[str, Any]:
+    """Return the machine-readable description of one command.
+
+    With ``schema`` and the API model, the entry carries a JSON Schema of the
+    command's output.
+    """
     meta: Mapping[str, Any] = leaf.parser.get_default("meta") or {}
     positionals = {a.dest: a for a in leaf.parser._actions if not a.option_strings}
     arguments = [
@@ -121,7 +140,42 @@ def describe_command(program: str, leaf: Leaf) -> dict[str, Any]:
         entry["description"] = "\n\n".join(" ".join(p.split()) for p in paragraphs)
     if extras:
         entry["options"] = extras
+    if meta.get("requires_one_of"):
+        entry["requires_one_of"] = [list(group) for group in meta["requires_one_of"]]
+    operation = meta.get("operation")
+    if schema and api is not None and operation:
+        sources = {
+            flag: source for source, flag in (leaf.parser.get_default("flags") or {}).items()
+        }
+        for argument in arguments:
+            source = sources.get(argument["flag"])
+            if argument["type"] == "json" and source:
+                found = _source_type(api, str(operation), source)
+                if found is not None:
+                    argument["schema"] = json_schema(api, found, inputs=True)
+        result = api.operation(str(operation)).result
+        entry["output_schema"] = json_schema(api, result) if result is not None else None
+        if entry["paginated"]:
+            entry["output_note"] = (
+                "with --all the output is the list of items across pages, not this object"
+            )
     del program
+    return entry
+
+
+def brief_command(leaf: Leaf) -> dict[str, Any]:
+    """Return the short form of one command: its name, summary, and usage line."""
+    meta: Mapping[str, Any] = leaf.parser.get_default("meta") or {}
+    entry: dict[str, Any] = {
+        "command": " ".join(leaf.words),
+        "summary": leaf.help,
+        "usage": leaf.parser.format_usage().removeprefix("usage: ").strip(),
+    }
+    traits = [
+        name for name in ("read_only", "destructive", "paginated", "deprecated") if meta.get(name)
+    ]
+    if traits:
+        entry["traits"] = traits
     return entry
 
 
@@ -129,18 +183,155 @@ def describe(
     parser: argparse.ArgumentParser,
     words: Sequence[str],
     header: dict[str, Any],
+    *,
+    api: Api | None = None,
+    brief: bool = False,
+    schemas: bool = False,
 ) -> dict[str, Any] | list[dict[str, Any]]:
-    """Describe every command, or the commands under ``words``."""
+    """Describe every command, or the commands under ``words``.
+
+    ``brief`` keeps only names, summaries, and usage lines. Output schemas are
+    included with ``schemas``, or when ``words`` names exactly one command.
+    """
     prefix = tuple(words)
     found = [leaf for leaf in leaves(parser) if leaf.words[: len(prefix)] == prefix]
     if prefix and not found:
         raise CodapactError(f"no command matches {' '.join(prefix)!r}")
-    commands = [describe_command(parser.prog, leaf) for leaf in found]
-    if prefix and len(commands) == 1 and commands[0]["command"] == " ".join(prefix):
+    single = bool(prefix) and len(found) == 1 and found[0].words == prefix
+    if brief:
+        commands = [brief_command(leaf) for leaf in found]
+    else:
+        schema = schemas or single
+        commands = [describe_command(parser.prog, leaf, api=api, schema=schema) for leaf in found]
+    if single:
         return commands[0]
     if prefix:
         return commands
     return {**header, "commands": commands}
+
+
+# ---------------------------------------------------------------- output schema
+
+
+def _source_type(api: Api, operation: str, source: str) -> TypeExpr | None:
+    """Return the model type behind an argument source path (``body.items``)."""
+    head, *rest = source.split(".")
+    found: TypeExpr | None = next(
+        (p.type for p in api.operation(operation).params if p.name == head), None
+    )
+    types = {definition.name: definition for definition in api.types}
+    for part in rest:
+        while isinstance(found, Nullable):
+            found = found.inner
+        record = types.get(found.name) if isinstance(found, Ref) else None
+        member = (
+            next((f for f in record.fields if f.name == part), None)
+            if isinstance(record, Record)
+            else None
+        )
+        if member is None:
+            return None
+        found = member.type
+    return found
+
+
+_SCALARS: dict[ScalarKind, dict[str, Any]] = {
+    ScalarKind.STRING: {"type": "string"},
+    ScalarKind.INTEGER: {"type": "integer"},
+    ScalarKind.FLOAT: {"type": "number"},
+    ScalarKind.BOOLEAN: {"type": "boolean"},
+    ScalarKind.BYTES: {"type": "string"},
+    ScalarKind.DATE: {"type": "string", "format": "date"},
+    ScalarKind.DATETIME: {"type": "string", "format": "date-time"},
+    ScalarKind.ANY: {},
+}
+_LIMITS = {
+    "minimum": "minimum",
+    "maximum": "maximum",
+    "min_length": "minLength",
+    "max_length": "maxLength",
+    "pattern": "pattern",
+    "min_items": "minItems",
+    "max_items": "maxItems",
+}
+
+
+def json_schema(api: Api, expr: TypeExpr, *, inputs: bool = False) -> dict[str, Any]:
+    """Return a JSON Schema for values of ``expr`` as a generated CLI prints or takes them.
+
+    Record members use the library's field names. Named definitions go under
+    ``$defs`` so recursive types work. With ``inputs``, closed records forbid
+    unknown members, as the encoder does; outputs stay open, as the decoder is.
+    """
+    types = {definition.name: definition for definition in api.types}
+    defs: dict[str, Any] = {}
+
+    def limits(found: dict[str, Any], constraints: Any) -> dict[str, Any]:
+        for attribute, keyword in _LIMITS.items():
+            value = getattr(constraints, attribute, None)
+            if value is not None:
+                found[keyword] = value
+        return found
+
+    def define(name: str) -> None:
+        if name in defs or name not in types:
+            return
+        defs[name] = {}
+        defs[name] = definition(types[name])
+
+    def definition(found: TypeDef) -> dict[str, Any]:
+        body: dict[str, Any]
+        if isinstance(found, Record):
+            body = {
+                "type": "object",
+                "properties": {f.name: field_schema(f) for f in found.fields},
+            }
+            required = [f.name for f in found.fields if f.required]
+            if required:
+                body["required"] = required
+            if found.additional is not None:
+                body["additionalProperties"] = convert(found.additional)
+            elif inputs and found.closed:
+                body["additionalProperties"] = False
+        elif isinstance(found, Enum):
+            body = {"enum": [value.value for value in found.values]}
+        elif isinstance(found, Union):
+            body = {"anyOf": [convert(variant.type) for variant in found.variants]}
+        else:
+            body = convert(found.target)
+        if found.docs:
+            body["description"] = found.docs
+        return body
+
+    def field_schema(member: Any) -> dict[str, Any]:
+        body = convert(member.type)
+        if member.docs and "$ref" not in body:
+            body = {**body, "description": member.docs}
+        if member.deprecated:
+            body = {**body, "deprecated": True}
+        return body
+
+    def convert(node: TypeExpr) -> dict[str, Any]:
+        if isinstance(node, Primitive):
+            body = dict(_SCALARS[node.scalar])
+            if node.format and "format" not in body:
+                body["format"] = node.format
+            return limits(body, node.constraints)
+        if isinstance(node, Ref):
+            define(node.name)
+            return {"$ref": f"#/$defs/{node.name}"}
+        if isinstance(node, ListOf):
+            return limits({"type": "array", "items": convert(node.item)}, node.constraints)
+        if isinstance(node, MapOf):
+            return {"type": "object", "additionalProperties": convert(node.value)}
+        if isinstance(node, Nullable):
+            return {"anyOf": [convert(node.inner), {"type": "null"}]}
+        return {"const": node.value}
+
+    root = convert(expr)
+    if defs:
+        root = {**root, "$defs": defs}
+    return {"$schema": "https://json-schema.org/draft/2020-12/schema", **root}
 
 
 # ---------------------------------------------------------------- completion

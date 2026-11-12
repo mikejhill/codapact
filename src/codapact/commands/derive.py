@@ -117,7 +117,19 @@ def _command(api: Api, method: Method, path: tuple[Name, ...], diagnostics: Diag
         paginated=method.paging is not None,
         deprecated=method.deprecated,
         destructive=_destructive(api, method),
+        operation=method.operation,
+        requires_one_of=_one_of(api, method, args),
     )
+
+
+def _one_of(api: Api, method: Method, args: list[Arg]) -> tuple[tuple[str, ...], ...]:
+    """Return option groups standing for a required parameter none of whose fields is required."""
+    groups = []
+    for param in api.operation(method.operation).params:
+        members = [a for a in args if len(a.source) > 1 and a.source[0] == param.name]
+        if param.required and members and not any(a.required for a in members):
+            groups.append(tuple("--" + a.flag.kebab for a in members))
+    return tuple(groups)
 
 
 def _path_positions(api: Api, method: Method) -> dict[str, int]:

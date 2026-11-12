@@ -291,7 +291,10 @@ def _command_parser(
         "destructive": command.destructive,
         "paginated": command.paginated,
         "deprecated": command.deprecated,
+        "operation": command.operation,
     }
+    if command.requires_one_of:
+        meta["requires_one_of"] = [list(group) for group in command.requires_one_of]
     lines.append(
         f"    {var}.set_defaults(handler={_handler_name(command)}, flags={flags!r}, meta={meta!r})"
     )

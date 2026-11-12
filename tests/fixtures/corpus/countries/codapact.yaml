@@ -1,0 +1,12 @@
+# Countries GraphQL project. schema.graphql is a hand-written subset of the live
+# schema (countries.trevorblades.com), so CLI conformance tests run offline.
+version: 1
+source:
+  type: graphql
+  path: schema.graphql
+  documents: [operations.graphql]
+  options: {name: Countries, url: "https://countries.trevorblades.com/graphql"}
+cli: {program: countries}
+targets:
+  - {name: python, output: generated/python, options: {package: countries}}
+  - {name: python-cli, output: generated/python}

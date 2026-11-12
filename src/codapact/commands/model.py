@@ -56,6 +56,10 @@ class Command:
     paginated: bool = False
     deprecated: bool = False
     destructive: bool = False
+    operation: str = ""
+    """Name of the model operation the command calls."""
+    requires_one_of: tuple[tuple[str, ...], ...] = ()
+    """Option groups needing at least one member: a required body with no required field."""
 
 
 @dataclass(frozen=True, slots=True)

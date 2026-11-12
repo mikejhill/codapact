@@ -166,11 +166,16 @@ def test_dry_run_and_placeholders() -> None:
     raw = DryRun(HttpRequest("POST", "https://a.test", {"Authorization": "Basic abc"}, b"x=1"))
     assert raw.describe()["body"] == "x=1"
     assert raw.describe()["headers"]["Authorization"] == "Basic <masked>"
-    credential = PlaceholderAuth(EnvAuth("ACME", {})).credential(BASIC)
+    assert PlaceholderAuth(EnvAuth("ACME", {})).credential(BASIC) is None
+    credential = PlaceholderAuth(EnvAuth("ACME", {}), fill_all=True).credential(BASIC)
+    assert credential is not None
     assert (credential.username, credential.secret) == (
         "$ACME_LOGIN_USERNAME",
         "$ACME_LOGIN_PASSWORD",
     )
+    env = {"ACME_LOGIN_USERNAME": "u", "ACME_LOGIN_PASSWORD": "real"}
+    found = PlaceholderAuth(EnvAuth("ACME", env), env).credential(BASIC)
+    assert found is not None and found.secret == "$ACME_LOGIN_PASSWORD"  # noqa: S105
 
 
 def test_trace_masks_credentials() -> None:
@@ -392,3 +397,128 @@ def test_mask_hides_credentials_without_scheme(proxy: str, expected: str) -> Non
 def test_doctor_reports_malformed_proxy(proxy: str) -> None:
     check = cli_tools._proxy_check(proxy)
     assert check.status == "fail" and "pw" not in check.detail
+
+
+# ---------------------------------------------------------------- follow-up gaps
+
+
+def test_errors_name_the_command_typed() -> None:
+    from codapact.runtime.errors import ApiError, GraphQLResponseError
+
+    rt = runtime()
+    out, err = io.StringIO(), io.StringIO()
+
+    def fail(error: Exception):
+        def handler(client, args):
+            raise error
+
+        return handler
+
+    args = argparse.Namespace(error_format="text", command_words="pets get")
+    rt.run(args, lambda o: o, fail(ApiError("get_pet", 404, None, None)), stdout=out, stderr=err)
+    assert err.getvalue().startswith("acme: pets get failed with HTTP 404")
+    err = io.StringIO()
+    error = GraphQLResponseError("countries_on", [{"message": "boom"}], None)
+    rt.run(args, lambda o: o, fail(error), stdout=out, stderr=err)
+    assert err.getvalue().startswith("acme: pets get returned GraphQL errors: boom")
+    err = io.StringIO()
+    bare = argparse.Namespace(error_format="text")
+    rt.run(bare, lambda o: o, fail(ApiError("get_pet", 500, None, None)), stdout=out, stderr=err)
+    assert err.getvalue().startswith("acme: get_pet failed")
+
+
+def test_dry_run_leaves_unset_optional_auth_off() -> None:
+    from codapact.model.api import AuthRequirement
+    from codapact.runtime.auth import resolve_auth
+
+    bearer = AuthScheme("token", AuthKind.BEARER)
+    api = Api("Acme", "1", (), auth_schemes=(bearer,))
+    optional = AuthRequirement((("token",), ()))
+    required = AuthRequirement((("token",),))
+    unset = PlaceholderAuth(EnvAuth("ACME", {}), {})
+    assert resolve_auth(api, optional, unset).headers == {}
+    env = {"ACME_TOKEN": "real"}
+    shown = resolve_auth(api, optional, PlaceholderAuth(EnvAuth("ACME", env), env))
+    assert shown.headers == {"Authorization": "Bearer $ACME_TOKEN"}
+    every = PlaceholderAuth(EnvAuth("ACME", {}), {}, fill_all=True)
+    assert resolve_auth(api, required, every).headers == {"Authorization": "Bearer $ACME_TOKEN"}
+
+
+def test_dry_run_retries_with_placeholders_when_auth_is_missing() -> None:
+    from codapact.runtime.errors import AuthError
+
+    rt = runtime()
+    seen: list[bool] = []
+
+    def make(options):
+        seen.append(options["auth"].fill_all)
+        return options
+
+    def handler(client, args):
+        if not client["auth"].fill_all:
+            raise AuthError("no credentials configured for any of: token")
+        raise DryRun(HttpRequest("GET", "https://a.test/x", {"Authorization": "Bearer $T"}))
+
+    out, err = io.StringIO(), io.StringIO()
+    args = argparse.Namespace(error_format="text", dry_run=True)
+    assert rt.run(args, make, handler, stdout=out, stderr=err) == 0
+    assert seen == [False, True] and "Bearer $T" in out.getvalue()
+
+
+def test_json_schema_covers_every_type_form() -> None:
+    from codapact.model import types as t
+
+    pet = t.Record(
+        "Pet",
+        (
+            t.Field("id", t.Primitive(t.ScalarKind.INTEGER), docs="Pet id"),
+            t.Field("born", t.Primitive(t.ScalarKind.DATE), required=False),
+            t.Field("tags", t.ListOf(t.Primitive(t.ScalarKind.STRING), t.Constraints(max_items=3))),
+            t.Field("extra", t.MapOf(t.Primitive(t.ScalarKind.ANY)), deprecated=True),
+            t.Field("kind", t.Ref("Kind")),
+            t.Field("parent", t.Nullable(t.Ref("Pet"))),
+            t.Field("v", t.Literal(1)),
+            t.Field("u", t.Primitive(t.ScalarKind.STRING, "uuid")),
+        ),
+        docs="A pet",
+        additional=t.Primitive(t.ScalarKind.STRING),
+    )
+    kind = t.Enum("Kind", (t.EnumValue("CAT", "cat"),))
+    either = t.Union("Either", (t.Variant(t.Ref("Pet")), t.Variant(t.Ref("Name"))))
+    name = t.Alias("Name", t.Primitive(t.ScalarKind.STRING))
+    api = Api("A", "1", (), types=(pet, kind, either, name))
+    schema = cli_tools.json_schema(api, t.ListOf(t.Ref("Either")))
+    defs = schema["$defs"]
+    assert schema["items"] == {"$ref": "#/$defs/Either"}
+    assert defs["Pet"]["required"] == ["id", "tags", "extra", "kind", "parent", "v", "u"]
+    props = defs["Pet"]["properties"]
+    assert props["born"] == {"type": "string", "format": "date"}
+    assert props["tags"]["maxItems"] == 3 and props["extra"]["deprecated"] is True
+    assert props["parent"]["anyOf"][1] == {"type": "null"} and props["v"] == {"const": 1}
+    assert props["u"]["format"] == "uuid" and props["id"]["description"] == "Pet id"
+    assert defs["Kind"] == {"enum": ["cat"]} and defs["Name"] == {"type": "string"}
+    assert defs["Pet"]["additionalProperties"] == {"type": "string"}
+    assert cli_tools.json_schema(api, t.Ref("Missing"))["$ref"] == "#/$defs/Missing"
+
+
+def test_input_schemas_close_closed_records() -> None:
+    from codapact.model import types as t
+
+    shut = t.Record("Shut", (t.Field("a", t.Primitive(t.ScalarKind.STRING)),), closed=True)
+    api = Api("A", "1", (), types=(shut,))
+    assert "additionalProperties" not in cli_tools.json_schema(api, t.Ref("Shut"))["$defs"]["Shut"]
+    closed = cli_tools.json_schema(api, t.Ref("Shut"), inputs=True)["$defs"]["Shut"]
+    assert closed["additionalProperties"] is False
+
+
+def test_source_type_follows_nullable_records() -> None:
+    from codapact.model import types as t
+    from codapact.model.api import Param
+
+    inner = t.Record("Inner", (t.Field("items", t.ListOf(t.Primitive(t.ScalarKind.STRING))),))
+    body = t.Record("Body", (t.Field("inner", t.Nullable(t.Ref("Inner"))),))
+    op = Operation("make", OperationKind.MUTATION, (Param("body", t.Ref("Body")),), None)
+    api = Api("A", "1", (op,), types=(inner, body))
+    found = cli_tools._source_type(api, "make", "body.inner.items")
+    assert isinstance(found, t.ListOf)
+    assert cli_tools._source_type(api, "make", "body.missing") is None

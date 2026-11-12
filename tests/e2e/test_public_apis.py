@@ -127,7 +127,18 @@ def test_pokeapi_live(pokeapi_src: Path) -> None:
     items = cli.json("pokemon", "list", "--limit", "2", "--all", "--max-items", "5")
     assert len(items) == 5 and all({"name", "url"} <= set(i) for i in items)
     missing = cli("pokemon", "retrieve", "--id", "999999")
-    assert missing.returncode == 1 and "404" in missing.stderr
+    assert missing.returncode == 1 and "pokemon retrieve failed with HTTP 404" in missing.stderr
+    assert_live_conventions(cli, ["pokemon", "list", "--limit", "2", "--all", "--max-items", "3"])
+
+
+def assert_live_conventions(cli: Cli, listing: list[str]) -> None:
+    """Conventions that need the real server: doctor, tracing, and streaming."""
+    checks = {c["check"]: c for c in cli.json("doctor")}
+    assert checks["connectivity"]["status"] == "ok", checks
+    traced = cli(*listing, "-v")
+    assert traced.returncode == 0 and "< 200 (" in traced.stderr, traced.stderr
+    lines = cli(*listing, "-o", "jsonl").stdout.splitlines()
+    assert lines and all(isinstance(json.loads(line), dict) for line in lines)
 
 
 def introspect(url: str) -> dict[str, Any]:
@@ -164,3 +175,4 @@ def test_countries_graphql_live(tmp_path: Path) -> None:
     brazil = cli.json("country", "--code", "BR")
     assert (brazil["name"], brazil["capital"], brazil["currency"]) == ("Brazil", "Brasília", "BRL")
     assert len(cli.json("continents")) == 7
+    assert_live_conventions(cli, ["continents"])

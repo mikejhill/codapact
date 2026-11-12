@@ -121,17 +121,21 @@ result is the item list, so `[].name`), `--dry-run`, `-v/--verbose`, `--error-fo
 | --- | --- |
 | Help | `-h`/`--help` on every level; bare `<program>` or `<program> GROUP` prints help (exit `0`). Command help has a usage line with positionals and required options, examples, and a global-options reminder. |
 | Version | `-V`/`--version`: `poke 0.1.0 (PokéAPI 2.10.0; codapact 0.4.0)` |
-| Discovery for agents | `<program> describe [COMMAND…]`: JSON with every command's arguments (type, required, positional, choices, repeated), `read_only`/`destructive`/`paginated`, environment variables, exit codes |
+| Discovery for agents | `<program> describe [COMMAND…]`: JSON with every command's arguments (type, required, positional, choices, repeated), `read_only`/`destructive`/`paginated`, `requires_one_of` option groups, environment variables, exit codes. `describe --brief` keeps only names, summaries, and usage lines. Naming one command (or passing `--schemas`) adds the JSON Schema of its output and of each JSON-valued argument |
 | Diagnosis | `<program> doctor [--offline]`: version, settings file, base URL and its source, credentials (set or missing, never printed), proxy, connectivity. Table on a terminal, JSON otherwise; exit `1` when a check fails |
 | Completion | `<program> completion bash\|zsh\|fish\|powershell` prints a script that asks the program for candidates |
-| Preview | `--dry-run` prints the HTTP request (method, URL, headers, body) without sending it; credentials appear as `$VARIABLE` placeholders, and destructive commands skip confirmation |
+| Preview | `--dry-run` prints the HTTP request (method, URL, headers, body) without sending it; credentials appear as `$VARIABLE` placeholders (optional credentials that are not set stay off the request), and destructive commands skip confirmation |
 | Tracing | `-v`/`--verbose` logs each request line and response status, size, and time to stderr, masking credential values |
-| Mistakes | unknown commands, choices, and options get "did you mean" hints; leftovers are reported by the command they were given to |
+| Mistakes | unknown commands, choices, and options get "did you mean" hints; leftovers are reported by the command they were given to; API failures name the command typed (`pets get failed with HTTP 404`) |
 | Machine-readable errors | `--error-format json` prints one `{"error": {"type", "message", "exit_code", "status", "hint", "details"}}` object on stderr; contract warnings become `{"warning": …}` lines |
 
 `describe`, `doctor`, and `completion` are skipped when the API has a top-level command
 of the same name; `--version`, `--dry-run`, `--verbose`, and `--error-format` are reserved, so
 API parameters with those names become `--arg-version` and so on.
+
+`tests/integration/test_cli_conformance.py` checks these conventions for every example
+contract (Petstore, Library, PokéAPI, YNAB, Countries), including a `--dry-run` of every
+command built from its own `describe` entry.
 
 Commands for HTTP `DELETE` operations, or operations named `delete_*`/`remove_*`/`destroy_*`/`purge_*`,
 ask for confirmation on a terminal and require `--yes` otherwise.

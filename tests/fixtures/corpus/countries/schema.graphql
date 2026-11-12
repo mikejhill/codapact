@@ -1,0 +1,24 @@
+"""Countries, continents and languages of the world (countries.trevorblades.com)."""
+schema { query: Query }
+type Query {
+  "Look up one country by ISO 3166-1 alpha-2 code."
+  country(code: ID!): Country
+  "List countries, optionally filtered."
+  countries(filter: CountryFilterInput = {}): [Country!]!
+  "Look up one continent by code."
+  continent(code: ID!): Continent
+  "List continents."
+  continents(filter: ContinentFilterInput = {}): [Continent!]!
+  "Look up one language by code."
+  language(code: ID!): Language
+  "List languages."
+  languages(filter: LanguageFilterInput = {}): [Language!]!
+}
+type Country { code: ID! name: String! native: String! phone: String! capital: String currency: String currencies: [String!]! emoji: String! emojiU: String! awsRegion: String! continent: Continent! languages: [Language!]! states: [State!]! }
+type Continent { code: ID! name: String! countries: [Country!]! }
+type Language { code: ID! name: String! native: String! rtl: Boolean! }
+type State { code: String name: String! country: Country! }
+input StringQueryOperatorInput { eq: String ne: String in: [String!] nin: [String!] regex: String glob: String }
+input CountryFilterInput { code: StringQueryOperatorInput continent: StringQueryOperatorInput currency: StringQueryOperatorInput name: StringQueryOperatorInput }
+input ContinentFilterInput { code: StringQueryOperatorInput }
+input LanguageFilterInput { code: StringQueryOperatorInput }
