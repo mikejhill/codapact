@@ -152,7 +152,7 @@ def describe_command(
             if argument["type"] == "json" and source:
                 found = _source_type(api, str(operation), source)
                 if found is not None:
-                    argument["schema"] = json_schema(api, found)
+                    argument["schema"] = json_schema(api, found, inputs=True)
         result = api.operation(str(operation)).result
         entry["output_schema"] = json_schema(api, result) if result is not None else None
         if entry["paginated"]:
@@ -256,11 +256,12 @@ _LIMITS = {
 }
 
 
-def json_schema(api: Api, expr: TypeExpr) -> dict[str, Any]:
-    """Return a JSON Schema for values of ``expr`` as a generated CLI prints them.
+def json_schema(api: Api, expr: TypeExpr, *, inputs: bool = False) -> dict[str, Any]:
+    """Return a JSON Schema for values of ``expr`` as a generated CLI prints or takes them.
 
-    Record members use the library's field names (the CLI prints decoded
-    results). Named definitions go under ``$defs`` so recursive types work.
+    Record members use the library's field names. Named definitions go under
+    ``$defs`` so recursive types work. With ``inputs``, closed records forbid
+    unknown members, as the encoder does; outputs stay open, as the decoder is.
     """
     types = {definition.name: definition for definition in api.types}
     defs: dict[str, Any] = {}
@@ -290,6 +291,8 @@ def json_schema(api: Api, expr: TypeExpr) -> dict[str, Any]:
                 body["required"] = required
             if found.additional is not None:
                 body["additionalProperties"] = convert(found.additional)
+            elif inputs and found.closed:
+                body["additionalProperties"] = False
         elif isinstance(found, Enum):
             body = {"enum": [value.value for value in found.values]}
         elif isinstance(found, Union):

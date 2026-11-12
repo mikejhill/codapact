@@ -501,6 +501,16 @@ def test_json_schema_covers_every_type_form() -> None:
     assert cli_tools.json_schema(api, t.Ref("Missing"))["$ref"] == "#/$defs/Missing"
 
 
+def test_input_schemas_close_closed_records() -> None:
+    from codapact.model import types as t
+
+    shut = t.Record("Shut", (t.Field("a", t.Primitive(t.ScalarKind.STRING)),), closed=True)
+    api = Api("A", "1", (), types=(shut,))
+    assert "additionalProperties" not in cli_tools.json_schema(api, t.Ref("Shut"))["$defs"]["Shut"]
+    closed = cli_tools.json_schema(api, t.Ref("Shut"), inputs=True)["$defs"]["Shut"]
+    assert closed["additionalProperties"] is False
+
+
 def test_source_type_follows_nullable_records() -> None:
     from codapact.model import types as t
     from codapact.model.api import Param
