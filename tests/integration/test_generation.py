@@ -103,7 +103,7 @@ def test_python_package_layout(petstore) -> None:
     python = root / "python"
     pyproject = (python / "pyproject.toml").read_text("utf-8")
     assert 'petstore = "petstore.cli:main"' in pyproject
-    assert "codapact>=" in pyproject
+    assert "codapact[keyring]>=" in pyproject
     types = (python / "src/petstore/types.py").read_text("utf-8")
     assert (
         "Pet = TypedDict(" in types

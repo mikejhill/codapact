@@ -198,7 +198,7 @@ def test_pyproject_declares_the_cli_script_and_defaults_to_this_release() -> Non
         'name = "pets-dist"\n'
         'version = "1.0.0"\n'
         'requires-python = ">=3.13"\n'
-        'dependencies = ["codapact>=1.2.3,<2"]\n'
+        'dependencies = ["codapact[keyring]>=1.2.3,<2"]\n'
         "\n[project.scripts]\n"
         'pets = "pets.cli:main"\n'
         "\n[dependency-groups]\n"
@@ -207,6 +207,8 @@ def test_pyproject_declares_the_cli_script_and_defaults_to_this_release() -> Non
         'testpaths = ["tests"]\n' + BUILD_SYSTEM
     )
     assert _pyproject(options, "") == _pyproject(options, __version__)
+    library_only = PythonOptions("pets", "pets-dist", "1.0.0", None)
+    assert 'dependencies = ["codapact>=1.2.3,<2"]' in _pyproject(library_only, "1.2.3")
 
 
 LIBRARY_README = (
@@ -223,6 +225,14 @@ def cli_readme(program: str) -> str:
         "Anywhere, without a project:\n\n"
         f"```console\nuvx --from PATH/TO/THIS/DIR {program} --help\n"
         f"uv tool install PATH/TO/THIS/DIR   # then just: {program} --help\n```\n"
+    )
+
+
+def readme_tests_section(prefix: str) -> str:
+    return (
+        "\n## Tests\n\n"
+        "```console\nuv run pytest                  # offline: help, dry runs, scenarios\n"
+        f"{prefix}_E2E_LIVE=1 uv run pytest -k live   # read-only calls to the real API\n```\n"
     )
 
 
@@ -246,19 +256,23 @@ def test_readme_without_a_command_shows_library_usage_only() -> None:
 def test_readme_with_a_command_lists_credential_variables() -> None:
     options = PythonOptions("pets", "pets", "0.1.0", "pet-cli")
     assert _readme(AUTH_API, options) == (
-        "# Pet Store\n\n"
-        + LIBRARY_README
-        + cli_readme("pet-cli")
-        + "\nCredentials (environment):\n\n"
+        "# Pet Store\n\n" + LIBRARY_README + cli_readme("pet-cli") + "\n## Credentials\n\n"
+        "Save once (OS keyring): `uv run pet-cli auth login`, then check with "
+        "`uv run pet-cli auth status` or `uv run pet-cli doctor`.\n\n"
+        "Or set per shell:\n\n"
         "- `bearer token`: `PET_CLI_BEARER_TOKEN`\n"
         "- `login`: `PET_CLI_LOGIN_USERNAME`, `PET_CLI_LOGIN_PASSWORD`\n"
-        "- `key`: `PET_CLI_KEY`\n"
+        "- `key`: `PET_CLI_KEY`\n\n"
+        "`<VAR>_COMMAND` runs a command that prints the secret (e.g. a password manager).\n"
+        + readme_tests_section("PET_CLI")
     )
 
 
 def test_readme_without_credentials_or_title() -> None:
     options = PythonOptions("pets", "pets", "0.1.0", "pets")
-    assert _readme(Api("", "1", ()), options) == "# API\n\n" + LIBRARY_README + cli_readme("pets")
+    assert _readme(Api("", "1", ()), options) == (
+        "# API\n\n" + LIBRARY_README + cli_readme("pets") + readme_tests_section("PETS")
+    )
 
 
 def test_python_library_writes_metadata_files() -> None:

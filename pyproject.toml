@@ -8,6 +8,10 @@ license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = ["PyYAML>=6.0.3,<7", "graphql-core>=3.2.6,<4"]
 
+[project.optional-dependencies]
+# Generated CLIs depend on this extra so `auth login` saves to the OS keyring.
+keyring = ["keyring>=25,<26"]
+
 [project.scripts]
 codapact = "codapact.pipeline.cli:main"
 

@@ -270,6 +270,7 @@ def test_generated_package_runs_with_a_short_command(ynab) -> None:
     package = root / "python"
     pyproject = (package / "pyproject.toml").read_text()
     assert 'ynab = "ynab_api.cli:main"' in pyproject
-    assert re.search(r'"codapact>=\d+\.\d+\.\d+,<', pyproject)
+    assert re.search(r'"codapact\[keyring\]>=\d+\.\d+\.\d+,<', pyproject)
     readme = (package / "README.md").read_text()
     assert "uv run ynab --help" in readme and "`YNAB_BEARER`" in readme
+    assert "uv run ynab auth login" in readme and "YNAB_E2E_LIVE=1" in readme
