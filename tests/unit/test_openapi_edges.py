@@ -158,9 +158,8 @@ def test_circular_reference() -> None:
 )
 def test_unsupported_parameters(parameter: dict[str, Any]) -> None:
     assert openapi(spec(get(parameters=[parameter]))).diagnostics.has_errors
-    api, diagnostics = ok(spec(get(parameters=[parameter])), strict=False)
+    _, diagnostics = ok(spec(get(parameters=[parameter])), strict=False)
     assert any(d.code == "openapi.degraded" for d in diagnostics)
-    del api
 
 
 def test_lenient_unsupported_schemas_become_any() -> None:
