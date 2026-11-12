@@ -200,7 +200,11 @@ def test_pyproject_declares_the_cli_script_and_defaults_to_this_release() -> Non
         'requires-python = ">=3.13"\n'
         'dependencies = ["codapact>=1.2.3,<2"]\n'
         "\n[project.scripts]\n"
-        'pets = "pets.cli:main"\n' + BUILD_SYSTEM
+        'pets = "pets.cli:main"\n'
+        "\n[dependency-groups]\n"
+        'dev = ["pytest>=8"]\n'
+        "\n[tool.pytest.ini_options]\n"
+        'testpaths = ["tests"]\n' + BUILD_SYSTEM
     )
     assert _pyproject(options, "") == _pyproject(options, __version__)
 

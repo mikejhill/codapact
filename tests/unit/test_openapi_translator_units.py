@@ -12,7 +12,7 @@ import pytest
 
 from codapact.core.diagnostics import Severity
 from codapact.model import types as t
-from codapact.model.api import AuthKind, AuthScheme, ParamLocation, Server
+from codapact.model.api import AuthKind, AuthScheme, OAuthFlow, OAuthFlowKind, ParamLocation, Server
 from codapact.sources.openapi.translator import (
     _admits_null,
     _constraints,
@@ -100,7 +100,7 @@ def test_http_and_api_key_schemes_carry_kind_location_wire_name_and_docs() -> No
     assert [d for d in diagnostics if d.code == "openapi.auth-unsupported"] == []
 
 
-def test_oauth2_prefers_client_credentials_then_the_first_flow() -> None:
+def test_oauth2_keeps_every_flow_client_credentials_first() -> None:
     result, _ = schemes(
         {
             "both": {
@@ -126,17 +126,19 @@ def test_oauth2_prefers_client_credentials_then_the_first_flow() -> None:
             "no_flows": {"type": "oauth2"},
         }
     )
-    assert result == (
-        AuthScheme(
-            "both",
-            AuthKind.OAUTH2,
-            token_url=CLIENT_CREDENTIALS_ENDPOINT,
-            scopes=("read", "write"),
-            docs="OAuth",
-        ),
-        AuthScheme("code_only", AuthKind.OAUTH2, token_url=AUTHORIZATION_CODE_ENDPOINT, docs=""),
-        AuthScheme("no_flows", AuthKind.OAUTH2, token_url=None, scopes=(), docs=""),
+    both = OAuthFlow(
+        OAuthFlowKind.CLIENT_CREDENTIALS, CLIENT_CREDENTIALS_ENDPOINT, scopes=("read", "write")
     )
+    code_flow = OAuthFlow(
+        OAuthFlowKind.AUTHORIZATION_CODE, "https://a.example/token", scopes=("x",)
+    )
+    code_only = OAuthFlow(OAuthFlowKind.AUTHORIZATION_CODE, AUTHORIZATION_CODE_ENDPOINT)
+    assert result == (
+        AuthScheme("both", AuthKind.OAUTH2, flows=(both, code_flow), docs="OAuth"),
+        AuthScheme("code_only", AuthKind.OAUTH2, flows=(code_only,), docs=""),
+        AuthScheme("no_flows", AuthKind.OAUTH2, docs=""),
+    )
+    assert result[0].flow(OAuthFlowKind.CLIENT_CREDENTIALS) == both
 
 
 @pytest.mark.parametrize(
@@ -149,14 +151,14 @@ def test_oauth2_prefers_client_credentials_then_the_first_flow() -> None:
         {"type": "mutualTLS", "in": "header", "name": "k"},
     ],
 )
-def test_unsupported_schemes_warn_and_stay_out_of_the_model(scheme: dict[str, Any]) -> None:
+def test_unsupported_schemes_become_custom_with_an_info(scheme: dict[str, Any]) -> None:
     result, diagnostics = schemes({"odd": scheme})
-    assert result == ()
-    warnings = [d for d in diagnostics if d.code == "openapi.auth-unsupported"]
-    assert len(warnings) == 1
-    assert warnings[0].severity is Severity.WARNING
-    assert warnings[0].message == f"security scheme type {scheme['type']!r} is not supported"
-    assert warnings[0].location == "components.securitySchemes.odd"
+    assert [(s.name, s.kind) for s in result] == [("odd", AuthKind.CUSTOM)]
+    infos = [d for d in diagnostics if d.code == "openapi.auth-custom"]
+    assert len(infos) == 1
+    assert infos[0].severity is Severity.INFO
+    assert "needs a custom authenticator at runtime" in infos[0].message
+    assert infos[0].location == "components.securitySchemes.odd"
 
 
 def test_circular_scheme_reference_names_its_location() -> None:
