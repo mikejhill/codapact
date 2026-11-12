@@ -25,7 +25,11 @@ jobs:
           - {name: openapi, patterns: 'codapact.sources.openapi.*'}
           - {name: sources, patterns: 'codapact.sources.graphql.* codapact.sources.loader.* codapact.sources.base.*'}
           - {name: targets, patterns: 'codapact.targets.*'}
-          - {name: runtime, patterns: 'codapact.runtime.*'}
+          # runtime is split three ways: as one shard it outgrew the 65-minute cap.
+          # A new codapact.runtime module must be added to one of these patterns.
+          - {name: runtime-cli, patterns: 'codapact.runtime.cli.* codapact.runtime.cli_*'}
+          - {name: runtime-auth, patterns: 'codapact.runtime.oauth.* codapact.runtime.auth.* codapact.runtime.credentials.*'}
+          - {name: runtime-core, patterns: 'codapact.runtime.arguments.* codapact.runtime.middleware.* codapact.runtime.errors.* codapact.runtime.abstractions.* codapact.runtime.protocols.* codapact.runtime.client.* codapact.runtime.codec.* codapact.runtime.selftest.*'}
           - {name: pipeline, patterns: 'codapact.pipeline.* codapact.plugins.* codapact.commands.*'}
           - {name: model, patterns: 'codapact.model.* codapact.shaping.* codapact.surface.* codapact.core.*'}
     env:
