@@ -2,6 +2,21 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.4.0](https://github.com/mikejhill/codapact/compare/v0.3.0...v0.4.0) (2026-11-12)
+
+
+### Features
+
+* **auth:** pluggable auth (OAuth 2.0 flows, bespoke authenticators) and generated bundle e2e suites ([#27](https://github.com/mikejhill/codapact/issues/27)) ([b42cb61](https://github.com/mikejhill/codapact/commit/b42cb61165c58895893c1a50a5515d5dc39a88aa))
+* **cli:** conventional help, version, describe, doctor, completion, dry-run, JSON errors ([#25](https://github.com/mikejhill/codapact/issues/25)) ([809c9da](https://github.com/mikejhill/codapact/commit/809c9da83102ebaa5ae41a0cd0d60177e10c286f))
+* **cli:** name commands in errors, describe --brief and schemas, CLI conformance suite ([#26](https://github.com/mikejhill/codapact/issues/26)) ([8780dfc](https://github.com/mikejhill/codapact/commit/8780dfcf1607f267cf59c9d39e8dd4c61a895da7))
+* fix YNAB-evaluation findings (nullability, allOf, naming, CLI usability) ([#22](https://github.com/mikejhill/codapact/issues/22)) ([d8caaf3](https://github.com/mikejhill/codapact/commit/d8caaf33d084770993a5ad45d7bfb3d01d5d7cf9))
+
+
+### Bug Fixes
+
+* address defects found by generating clients for PokeAPI and GitHub ([#23](https://github.com/mikejhill/codapact/issues/23)) ([b0693c3](https://github.com/mikejhill/codapact/commit/b0693c370d0fbfc6483cdc82adc4015c375a05a1))
+
 ## [0.3.0](https://github.com/mikejhill/codapact/compare/v0.2.0...v0.3.0) (2026-11-10)
 
 
