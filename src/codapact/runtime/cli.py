@@ -857,7 +857,6 @@ class CliRuntime:
         try:
             if args.auth_action == "token":
                 # Printing the credential is this command's purpose (`$(prog auth token)`).
-                # codeql[py/clear-text-logging-sensitive-data]
                 out.write(commands.secret(args) + "\n")
                 return 0
             result = commands.run(args)
