@@ -28,7 +28,7 @@ make sure they keep running.
 | Auth | `e2e/test_auth_e2e.py` | Generated CLIs, bundle suites, and TypeScript clients authenticate against AuthLab (`tests/authlab.py`), a loopback server that answers 401 unless the scheme is satisfied: API keys (header, query, cookie), basic, bearer, OAuth 2.0 client credentials, device code, authorization code + PKCE, refresh, and an HMAC-signing plugin | every PR |
 | Live | marker `live`, `CODAPACT_LIVE=1` | PokeAPI and Countries GraphQL respond as the generated CLI expects; the GitHub corpus bundle runs its own live suite with `GITHUB_TOKEN` (authenticated quota, invalid token rejected) | nightly |
 | Performance | `tests/perf`, `perf` | Translation, generation, and decoding scale linearly; throughput floors | every PR |
-| Mutation | `mutmut`, 10 parallel shards | Tests notice behavior changes in `src/codapact` | after merge to main, weekly |
+| Mutation | `mutmut`, 12 parallel shards | Tests notice behavior changes in `src/codapact` | after merge to main, weekly |
 
 Suite markers come from the directory (`tests/conftest.py`); a new file needs no marker.
 

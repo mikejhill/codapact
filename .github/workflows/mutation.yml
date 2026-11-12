@@ -25,10 +25,15 @@ jobs:
           - {name: openapi, patterns: 'codapact.sources.openapi.*'}
           - {name: sources, patterns: 'codapact.sources.graphql.* codapact.sources.loader.* codapact.sources.base.*'}
           - {name: targets, patterns: 'codapact.targets.*'}
-          # runtime is split five ways: as one shard it outgrew the 65-minute cap, and
-          # the CLI modules alone (~3.8k slow mutants) did too.
-          # A new codapact.runtime module must be added to one of these patterns.
-          - {name: runtime-cli, patterns: 'codapact.runtime.cli.*'}
+          # runtime is split seven ways: as one shard it outgrew the 65-minute cap, and
+          # the CLI modules (~3.8k slow mutants) did too, cli.py alone included. cli.py is
+          # split by mutant name: module functions and small classes, CliRuntime's private
+          # methods, and its public ones.
+          # A new codapact.runtime module, or a cli.py class starting with C, must be added
+          # to one of these patterns.
+          - {name: runtime-cli, patterns: 'codapact.runtime.cli.x_* codapact.runtime.cli.xǁ[!C]* codapact.runtime.cli.xǁCliParserǁ*'}
+          - {name: runtime-cli-run, patterns: 'codapact.runtime.cli.xǁCliRuntimeǁ_*'}
+          - {name: runtime-cli-runtime, patterns: 'codapact.runtime.cli.xǁCliRuntimeǁ[!_]*'}
           - {name: runtime-cli-auth, patterns: 'codapact.runtime.cli_auth.*'}
           - {name: runtime-cli-tools, patterns: 'codapact.runtime.cli_tools.*'}
           - {name: runtime-auth, patterns: 'codapact.runtime.oauth.* codapact.runtime.auth.* codapact.runtime.credentials.*'}
@@ -62,8 +67,9 @@ jobs:
           PATTERNS: ${{ matrix.shard.patterns }}
         run: |
           test "$run_exit" = 0 || { echo "mutmut did not finish (exit $run_exit)"; exit 1; }
+          read -ra patterns <<< "$PATTERNS"
           args=()
-          for pattern in $PATTERNS; do args+=(--prefix "${pattern%\*}"); done
+          for pattern in "${patterns[@]}"; do args+=(--pattern "$pattern"); done
           uv run python scripts/mutation_score.py --results mutation-report/results.txt "${args[@]}"
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

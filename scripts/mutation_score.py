@@ -3,10 +3,11 @@
 Usage::
 
     mutmut results --all true > results.txt
-    python scripts/mutation_score.py --results results.txt [--prefix codapact.runtime.]
+    python scripts/mutation_score.py --results results.txt [--pattern 'codapact.runtime.*']
 
 The score is killed / (killed + survived + timeout + suspicious + no tests). Within
-``--prefix`` (one CI shard), mutants left unchecked make the result incomplete,
+``--pattern`` (one CI shard, matched like ``mutmut run`` arguments) or ``--prefix``,
+mutants left unchecked make the result incomplete,
 which fails too: a run that did not finish is not evidence of a good suite. Writes
 a Markdown summary to ``$GITHUB_STEP_SUMMARY`` when set.
 """
@@ -14,6 +15,7 @@ a Markdown summary to ``$GITHUB_STEP_SUMMARY`` when set.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import os
 import sys
 from pathlib import Path
@@ -21,12 +23,20 @@ from pathlib import Path
 DEFAULT_FLOOR = 80.0
 
 
-def count(results: str, prefix: str | tuple[str, ...] = "") -> dict[str, int]:
-    """Tally ``mutmut results --all true`` lines (``name: status``) under ``prefix``."""
+def count(
+    results: str, prefix: str | tuple[str, ...] = "", patterns: tuple[str, ...] = ()
+) -> dict[str, int]:
+    """Tally ``mutmut results --all true`` lines (``name: status``) under ``prefix``.
+
+    ``patterns``, when given, also keeps only names matching one of them (fnmatch,
+    as ``mutmut run`` selects mutants).
+    """
     stats: dict[str, int] = {}
     for line in results.splitlines():
         name, sep, status = line.strip().rpartition(": ")
-        if sep and name.startswith(prefix):
+        if not (sep and name.startswith(prefix)):
+            continue
+        if not patterns or any(fnmatch.fnmatch(name, pattern) for pattern in patterns):
             key = status.strip().replace(" ", "_")
             stats[key] = stats.get(key, 0) + 1
     return stats
@@ -64,11 +74,19 @@ def main(argv: list[str] | None = None) -> int:
         "--prefix", action="append", default=[], help="only mutants under this name (repeatable)"
     )
     parser.add_argument(
+        "--pattern",
+        action="append",
+        default=[],
+        help="only mutants matching this mutmut name pattern (repeatable)",
+    )
+    parser.add_argument(
         "--floor", type=float, default=float(os.environ.get("MUTATION_FLOOR", DEFAULT_FLOOR))
     )
     args = parser.parse_args(argv)
     try:
-        stats = count(args.results.read_text("utf-8"), tuple(args.prefix) or "")
+        stats = count(
+            args.results.read_text("utf-8"), tuple(args.prefix) or "", tuple(args.pattern)
+        )
     except OSError as error:
         print(f"cannot read mutation results: {error}", file=sys.stderr)
         return 1
@@ -77,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     target = os.environ.get("GITHUB_STEP_SUMMARY")
     if target:
         with Path(target).open("a", encoding="utf-8") as handle:
-            title = f"Mutation score: {', '.join(args.prefix) or 'codapact'}"
+            title = f"Mutation score: {', '.join(args.pattern + args.prefix) or 'codapact'}"
             handle.write(f"## {title}\n\n{summary}\n")
     return 0 if passed else 1
 
