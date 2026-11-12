@@ -13,7 +13,7 @@ import pytest
 from codapact.core.net import HttpRequest, HttpResponse
 from codapact.model.api import Api, AuthKind, AuthScheme, Operation, OperationKind, Server
 from codapact.runtime import cli_tools
-from codapact.runtime.abstractions import CallContext
+from codapact.runtime.abstractions import CallContext, Credential
 from codapact.runtime.auth import EnvAuth
 from codapact.runtime.cli import (
     EXIT_API,
@@ -112,7 +112,9 @@ def test_completion_consumes_option_values() -> None:
     assert cli_tools.complete(parser, ["--output", "yaml", "th"]) == ["things"]
     assert cli_tools.complete(parser, ["--output=yaml", "things", "g"]) == ["get"]
     assert cli_tools.complete(parser, ["--bogus", "things", "get", "--kind", ""]) == ["a", "b"]
-    assert cli_tools.complete(parser, []) == sorted(["completion", "describe", "doctor", "things"])
+    assert cli_tools.complete(parser, []) == sorted(
+        ["auth", "completion", "describe", "doctor", "things"]
+    )
     assert cli_tools.complete(parser, ["things", "get", "x"]) == []
 
 
@@ -168,7 +170,7 @@ def test_dry_run_and_placeholders() -> None:
     assert raw.describe()["headers"]["Authorization"] == "Basic <masked>"
     assert PlaceholderAuth(EnvAuth("ACME", {})).credential(BASIC) is None
     credential = PlaceholderAuth(EnvAuth("ACME", {}), fill_all=True).credential(BASIC)
-    assert credential is not None
+    assert isinstance(credential, Credential)
     assert (credential.username, credential.secret) == (
         "$ACME_LOGIN_USERNAME",
         "$ACME_LOGIN_PASSWORD",
@@ -324,7 +326,13 @@ def test_jsonl_streams_items_verbatim_and_replays_warnings_once() -> None:
 def test_powershell_completion_passes_empty_words() -> None:
     script = cli_tools.completion_script("acme", "powershell")
     assert "$PSNativeCommandArgumentPassing" in script
-    assert cli_tools.complete(tree(), ['""']) == ["completion", "describe", "doctor", "things"]
+    assert cli_tools.complete(tree(), ['""']) == [
+        "auth",
+        "completion",
+        "describe",
+        "doctor",
+        "things",
+    ]
 
 
 def test_doctor_survives_malformed_base_url() -> None:

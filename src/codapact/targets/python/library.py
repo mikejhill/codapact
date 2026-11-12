@@ -34,6 +34,7 @@ CAPABILITIES = frozenset(
         "auth:basic",
         "auth:api_key",
         "auth:oauth2",
+        "auth:custom",
         "type:union",
         "type:map",
         "type:literal",
@@ -326,6 +327,8 @@ def _pyproject(options: PythonOptions, generator_version: str) -> str:
     )
     scripts = (
         f'\n[project.scripts]\n{options.command} = "{options.package}.cli:main"\n'
+        '\n[dependency-groups]\ndev = ["pytest>=8"]\n'
+        '\n[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
         if options.command
         else ""
     )

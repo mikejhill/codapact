@@ -13,9 +13,7 @@ from codapact.core.errors import ConfigError
 from codapact.core.naming import Name
 from codapact.model.api import (
     Api,
-    AuthKind,
     AuthRequirement,
-    AuthScheme,
     CursorPagination,
     HttpBinding,
     OffsetPagination,
@@ -23,8 +21,8 @@ from codapact.model.api import (
     OperationKind,
     PagePagination,
     Pagination,
-    ParamLocation,
 )
+from codapact.model.authspec import scheme_from_config
 from codapact.model.rewrite import reachable_types, rename_types, unwrap
 from codapact.model.types import (
     ListOf,
@@ -437,7 +435,7 @@ class Auth:
 
     ```yaml
     - auth:
-        schemes: {token: bearer}          # bearer | basic | {api_key: HEADER, in: query}
+        schemes: {token: bearer}          # see codapact.model.authspec for every spelling
         operations: ["*"]                 # globs or selectors; default every operation
         optional: true                    # also allow anonymous calls (default false)
     ```
@@ -458,7 +456,7 @@ class Auth:
         raw = config.get("schemes")
         if not isinstance(raw, Mapping) or not raw:
             raise ConfigError("auth.schemes must map scheme names to kinds")
-        schemes = tuple(_auth_scheme(str(name), spec) for name, spec in raw.items())
+        schemes = tuple(scheme_from_config(str(name), spec) for name, spec in raw.items())
         existing = {s.name for s in api.auth_schemes}
         clash = sorted(existing & {s.name for s in schemes})
         if clash:
@@ -483,22 +481,6 @@ class Auth:
         return TransformResult(
             api, [{"transform": self.name, "schemes": list(required), "operations": applied}]
         )
-
-
-def _auth_scheme(name: str, spec: Any) -> AuthScheme:
-    if spec in ("bearer", "basic", "oauth2"):
-        return AuthScheme(name, AuthKind(spec))
-    if isinstance(spec, Mapping) and isinstance(spec.get("api_key"), str):
-        extra = set(spec) - {"api_key", "in"}
-        if extra:
-            raise ConfigError(f"auth scheme {name!r}: unknown keys {sorted(extra)}")
-        location = ParamLocation(spec.get("in", "header"))
-        if location not in {ParamLocation.HEADER, ParamLocation.QUERY, ParamLocation.COOKIE}:
-            raise ConfigError(f"auth scheme {name!r}: 'in' must be header, query, or cookie")
-        return AuthScheme(name, AuthKind.API_KEY, location, wire_name=spec["api_key"])
-    raise ConfigError(
-        f"auth scheme {name!r} must be bearer, basic, oauth2, or {{api_key: NAME, in: header}}"
-    )
 
 
 BUILTIN_TRANSFORMS = (Select(), Rename(), Group(), Paginate(), Defaults(), Auth(), Prune())

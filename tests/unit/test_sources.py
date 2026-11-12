@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+import codapact.model as m
 from codapact.core.errors import ContractError
 from codapact.model import (
     Enum,
@@ -262,13 +263,52 @@ def test_security_schemes() -> None:
             "flows": {"clientCredentials": {"tokenUrl": "https://t", "scopes": {"read": ""}}},
         },
         "oidc": {"type": "openIdConnect", "openIdConnectUrl": "https://x"},
+        "device": {
+            "type": "oauth2",
+            "flows": {
+                "deviceAuthorization": {
+                    "deviceAuthorizationUrl": "https://d",
+                    "tokenUrl": "https://t",
+                    "scopes": {},
+                },
+                "authorizationCode": {
+                    "authorizationUrl": "https://a",
+                    "tokenUrl": "https://t",
+                    "refreshUrl": "https://r",
+                    "scopes": {"b": "", "a": ""},
+                },
+                "implicit": "not an object",
+            },
+        },
+        "noflows": {"type": "oauth2", "flows": []},
+        "digest": {"type": "http", "scheme": "digest"},
+        "mtls": {"type": "mutualTLS"},
     }
     result = openapi(doc)
     api = result.api
     assert api is not None
     kinds = {s.name: s.kind.value for s in api.auth_schemes}
-    assert kinds == {"key": "api_key", "basic": "basic", "oauth": "oauth2"}
-    assert any(d.code == "openapi.auth-unsupported" for d in result.diagnostics)
+    assert kinds == {
+        "key": "api_key",
+        "basic": "basic",
+        "oauth": "oauth2",
+        "oidc": "oauth2",
+        "device": "oauth2",
+        "noflows": "oauth2",
+        "digest": "custom",
+        "mtls": "custom",
+    }
+    assert api.scheme("oidc").discovery_url == "https://x"
+    assert api.scheme("noflows").flows == ()
+    oauth = api.scheme("oauth").flow(m.OAuthFlowKind.CLIENT_CREDENTIALS)
+    assert oauth is not None and oauth.token_url == "https://t" and oauth.scopes == ("read",)
+    device = api.scheme("device")
+    assert [f.kind.value for f in device.flows] == ["authorization_code", "device_code"]
+    code = device.flow(m.OAuthFlowKind.AUTHORIZATION_CODE)
+    assert code is not None and code.refresh_url == "https://r" and code.scopes == ("a", "b")
+    assert device.flow(m.OAuthFlowKind.PASSWORD) is None
+    assert "http/digest" in api.scheme("digest").docs
+    assert sum(d.code == "openapi.auth-custom" for d in result.diagnostics) == 2
 
 
 # ---------------------------------------------------------------- graphql

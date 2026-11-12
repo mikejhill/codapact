@@ -18,7 +18,7 @@ from urllib.parse import urlsplit, urlunsplit
 from codapact import __version__
 from codapact.core.errors import CodapactError
 from codapact.core.net import HttpRequest, SafeHttpClient, validate_url
-from codapact.model.api import Api, AuthKind
+from codapact.model.api import Api
 from codapact.model.types import (
     Enum,
     ListOf,
@@ -32,7 +32,8 @@ from codapact.model.types import (
     TypeExpr,
     Union,
 )
-from codapact.runtime.auth import EnvAuth
+from codapact.runtime.auth import ChainAuth, EnvAuth
+from codapact.runtime.credentials import describe_source
 
 SHELLS = ("bash", "zsh", "fish", "powershell")
 TYPE_NAMES = {"integer": "integer", "number": "number", "json_value": "json"}
@@ -494,7 +495,7 @@ class Doctor:
             return checks
         base_url = options.get("base_url") or (api.servers[0].url if api.servers else "")
         base_ok = self._base_url(checks, base_url, sources.get("base_url", "contract"), options)
-        checks.extend(self._credentials(api))
+        checks.extend(self._credentials(api, options.get("auth")))
         scheme = urlsplit(base_url).scheme if base_ok else ""
         proxy = urllib.request.getproxies_environment().get(scheme) if scheme else None
         if proxy:
@@ -527,25 +528,22 @@ class Doctor:
         checks.append(Check("base url", "ok", f"{url} (from {source})"))
         return True
 
-    def _credentials(self, api: Api) -> list[Check]:
+    def _credentials(self, api: Api, chain: Any = None) -> list[Check]:
         if not api.auth_schemes:
             return [Check("credentials", "info", "the contract declares no credentials")]
-        env = EnvAuth(self.env_prefix, self.env)
+        if not isinstance(chain, ChainAuth):
+            chain = ChainAuth((EnvAuth(self.env_prefix, self.env),))
         found = []
         for scheme in api.auth_schemes:
-            variable = env.variable(scheme)
-            names = (
-                [f"{variable}_USERNAME", f"{variable}_PASSWORD"]
-                if scheme.kind is AuthKind.BASIC
-                else [variable]
-            )
-            missing = [name for name in names if not self.env.get(name)]
-            if missing:
-                detail = f"{' and '.join(missing)} not set ({scheme.kind.value})"
-                found.append(Check(f"credentials: {scheme.name}", "warn", detail))
+            source = describe_source(chain, scheme)
+            label = f"credentials: {scheme.name}"
+            if source is None:
+                hint = chain.hint(scheme) or "not configured"
+                found.append(Check(label, "warn", f"missing ({scheme.kind.value}); {hint}"))
+            elif source.startswith("error"):
+                found.append(Check(label, "fail", f"{source} ({scheme.kind.value})"))
             else:
-                detail = f"{' and '.join(names)} set ({scheme.kind.value})"
-                found.append(Check(f"credentials: {scheme.name}", "ok", detail))
+                found.append(Check(label, "ok", f"from {source} ({scheme.kind.value})"))
         return found
 
     def _connect(self, url: str, options: Mapping[str, Any]) -> Check:

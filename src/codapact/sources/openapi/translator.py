@@ -257,22 +257,33 @@ class _Translator:
                     )
                 )
             elif kind == "oauth2":
-                flows = scheme.get("flows", {})
-                flow = flows.get("clientCredentials") or next(iter(flows.values()), {})
                 result.append(
                     m.AuthScheme(
                         name,
                         m.AuthKind.OAUTH2,
-                        token_url=flow.get("tokenUrl"),
-                        scopes=tuple(sorted(flow.get("scopes", {}))),
+                        flows=_oauth_flows(scheme.get("flows")),
+                        docs=docs,
+                    )
+                )
+            elif kind == "openIdConnect" and isinstance(scheme.get("openIdConnectUrl"), str):
+                result.append(
+                    m.AuthScheme(
+                        name,
+                        m.AuthKind.OAUTH2,
+                        discovery_url=scheme["openIdConnectUrl"],
                         docs=docs,
                     )
                 )
             else:
-                # Unknown schemes are kept out of the model; requirements naming them fail below.
-                self.diagnostics.warning(
-                    "openapi.auth-unsupported",
-                    f"security scheme type {kind!r} is not supported",
+                # Kept as CUSTOM so operations still declare it; callers plug in an
+                # Authenticator (digest, mutual TLS, request signing, vendor schemes).
+                label = f"{kind}/{scheme.get('scheme')}" if kind == "http" else str(kind)
+                result.append(
+                    m.AuthScheme(name, m.AuthKind.CUSTOM, docs=docs or f"{label} (custom)")
+                )
+                self.diagnostics.info(
+                    "openapi.auth-custom",
+                    f"security scheme {label!r} needs a custom authenticator at runtime",
                     f"components.securitySchemes.{name}",
                 )
         return tuple(result)
@@ -824,3 +835,40 @@ def _error_name(status: str) -> str:
         return Name.parse(HTTPStatus(int(status)).phrase).snake
     except ValueError:
         return f"status_{status}"
+
+
+_OPENAPI_FLOWS = {
+    "clientCredentials": m.OAuthFlowKind.CLIENT_CREDENTIALS,
+    "authorizationCode": m.OAuthFlowKind.AUTHORIZATION_CODE,
+    "deviceAuthorization": m.OAuthFlowKind.DEVICE_CODE,
+    "password": m.OAuthFlowKind.PASSWORD,
+    "implicit": m.OAuthFlowKind.IMPLICIT,
+}
+
+
+def _oauth_flows(raw: Any) -> tuple[m.OAuthFlow, ...]:
+    """Translate an OpenAPI ``flows`` object (3.2 adds ``deviceAuthorization``)."""
+    if not isinstance(raw, dict):
+        return ()
+    flows = []
+    for key, kind in _OPENAPI_FLOWS.items():
+        flow = raw.get(key)
+        if not isinstance(flow, dict):
+            continue
+
+        def text(field: str, source: dict[str, Any] = flow) -> str | None:
+            value = source.get(field)
+            return value if isinstance(value, str) and value else None
+
+        scopes = flow.get("scopes")
+        flows.append(
+            m.OAuthFlow(
+                kind,
+                token_url=text("tokenUrl"),
+                authorization_url=text("authorizationUrl"),
+                device_authorization_url=text("deviceAuthorizationUrl"),
+                refresh_url=text("refreshUrl"),
+                scopes=tuple(sorted(scopes)) if isinstance(scopes, dict) else (),
+            )
+        )
+    return tuple(flows)

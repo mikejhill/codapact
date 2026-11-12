@@ -3,6 +3,8 @@
 - ``Transport`` sends one HTTP request (default: ``SafeHttpClient``).
 - ``Middleware`` wraps every exchange (retries, logging, tracing, headers).
 - ``AuthProvider`` supplies credentials for a named scheme.
+- ``Authenticator`` decorates the final request for one scheme (OAuth 2.0
+  tokens, request signing, any bespoke flow).
 - ``Protocol`` executes one operation over one binding kind.
 """
 
@@ -18,12 +20,14 @@ from codapact.model.api import AuthScheme, Operation
 
 __all__ = [
     "AuthProvider",
+    "Authenticator",
     "CallContext",
     "Credential",
     "HttpRequest",
     "HttpResponse",
     "Middleware",
     "Next",
+    "Secret",
     "ProtocolAdapter",
     "Transport",
 ]
@@ -63,12 +67,34 @@ class Credential:
         return "Credential(<redacted>)"
 
 
+class Authenticator(Protocol):
+    """Decorate one outgoing request for one scheme: the hook for any auth flow.
+
+    ``authenticate`` runs on the final request, after middleware and right before
+    the transport, so a retried request is decorated (or re-signed) again. It may
+    add headers, query parameters, or anything else derived from the request.
+
+    An authenticator may also define ``refresh(scheme) -> bool``. When the server
+    answers 401, the runtime calls it and, if it returns ``True``, sends the
+    request once more (OAuth token refresh, re-login, clock-skew resync).
+    """
+
+    @abstractmethod
+    def authenticate(self, request: HttpRequest, scheme: AuthScheme) -> HttpRequest:
+        """Return ``request`` with credentials applied."""
+        raise NotImplementedError
+
+
+type Secret = Credential | Authenticator
+"""What an ``AuthProvider`` hands back: static material, or a request decorator."""
+
+
 class AuthProvider(Protocol):
     """Return a credential for a scheme, or ``None`` when none is configured."""
 
     @abstractmethod
-    def credential(self, scheme: AuthScheme) -> Credential | None:
-        """Look up the credential for ``scheme``."""
+    def credential(self, scheme: AuthScheme) -> Secret | None:
+        """Look up the credential (or authenticator) for ``scheme``."""
         raise NotImplementedError
 
 
