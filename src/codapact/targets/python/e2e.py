@@ -230,6 +230,16 @@ def _dry_run(api: Api, operation: Operation, command: Command, words: list[str])
             argv.append(value)
         else:
             argv += [f"--{arg.flag.kebab}", value]
+    by_flag = {"--" + a.flag.kebab: a for a in command.args}
+    for group in command.requires_one_of:  # members are optional, so none is in argv yet
+        for flag in group:
+            value = _arg_sample(api, by_flag[flag])
+            if value is not None:
+                argv += [flag, value]
+                break
+        else:
+            case["skip"] = f"no sample satisfies any of {' or '.join(group)}"
+            return case
     if command.destructive:
         argv.append("--yes")
     case["run"] = [*words, *argv]
