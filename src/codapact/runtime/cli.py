@@ -1323,10 +1323,8 @@ def _pick_target(value: Any, fields: str) -> Any:
     heads = {name.strip().split(".", 1)[0] for name in fields.split(",") if name.strip()}
     if heads & set(value):
         return value
-    current: Any = value
+    current: dict[str, Any] = value
     for _ in range(3):
-        if not isinstance(current, dict):
-            return value
         lists = [v for v in current.values() if isinstance(v, list)]
         if len(lists) == 1:
             return lists[0]
