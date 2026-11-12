@@ -1000,6 +1000,8 @@ class CliRuntime:
                 return EXIT_OK
             if query:
                 result = select(result, query)
+            elif fields:
+                result = _pick_target(result, fields)
             result = pick(result, fields)
         except DryRun as dry:
             render(dry.describe(), fmt if fmt != "table" else "json", out)
@@ -1307,6 +1309,32 @@ def _cell(value: Any) -> str:
         return "true" if value else "false"
     text = " ".join(str(value).split())
     return text if len(text) <= MAX_CELL else text[: MAX_CELL - 1] + "…"
+
+
+def _pick_target(value: Any, fields: str) -> Any:
+    """Return what ``--pick`` applies to when no ``--query`` is given.
+
+    A response envelope such as ``{"data": {"items": [...], "cursor": 3}}`` is
+    unwrapped to its single list (the rows ``--output table`` shows), unless a
+    picked key names a top-level field of the envelope itself.
+    """
+    if not isinstance(value, dict):
+        return value
+    heads = {name.strip().split(".", 1)[0] for name in fields.split(",") if name.strip()}
+    if heads & set(value):
+        return value
+    current: Any = value
+    for _ in range(3):
+        if not isinstance(current, dict):
+            return value
+        lists = [v for v in current.values() if isinstance(v, list)]
+        if len(lists) == 1:
+            return lists[0]
+        nested = [v for v in current.values() if isinstance(v, dict)]
+        if len(current) != 1 or not nested:
+            return value
+        current = nested[0]
+    return value
 
 
 def pick(value: Any, fields: str | None) -> Any:

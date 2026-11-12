@@ -320,10 +320,12 @@ def _pyproject(options: PythonOptions, generator_version: str) -> str:
     # The floor is the generating version: generated code may use runtime helpers
     # that older releases of the same minor line do not have.
     floor = re.sub(r"[^0-9.].*$", "", version).rstrip(".") or f"{major}.{minor}"
+    # CLIs take the keyring extra so `auth login` uses the OS credential store.
+    package = "codapact[keyring]" if options.command else "codapact"
     runtime = (
-        f"codapact>={floor},<{int(major) + 1}"
+        f"{package}>={floor},<{int(major) + 1}"
         if major != "0"
-        else f"codapact>={floor},<0.{int(minor) + 1}"
+        else f"{package}>={floor},<0.{int(minor) + 1}"
     )
     scripts = (
         f'\n[project.scripts]\n{options.command} = "{options.package}.cli:main"\n'
@@ -361,7 +363,19 @@ def _readme(api: Api, options: PythonOptions) -> str:
             "Anywhere, without a project:\n\n"
             f"```console\nuvx --from PATH/TO/THIS/DIR {program} --help\n"
             f"uv tool install PATH/TO/THIS/DIR   # then just: {program} --help\n```\n"
-            + (f"\nCredentials (environment):\n\n{credentials}" if credentials else "")
+            + (
+                "\n## Credentials\n\n"
+                f"Save once (OS keyring): `uv run {program} auth login`, then check with "
+                f"`uv run {program} auth status` or `uv run {program} doctor`.\n\n"
+                f"Or set per shell:\n\n{credentials}\n"
+                f"`<VAR>_COMMAND` runs a command that prints the secret "
+                "(e.g. a password manager).\n"
+                if credentials
+                else ""
+            )
+            + "\n## Tests\n\n"
+            "```console\nuv run pytest                  # offline: help, dry runs, scenarios\n"
+            f"{prefix}_E2E_LIVE=1 uv run pytest -k live   # read-only calls to the real API\n```\n"
         )
     return (
         f"# {_one_line(api.name)}\n\n"

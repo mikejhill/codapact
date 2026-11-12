@@ -289,3 +289,16 @@ def test_settings_defaults_satisfy_required_options(tmp_path, monkeypatch) -> No
     config.write_text("not json")
     with pytest.raises(SystemExit):
         runtime.parse(parser(), ["--config", str(config), "go"])
+
+
+def test_pick_without_query_unwraps_single_list_envelopes() -> None:
+    from codapact.runtime.cli import _pick_target, pick
+
+    envelope = {"data": {"items": [{"id": 1, "n": "a"}], "cursor": 3}}
+    assert pick(_pick_target(envelope, "id"), "id") == [{"id": 1}]
+    assert _pick_target(envelope, "data.cursor") is envelope
+    assert _pick_target({"a": [1], "b": [2]}, "x") == {"a": [1], "b": [2]}
+    assert _pick_target({"user": {"id": 1}}, "id") == {"user": {"id": 1}}
+    assert _pick_target([{"id": 1}], "id") == [{"id": 1}]
+    deep = {"a": {"b": {"c": {"d": [1]}}}}
+    assert _pick_target(deep, "x") is deep
