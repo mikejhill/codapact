@@ -30,8 +30,6 @@ from codapact.core.naming import env_variable
 
 TIMEOUT = 120.0
 PLACEHOLDER = "e2e-placeholder"
-SETTINGS = ("BASE_URL", "TIMEOUT", "ALLOW_PRIVATE", "OUTPUT", "ERROR_FORMAT", "E2E_LIVE")
-EXIT_AUTH = 3
 
 
 class Skip(Exception):  # noqa: N818 - mirrors pytest.skip

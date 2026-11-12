@@ -855,12 +855,14 @@ class CliRuntime:
             err=err,
         )
         try:
+            if args.auth_action == "token":
+                # Printing the credential is this command's purpose (`$(prog auth token)`).
+                out.write(commands.secret(args) + "\n")
+                return 0
             result = commands.run(args)
         except AuthError as error:
             return emit_error(self.program, "auth", str(error), EXIT_AUTH, err)
-        if args.auth_action == "token":
-            print(result, file=out)
-        elif args.auth_action == "status":
+        if args.auth_action == "status":
             render(result, self.output_format(args, "table" if out.isatty() else "json"), out)
         else:
             render(result, fmt if fmt != "table" else "json", out)

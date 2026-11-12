@@ -483,7 +483,7 @@ class DeviceCode:
     client_id: str
     scopes: Sequence[str] = ()
     client_secret: str | None = None
-    notify: Notify = _stderr
+    notify: Notify = field(default_factory=lambda: _stderr)
     sleep: Callable[[float], None] = time.sleep
     clock: Callable[[], float] = time.monotonic
     interactive: bool = True
@@ -539,7 +539,7 @@ class AuthorizationCodePKCE:
     client_secret: str | None = None
     port: int = 0
     open_browser: Callable[[str], object] = webbrowser.open
-    notify: Notify = _stderr
+    notify: Notify = field(default_factory=lambda: _stderr)
     timeout: float = 300.0
     extra: Mapping[str, str] = field(default_factory=dict)
     interactive: bool = True

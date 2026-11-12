@@ -5,7 +5,6 @@ from typing import Any
 
 import pytest
 
-import codapact.model as m
 from codapact.core.errors import ContractError
 from codapact.model import (
     Enum,
@@ -15,6 +14,7 @@ from codapact.model import (
     Literal,
     MapOf,
     Nullable,
+    OAuthFlowKind,
     ParamLocation,
     Primitive,
     Record,
@@ -300,13 +300,13 @@ def test_security_schemes() -> None:
     }
     assert api.scheme("oidc").discovery_url == "https://x"
     assert api.scheme("noflows").flows == ()
-    oauth = api.scheme("oauth").flow(m.OAuthFlowKind.CLIENT_CREDENTIALS)
+    oauth = api.scheme("oauth").flow(OAuthFlowKind.CLIENT_CREDENTIALS)
     assert oauth is not None and oauth.token_url == "https://t" and oauth.scopes == ("read",)
     device = api.scheme("device")
     assert [f.kind.value for f in device.flows] == ["authorization_code", "device_code"]
-    code = device.flow(m.OAuthFlowKind.AUTHORIZATION_CODE)
+    code = device.flow(OAuthFlowKind.AUTHORIZATION_CODE)
     assert code is not None and code.refresh_url == "https://r" and code.scopes == ("a", "b")
-    assert device.flow(m.OAuthFlowKind.PASSWORD) is None
+    assert device.flow(OAuthFlowKind.PASSWORD) is None
     assert "http/digest" in api.scheme("digest").docs
     assert sum(d.code == "openapi.auth-custom" for d in result.diagnostics) == 2
 

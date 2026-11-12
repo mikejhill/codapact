@@ -385,7 +385,7 @@ def test_auth_commands_login_status_token_logout() -> None:
     login = commands(store, prompts=["bob", "pw"])
     login.run(args("login", scheme="login"))
     assert store.load("login") == {"type": "basic", "username": "bob", "secret": "pw"}
-    assert commands(store).run(args("token", scheme="token")) == "typed-secret"
+    assert commands(store).secret(args("token", scheme="token")) == "typed-secret"
     store.save(
         "sso", {"type": "oauth2", "access_token": "at", "expires_at": 1, "refresh_token": "r"}
     )
@@ -402,11 +402,11 @@ def test_auth_commands_errors_and_oauth() -> None:
     with pytest.raises(AuthError, match="declares no credentials"):
         commands(api=Api("x", "1", ())).run(args("status"))
     with pytest.raises(AuthError, match="--scheme"):
-        commands().run(args("token"))
+        commands().secret(args("token"))
     with pytest.raises(AuthError, match="unknown scheme 'nope'"):
-        commands().run(args("token", scheme="nope"))
+        commands().secret(args("token", scheme="nope"))
     with pytest.raises(AuthError, match="no credential for token"):
-        commands().run(args("token", scheme="token"))
+        commands().secret(args("token", scheme="token"))
     with pytest.raises(AuthError, match="custom scheme"):
         commands().run(args("login", scheme="signed"))
     with pytest.raises(AuthError, match="no secret"):
@@ -425,14 +425,14 @@ def test_auth_commands_errors_and_oauth() -> None:
     assert (
         result["expires_in"] > 0 and (store.load("sso") or {})["token_url"] == "https://idp/token"
     )
-    assert commands(store, env=env).run(args("token", scheme="sso")) == "at"
+    assert commands(store, env=env).secret(args("token", scheme="sso")) == "at"
     piped = commands(store, stdin="raw\n").run(args("login", scheme="sso", with_token=True))
     assert piped["scheme"] == "sso" and (store.load("sso") or {})["secret"] == "raw"
     signer = Api("x", "1", (), auth_schemes=(CUSTOM,))
     bespoke = commands(api=signer)
     bespoke.chain = ChainAuth((StaticAuth({"signed": BearerToken(lambda: "t")}),))
     with pytest.raises(AuthError, match="handled by BearerToken"):
-        bespoke.run(args("token"))
+        bespoke.secret(args("token"))
 
 
 def test_oauth_login_without_expiry(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -92,18 +92,23 @@ class AuthCommands:
     secret_prompt: Callable[[str], str] = getpass.getpass
 
     def run(self, args: argparse.Namespace) -> Any:
-        """Return the data to render for ``args.auth_action``."""
-        if not self.api.auth_schemes:
-            raise AuthError("this API declares no credentials")
+        """Return the data to render for ``args.auth_action`` (never a secret)."""
+        self._require_schemes()
         action = args.auth_action
         if action == "status":
             return self.status()
         if action == "logout":
             return self.logout(args.scheme)
-        scheme = self.scheme(args.scheme)
-        if action == "token":
-            return self.token(scheme)
-        return self.login(scheme, args)
+        return self.login(self.scheme(args.scheme), args)
+
+    def secret(self, args: argparse.Namespace) -> str:
+        """Return the credential ``auth token`` prints, kept apart from rendered data."""
+        self._require_schemes()
+        return self.token(self.scheme(args.scheme))
+
+    def _require_schemes(self) -> None:
+        if not self.api.auth_schemes:
+            raise AuthError("this API declares no credentials")
 
     def scheme(self, name: str | None) -> AuthScheme:
         """Return the named scheme, or the only one."""

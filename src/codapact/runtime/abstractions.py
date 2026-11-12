@@ -85,7 +85,7 @@ class Authenticator(Protocol):
         raise NotImplementedError
 
 
-type Secret = Credential | Authenticator
+Secret = Credential | Authenticator
 """What an ``AuthProvider`` hands back: static material, or a request decorator."""
 
 

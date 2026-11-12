@@ -299,7 +299,8 @@ def _provider_label(provider: AuthProvider, scheme: AuthScheme) -> str:
             location = getattr(provider.store, "location", "credential store")
             return f"saved login ({location})"
         case _:
-            return f"auth plugin ({type(provider).__name__})"
+            pass
+    return f"auth plugin ({type(provider).__name__})"
 
 
 __all__ = [

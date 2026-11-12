@@ -77,20 +77,29 @@ def test_token_round_trip_and_expiry() -> None:
 
 def test_memory_store() -> None:
     store = MemoryTokenStore()
-    assert store.load("k") is None and store.delete("k") is False
+    assert store.load("k") is None
+    removed = store.delete("k")
+    assert removed is False
     store.save("k", {"a": 1})
-    assert store.load("k") == {"a": 1} and store.delete("k") is True and store.location == "memory"
+    assert store.load("k") == {"a": 1}
+    removed = store.delete("k")
+    assert removed is True
+    assert store.location == "memory"
 
 
 def test_file_store(tmp_path: Path) -> None:
     store = FileTokenStore(tmp_path / "dir" / "credentials.json")
-    assert store.load("k") is None and store.delete("k") is False
+    assert store.load("k") is None
+    removed = store.delete("k")
+    assert removed is False
     store.save("k", {"secret": "s"})
     store.save("j", {"secret": "t"})
     assert store.load("k") == {"secret": "s"} and store.location.endswith("credentials.json")
     if sys.platform != "win32":
         assert store.path.stat().st_mode & 0o777 == 0o600
-    assert store.delete("k") is True and store.load("k") is None and store.load("j")
+    removed = store.delete("k")
+    assert removed is True
+    assert store.load("k") is None and store.load("j")
     store.path.write_text("[1, 2]")
     assert store.load("j") is None
     store.path.write_text('{"k": "not a mapping"}')
@@ -132,10 +141,14 @@ def test_keyring_store() -> None:
     backend = FakeKeyring()
     store = KeyringTokenStore("acme", backend)
     assert store.location == "keyring service 'acme'"
-    assert store.load("k") is None and store.delete("k") is False
+    assert store.load("k") is None
+    removed = store.delete("k")
+    assert removed is False
     store.save("k", {"secret": "s"})
     assert store.load("k") == {"secret": "s"}
-    assert store.delete("k") is True and store.load("k") is None
+    removed = store.delete("k")
+    assert removed is True
+    assert store.load("k") is None
     backend.items[("acme", "bad")] = "{"
     backend.items[("acme", "list")] = "[1]"
     assert store.load("bad") is None and store.load("list") is None
