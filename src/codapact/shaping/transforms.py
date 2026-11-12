@@ -441,7 +441,9 @@ class Auth:
     ```
 
     Every listed scheme is required together; with ``optional`` the credential is
-    sent when configured and the call goes out anonymously otherwise.
+    sent when configured and the call goes out anonymously otherwise. A later step
+    may name a scheme again (with the same definition) to change which operations
+    require it.
     """
 
     name = "auth"
@@ -457,10 +459,11 @@ class Auth:
         if not isinstance(raw, Mapping) or not raw:
             raise ConfigError("auth.schemes must map scheme names to kinds")
         schemes = tuple(scheme_from_config(str(name), spec) for name, spec in raw.items())
-        existing = {s.name for s in api.auth_schemes}
-        clash = sorted(existing & {s.name for s in schemes})
+        existing = {s.name: s for s in api.auth_schemes}
+        clash = sorted(s.name for s in schemes if s.name in existing and existing[s.name] != s)
         if clash:
-            raise ConfigError(f"auth schemes already defined: {clash}")
+            raise ConfigError(f"auth schemes already defined differently: {clash}")
+        added = tuple(s for s in schemes if s.name not in existing)
         patterns = _selectors(config, "operations") if "operations" in config else ["*"]
         required = tuple(sorted(s.name for s in schemes))
         alternatives: tuple[tuple[str, ...], ...] = (required,)
@@ -476,7 +479,7 @@ class Auth:
         if not applied:
             diagnostics.warning("shape.auth.unmatched", f"{patterns!r} matched nothing")
         api = dataclasses.replace(
-            api, auth_schemes=api.auth_schemes + schemes, operations=tuple(operations)
+            api, auth_schemes=api.auth_schemes + added, operations=tuple(operations)
         )
         return TransformResult(
             api, [{"transform": self.name, "schemes": list(required), "operations": applied}]

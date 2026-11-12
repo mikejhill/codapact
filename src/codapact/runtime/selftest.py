@@ -280,9 +280,7 @@ class Suite:
             return set()
         rows = status.json() or []
         return {
-            str(r.get("scheme"))
-            for r in rows
-            if isinstance(r, dict) and r.get("status") == "ok"
+            str(r.get("scheme")) for r in rows if isinstance(r, dict) and r.get("status") == "ok"
         }
 
 

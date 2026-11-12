@@ -74,7 +74,7 @@ class TypeScriptLibraryTarget:
             "auth:basic",
             "auth:api_key",
             "auth:oauth2",
-        "auth:custom",
+            "auth:custom",
             "type:union",
             "type:map",
             "type:literal",

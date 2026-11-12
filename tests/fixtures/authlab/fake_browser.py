@@ -5,9 +5,9 @@ listener, as a person approving the sign-in would.
 """
 
 import sys
-from typing import override
 import urllib.error
 import urllib.request
+from typing import override
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):

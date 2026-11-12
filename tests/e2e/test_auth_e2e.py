@@ -28,7 +28,13 @@ from tests.authlab import (
     authlab,
     write_project,
 )
-from tests.support import find_tsc, node_with_strip_types, run_node, typecheck_typescript
+from tests.support import (
+    find_tsc,
+    node_with_strip_types,
+    run_bundle_suite,
+    run_node,
+    typecheck_typescript,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -269,31 +275,8 @@ def test_bundle_e2e_suite_passes_offline_and_live(bundle: Path, lab: Lab, tmp_pa
         AUTHLAB_SIGNING_KEY_ID=SIGNING_KEY[0],
         AUTHLAB_SIGNING_SECRET=SIGNING_KEY[1],
     )
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            "-q",
-            "-p",
-            "no:cacheprovider",
-            "-p",
-            "no:randomly",
-            "--rootdir",
-            str(root),
-            "-o",
-            "addopts=",
-            str(root / "tests"),
-        ],
-        cwd=root,
-        env=environ,
-        capture_output=True,
-        text=True,
-        timeout=300,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert "skipped" not in completed.stdout, completed.stdout
+    output = run_bundle_suite(root, environ)
+    assert "skipped" not in output, output
     suite = json.loads((root / "tests" / "e2e.json").read_text())
     assert len(suite["scenarios"]) == 6 and len(suite["dry_runs"]) == 9
 

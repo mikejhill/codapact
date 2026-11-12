@@ -1,0 +1,41 @@
+# GitHub REST, a pinned slice (scripts/extract_openapi_subset.py) of
+# github/rest-api-description@5c36b6f6 descriptions/api.github.com/api.github.com.json.
+# The reference for authenticated end-to-end tests: GITHUB_TOKEN in CI, or
+# GHX_TOKEN_COMMAND="gh auth token" locally.
+version: 1
+source: {type: openapi, path: openapi.json}
+shape:
+  # The contract declares no securitySchemes; GitHub takes a bearer token everywhere.
+  - auth: {schemes: {token: bearer}, optional: true}
+  - auth: {schemes: {token: bearer}, operations: [users_get_authenticated]}
+  - group: {by: tag}
+surface: {trim_namespace: true}
+cli: {program: ghx}
+e2e:
+  # GitHub's data drifts from its spec (nulls where strings are declared).
+  response_validation: warn
+  smoke: {exclude: ["users *"]}
+  scenarios:
+    - name: public repository metadata
+      run: [repos, get, mikejhill, codapact]
+      expect: {contains: {full_name: mikejhill/codapact, owner: {login: mikejhill}}}
+    - name: repository languages
+      run: [repos, list-languages, mikejhill, codapact]
+      expect: {not_empty: [$], at_least: {Python: 1}}
+    - name: token raises the rate limit (proves it was sent)
+      run: [rate-limit, get]
+      auth: required
+      expect: {at_least: {resources.core.limit: 1000}}
+    - name: missing token is refused before sending
+      run: [users, get-authenticated]
+      auth: none
+      expect: {exit: 3, stderr_contains: GHX_TOKEN}
+    - name: invalid token is rejected by GitHub
+      run: [users, get-authenticated]
+      auth: none
+      env: {GHX_TOKEN: ghp_codapact_e2e_invalid_token}
+      expect: {exit: 3}
+targets:
+  - {name: python, output: generated/python, options: {package: ghx}}
+  - {name: python-cli, output: generated/python}
+  - {name: typescript, output: generated/typescript, options: {package: ghx}}

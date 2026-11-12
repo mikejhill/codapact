@@ -369,3 +369,41 @@ def run_node(script: str, index: Path, url: str, *extra: str) -> Any:
     )
     assert completed.returncode == 0, completed.stderr
     return json.loads(completed.stdout)
+
+
+def run_bundle_suite(root: Path, env: dict[str, str]) -> str:
+    """Run a generated bundle's own ``tests/`` with pytest; return its output.
+
+    ``root`` is the bundle (the directory holding ``pyproject.toml`` and ``tests/``);
+    ``env`` must make the package importable (``PYTHONPATH``) and carry the live
+    settings. Fails the calling test with pytest's output when the suite fails.
+    """
+    import subprocess
+    import sys
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-rs",
+            "-p",
+            "no:cacheprovider",
+            "-p",
+            "no:randomly",
+            "--rootdir",
+            str(root),
+            "-o",
+            "addopts=",
+            str(root / "tests"),
+        ],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    return completed.stdout
