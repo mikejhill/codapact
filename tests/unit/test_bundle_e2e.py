@@ -218,6 +218,39 @@ def test_render_suite_derives_cases() -> None:
     assert len(suite_for(api, {"smoke": {"limit": 1}})["smoke"]) == 1
 
 
+def _wrapper_body(properties: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "post": {
+            "operationId": "post_" + "_".join(properties),
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {"schema": {"type": "object", "properties": properties}}
+                },
+            },
+            "responses": {"200": {"description": "ok"}},
+        }
+    }
+
+
+def test_dry_run_fills_a_required_body_whose_fields_are_all_optional() -> None:
+    never = {"type": "string", "maxLength": 0}
+    contract = {
+        "openapi": "3.1.0",
+        "info": {"title": "Zoo", "version": "1"},
+        "servers": [{"url": "https://zoo.example.com"}],
+        "paths": {
+            "/one": _wrapper_body({"first": never, "second": {"type": "string"}}),
+            "/none": _wrapper_body({"bad": never, "worse": never}),
+        },
+    }
+    api = openapi(contract).api
+    assert api is not None
+    runs = {c["name"]: c for c in suite_for(api)["dry_runs"]}
+    assert runs["post-first-second"]["run"] == ["post-first-second", "--second", "sample"]
+    assert runs["post-bad-worse"]["skip"] == "no sample satisfies any of --bad or --worse"
+
+
 def test_render_suite_for_graphql() -> None:
     suite = suite_for(library_api())
     case = suite["dry_runs"][0]
