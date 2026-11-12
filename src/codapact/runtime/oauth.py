@@ -119,15 +119,12 @@ class TokenStore(Protocol):
 
     def load(self, key: str) -> dict[str, Any] | None:
         """Return the stored data for ``key``."""
-        ...
 
     def save(self, key: str, data: dict[str, Any]) -> None:
         """Store ``data`` under ``key``."""
-        ...
 
     def delete(self, key: str) -> bool:
         """Remove ``key``; return whether anything was removed."""
-        ...
 
 
 @dataclass(slots=True)
@@ -391,21 +388,17 @@ class Grant(Protocol):
     @property
     def interactive(self) -> bool:
         """Whether the grant needs a person present."""
-        ...
 
     @property
     def token_url(self) -> str:
         """Where tokens (and refreshed tokens) come from."""
-        ...
 
     @property
     def client(self) -> ClientAuth:
         """The client identity sent with token requests."""
-        ...
 
     def fetch(self, endpoint: TokenEndpoint) -> Token:
         """Run the grant."""
-        ...
 
 
 @dataclass(frozen=True, slots=True)
