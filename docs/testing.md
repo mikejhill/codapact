@@ -21,11 +21,12 @@ make sure they keep running.
 | Integration | `tests/integration`, `integration` | Layers composed in-process: generated code compiles, imports, type-checks, runs | every PR |
 | Property | inside `integration` (Hypothesis) | Contract-level invariants on fuzzed inputs (below) | every PR (300 examples), nightly (3000) |
 | Wire parity | `integration/test_wire_parity.py` | Python and TypeScript clients send byte-identical requests | every PR |
-| Corpus | `integration/test_corpus.py` | Real contracts (PokeAPI, YNAB) generate in strict mode with no warnings | every PR |
+| Corpus | `integration/test_corpus.py` | Real contracts (PokeAPI, YNAB, GitHub slice) generate in strict mode with no warnings | every PR |
 | CLI conformance | `integration/test_cli_conformance.py` | Every example CLI follows the CLI conventions; every command dry-runs from its `describe` entry | every PR |
 | End to end | `tests/e2e`, `e2e` | `python -m codapact` and generated CLIs as subprocesses over loopback HTTP; clean-venv install | every PR |
 | Prism | `e2e/test_public_apis.py` + `CODAPACT_PRISM_URL` | Every request validated by a Prism mock of the pinned PokeAPI spec | every PR |
-| Live | marker `live`, `CODAPACT_LIVE=1` | PokeAPI and Countries GraphQL respond as the generated CLI expects | nightly |
+| Auth | `e2e/test_auth_e2e.py` | Generated CLIs, bundle suites, and TypeScript clients authenticate against AuthLab (`tests/authlab.py`), a loopback server that answers 401 unless the scheme is satisfied: API keys (header, query, cookie), basic, bearer, OAuth 2.0 client credentials, device code, authorization code + PKCE, refresh, and an HMAC-signing plugin | every PR |
+| Live | marker `live`, `CODAPACT_LIVE=1` | PokeAPI and Countries GraphQL respond as the generated CLI expects; the GitHub corpus bundle runs its own live suite with `GITHUB_TOKEN` (authenticated quota, invalid token rejected) | nightly |
 | Performance | `tests/perf`, `perf` | Translation, generation, and decoding scale linearly; throughput floors | every PR |
 | Mutation | `mutmut`, 6 parallel shards | Tests notice behavior changes in `src/codapact` | after merge to main, weekly |
 

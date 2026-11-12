@@ -177,7 +177,7 @@ def test_dry_run_and_placeholders() -> None:
     )
     env = {"ACME_LOGIN_USERNAME": "u", "ACME_LOGIN_PASSWORD": "real"}
     found = PlaceholderAuth(EnvAuth("ACME", env), env).credential(BASIC)
-    assert found is not None and found.secret == "$ACME_LOGIN_PASSWORD"  # noqa: S105
+    assert isinstance(found, Credential) and found.secret == "$ACME_LOGIN_PASSWORD"  # noqa: S105
 
 
 def test_trace_masks_credentials() -> None:
