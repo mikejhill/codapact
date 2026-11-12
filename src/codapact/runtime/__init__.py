@@ -5,6 +5,7 @@ separate distribution later without code changes.
 """
 
 from codapact.runtime.abstractions import (
+    Authenticator,
     AuthProvider,
     CallContext,
     Credential,
@@ -13,8 +14,15 @@ from codapact.runtime.abstractions import (
     Middleware,
     Transport,
 )
-from codapact.runtime.auth import ChainAuth, EnvAuth, StaticAuth
+from codapact.runtime.auth import (
+    BearerToken,
+    ChainAuth,
+    EnvAuth,
+    FunctionAuthenticator,
+    StaticAuth,
+)
 from codapact.runtime.client import RuntimeClient, load_model
+from codapact.runtime.credentials import AuthContext, CommandAuth, StoreAuth
 from codapact.runtime.errors import (
     ApiError,
     AuthError,
@@ -24,9 +32,27 @@ from codapact.runtime.errors import (
     ValidationError,
 )
 from codapact.runtime.middleware import Retry
+from codapact.runtime.oauth import (
+    AuthorizationCodePKCE,
+    ClientCredentials,
+    DeviceCode,
+    OAuth2,
+    PasswordGrant,
+)
 
 __all__ = [
     "ApiError",
+    "AuthContext",
+    "Authenticator",
+    "AuthorizationCodePKCE",
+    "BearerToken",
+    "ClientCredentials",
+    "CommandAuth",
+    "DeviceCode",
+    "FunctionAuthenticator",
+    "OAuth2",
+    "PasswordGrant",
+    "StoreAuth",
     "AuthError",
     "AuthProvider",
     "CallContext",

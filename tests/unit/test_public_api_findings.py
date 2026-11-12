@@ -438,7 +438,17 @@ def test_auth_transform_required_api_key_on_selected_operations() -> None:
         ({"schemes": {"t": "digest"}}, "must be bearer"),
         ({"schemes": {"t": {"api_key": "k", "bad": 1}}}, "unknown keys"),
         ({"schemes": {"t": {"api_key": "k", "in": "body"}}}, "header, query, or cookie"),
-        ({"schemes": {"t": {"api_key": "k", "in": "nowhere"}}}, "nowhere"),
+        ({"schemes": {"t": {"api_key": "k", "in": "nowhere"}}}, "header, query, or cookie"),
+        ({"schemes": {"t": {"api_key": ""}}}, "must name"),
+        ({"schemes": {"t": {}}}, "must be bearer"),
+        ({"schemes": {"t": {"other": 1}}}, "must be bearer"),
+        ({"schemes": {"t": {"oauth2": {}}}}, "map flow names"),
+        ({"schemes": {"t": {"oauth2": {"magic": {}}}}}, "unknown oauth2 flow"),
+        ({"schemes": {"t": {"oauth2": {"device_code": []}}}}, "must be a mapping"),
+        ({"schemes": {"t": {"oauth2": {"device_code": {"x": 1}}}}}, "unknown keys"),
+        ({"schemes": {"t": {"oauth2": {"device_code": {"token_url": 3}}}}}, "must be a URL"),
+        ({"schemes": {"t": {"oauth2": {"device_code": {"scopes": "a"}}}}}, "must be a list"),
+        ({"schemes": {"t": {"openid": ""}}}, "discovery URL"),
     ],
 )
 def test_auth_transform_rejects_bad_config(config: dict[str, Any], message: str) -> None:
@@ -890,3 +900,33 @@ def test_enum_path_params_render_as_positional_choices() -> None:
     assert "help='Issue state.'" in _positional(arg)
     flag = _argument(arg)
     assert "choices=['open', 'closed']" in flag and "default=argparse.SUPPRESS" in flag
+
+
+def test_auth_transform_accepts_oauth_openid_and_custom_schemes() -> None:
+    config = {
+        "schemes": {
+            "sso": {
+                "oauth2": {
+                    "client_credentials": {"token_url": "https://idp/token", "scopes": ["r"]},
+                    "device_code": {
+                        "device_authorization_url": "https://idp/device",
+                        "token_url": "https://idp/token",
+                    },
+                },
+                "docs": "company SSO",
+            },
+            "oidc": {"openid": "https://idp/.well-known/openid-configuration"},
+            "sig": {"custom": "HMAC signing"},
+            "plain": "custom",
+        }
+    }
+    result = Shaper().apply(translate(GITHUBISH), [{"auth": config}])
+    api = result.api
+    assert api is not None, list(result.diagnostics)
+    sso = api.scheme("sso")
+    assert sso.docs == "company SSO"
+    assert [f.kind.value for f in sso.flows] == ["client_credentials", "device_code"]
+    assert sso.flows[0].scopes == ("r",)
+    assert str(api.scheme("oidc").discovery_url).endswith("openid-configuration")
+    assert api.scheme("sig").kind.value == "custom" and api.scheme("sig").docs == "HMAC signing"
+    assert api.scheme("plain").kind.value == "custom"

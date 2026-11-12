@@ -63,10 +63,11 @@ from graphql import (
 from graphql.validation.validate import validate_sdl
 
 from codapact.core.diagnostics import Diagnostics
-from codapact.core.errors import ContractError, expect
+from codapact.core.errors import ConfigError, ContractError, expect
 from codapact.core.naming import Name
 from codapact.model import api as m
 from codapact.model import types as t
+from codapact.model.authspec import scheme_from_config
 from codapact.sources.base import SourceInput, SourceResult, option_bool
 
 BUILTIN_SCALARS = {
@@ -215,19 +216,23 @@ def _load_schema(
 
 
 def _auth_schemes(raw: object) -> tuple[m.AuthScheme, ...]:
+    """Read the ``auth`` option: a shorthand, or ``{schemes: {NAME: SPEC}}``."""
     if raw is None:
         return ()
     if raw == "bearer":
         return (m.AuthScheme("token", m.AuthKind.BEARER),)
     if raw == "basic":
         return (m.AuthScheme("basic", m.AuthKind.BASIC),)
-    if isinstance(raw, dict) and isinstance(raw.get("api_key"), str):
-        return (
-            m.AuthScheme(
-                "api_key", m.AuthKind.API_KEY, m.ParamLocation.HEADER, wire_name=raw["api_key"]
-            ),
-        )
-    raise ContractError("option 'auth' must be 'bearer', 'basic', or {api_key: HEADER}")
+    try:
+        if isinstance(raw, dict) and isinstance(raw.get("api_key"), str):
+            return (scheme_from_config("api_key", raw),)
+        if isinstance(raw, dict) and isinstance(raw.get("schemes"), dict) and len(raw) == 1:
+            return tuple(scheme_from_config(str(k), v) for k, v in raw["schemes"].items())
+    except ConfigError as error:
+        raise ContractError(f"option 'auth': {error}") from None
+    raise ContractError(
+        "option 'auth' must be 'bearer', 'basic', {api_key: HEADER}, or {schemes: {NAME: SPEC}}"
+    )
 
 
 class _AddTypename(Visitor):
@@ -285,7 +290,10 @@ class _Translator:
             errors = validate(self.schema, document)
             if errors:
                 raise ContractError(f"operation {name}: {errors[0].message}")
-            built = self.operation(document, name, _leading_comment(operation) or "")
+            # graphql-core 3.2 has no operation descriptions; 3.3 does.
+            node = getattr(operation, "description", None)
+            description = node.value if node else None
+            built = self.operation(document, name, description or _leading_comment(operation))
             if built is not None:
                 result.append(built)
         return result

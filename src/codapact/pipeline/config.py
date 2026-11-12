@@ -13,6 +13,9 @@ shape:                     # ordered L3 transforms
   - paginate: {operations: [list_pets], items: items, next: next_cursor}
 surface: {flatten_body: true, trim_namespace: true}
 cli: {program: petstore}
+e2e:                       # end-to-end tests shipped in the generated CLI bundle
+  scenarios:
+    - {run: [pets, list], expect: {exit: 0}}
 targets:
   - {name: python, output: out/python, options: {package: petstore}}
   - {name: python-cli, output: out/python}
@@ -63,6 +66,7 @@ class ProjectConfig:
     shape: tuple[Mapping[str, Any], ...] = ()
     surface: Mapping[str, Any] = field(default_factory=dict)
     cli: Mapping[str, Any] = field(default_factory=dict)
+    e2e: Mapping[str, Any] = field(default_factory=dict)
     base: Path = field(default_factory=Path.cwd)
 
     @classmethod
@@ -74,7 +78,7 @@ class ProjectConfig:
     @classmethod
     def from_data(cls, data: Mapping[str, Any], *, base: Path) -> ProjectConfig:
         """Validate configuration data; relative paths resolve against ``base``."""
-        unknown = set(data) - {"version", "source", "shape", "surface", "cli", "targets"}
+        unknown = set(data) - {"version", "source", "shape", "surface", "cli", "e2e", "targets"}
         if unknown:
             raise ConfigError(f"unknown configuration keys {sorted(unknown)}")
         if data.get("version") != CONFIG_VERSION:
@@ -136,6 +140,7 @@ class ProjectConfig:
             shape=tuple(shape),
             surface=_mapping(data.get("surface", {}), "surface"),
             cli=_mapping(data.get("cli", {}), "cli"),
+            e2e=_mapping(data.get("e2e", {}), "e2e"),
             base=base,
         )
 

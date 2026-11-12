@@ -1,7 +1,28 @@
 // Codapact TypeScript runtime. Generated alongside every client. Do not edit.
 // Uses only the standard fetch API so it runs in browsers, Node 18+, Deno, and Bun.
 
-export type Credential = string | { username: string; password: string };
+/** A request as an authenticator sees it, right before it is sent. */
+export interface AuthRequest {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body?: string;
+}
+
+/**
+ * Bespoke auth: decorate the final request (sign it, add headers or query params).
+ * Runs on every attempt, so retries are re-signed. ``refresh`` is called after a
+ * 401; returning true sends the request once more.
+ */
+export interface Authenticator {
+  authenticate(request: AuthRequest, scheme: string): AuthRequest | Promise<AuthRequest>;
+  refresh?(scheme: string): boolean | Promise<boolean>;
+}
+
+/** Returns the current token or key; called for every request. */
+export type TokenProvider = () => string | Promise<string>;
+
+export type Credential = string | { username: string; password: string } | TokenProvider | Authenticator;
 
 export interface ClientOptions {
   /** Base URL; defaults to the contract's first server. */
@@ -17,7 +38,7 @@ export interface ClientOptions {
 }
 
 export interface SchemeSpec {
-  kind: "bearer" | "basic" | "api_key" | "oauth2";
+  kind: "bearer" | "basic" | "api_key" | "oauth2" | "custom";
   location?: "header" | "query" | "cookie";
   wire?: string;
 }
@@ -99,6 +120,79 @@ export class ValidationError extends Error {
 
 const RETRY_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 
+interface AppliedAuth {
+  headers: Record<string, string>;
+  query: [string, string][];
+  cookies: string[];
+  authenticators: [string, Authenticator][];
+}
+
+function isAuthenticator(value: Credential): value is Authenticator {
+  return typeof value === "object" && value !== null && typeof (value as Authenticator).authenticate === "function";
+}
+
+export interface ClientCredentialsOptions {
+  tokenUrl: string;
+  clientId: string;
+  clientSecret: string;
+  scopes?: string[];
+  audience?: string;
+  /** Replace fetch for the token endpoint. */
+  fetch?: typeof fetch;
+  /** Refresh this many seconds before expiry (default 30). */
+  skewSeconds?: number;
+}
+
+/**
+ * OAuth 2.0 client credentials (RFC 6749 section 4.4): fetches a token, caches it
+ * until shortly before it expires, and fetches a new one after a 401.
+ */
+export function clientCredentials(options: ClientCredentialsOptions): Authenticator {
+  let token: { value: string; expiresAt: number | null } | null = null;
+  let pending: Promise<string> | null = null;
+  const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
+  const skew = (options.skewSeconds ?? 30) * 1000;
+  async function obtain(): Promise<string> {
+    const form = new URLSearchParams({ grant_type: "client_credentials" });
+    if (options.scopes?.length) form.set("scope", options.scopes.join(" "));
+    if (options.audience) form.set("audience", options.audience);
+    const basic = btoa(`${encodeURIComponent(options.clientId)}:${encodeURIComponent(options.clientSecret)}`);
+    const response = await fetchImpl(options.tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", Authorization: `Basic ${basic}` },
+      body: form.toString(),
+      redirect: "error",
+    });
+    const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!response.ok || typeof data.access_token !== "string") {
+      const detail = data.error_description ? ` (${String(data.error_description)})` : "";
+      throw new AuthError(`token request failed: ${String(data.error ?? `HTTP ${response.status}`)}${detail}`);
+    }
+    const lifetime = Number(data.expires_in);
+    token = { value: data.access_token, expiresAt: Number.isFinite(lifetime) ? Date.now() + lifetime * 1000 : null };
+    return token.value;
+  }
+  async function current(): Promise<string> {
+    if (token && (token.expiresAt === null || Date.now() < token.expiresAt - skew)) return token.value;
+    pending ??= obtain().finally(() => (pending = null));
+    return pending;
+  }
+  return {
+    async authenticate(request) {
+      return { ...request, headers: { ...request.headers, Authorization: `Bearer ${await current()}` } };
+    },
+    async refresh() {
+      token = null;
+      try {
+        await current();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
 export class Runtime {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
@@ -120,7 +214,7 @@ export class Runtime {
         throw new ValidationError(`${op.name}.${param}`, "is required");
       }
     }
-    const auth = this.resolveAuth(op);
+    const auth = await this.resolveAuth(op);
     return op.kind === "http" ? this.callHttp(op, args, auth) : this.callGraphQL(op, args, auth);
   }
 
@@ -151,9 +245,9 @@ export class Runtime {
     }
   }
 
-  private resolveAuth(op: OperationSpec): { headers: Record<string, string>; query: [string, string][]; cookies: string[] } {
+  private async resolveAuth(op: OperationSpec): Promise<AppliedAuth> {
     for (const alternative of op.auth) {
-      const applied = { headers: {} as Record<string, string>, query: [] as [string, string][], cookies: [] as string[] };
+      const applied: AppliedAuth = { headers: {}, query: [], cookies: [], authenticators: [] };
       let complete = true;
       for (const name of alternative) {
         const credential = this.options.auth?.[name];
@@ -162,18 +256,26 @@ export class Runtime {
           complete = false;
           break;
         }
+        if (isAuthenticator(credential)) {
+          applied.authenticators.push([name, credential]);
+          continue;
+        }
+        if (scheme.kind === "custom") throw new AuthError(`scheme ${name} is custom: pass an Authenticator`);
         if (scheme.kind === "basic") {
-          if (typeof credential === "string") throw new AuthError(`scheme ${name} needs username and password`);
+          if (typeof credential !== "object") throw new AuthError(`scheme ${name} needs username and password`);
           applied.headers["Authorization"] = "Basic " + btoa(`${credential.username}:${credential.password}`);
-        } else if (typeof credential !== "string") {
-          throw new AuthError(`scheme ${name} needs a string credential`);
-        } else if (scheme.kind === "api_key") {
+          continue;
+        }
+        if (typeof credential === "object") throw new AuthError(`scheme ${name} needs a string credential`);
+        const value = typeof credential === "function" ? await credential() : credential;
+        if (!value) throw new AuthError(`the token provider for ${name} returned nothing`);
+        if (scheme.kind === "api_key") {
           const wire = scheme.wire ?? name;
-          if (scheme.location === "query") applied.query.push([wire, credential]);
-          else if (scheme.location === "cookie") applied.cookies.push(`${wire}=${credential}`);
-          else applied.headers[wire] = credential;
+          if (scheme.location === "query") applied.query.push([wire, value]);
+          else if (scheme.location === "cookie") applied.cookies.push(`${wire}=${value}`);
+          else applied.headers[wire] = value;
         } else {
-          applied.headers["Authorization"] = `Bearer ${credential}`;
+          applied.headers["Authorization"] = `Bearer ${value}`;
         }
       }
       if (complete) return applied;
@@ -181,10 +283,34 @@ export class Runtime {
     throw new AuthError(`no credentials configured for ${op.name}`);
   }
 
-  private async send(op: OperationSpec, url: string, init: RequestInit): Promise<Response> {
+  private async send(op: OperationSpec, url: string, init: RequestInit, auth: AppliedAuth): Promise<Response> {
     const retries = op.idempotent ? (this.options.maxRetries ?? 2) : 0;
+    let refreshed = false;
     for (let attempt = 0; ; attempt++) {
-      const response = await this.fetchImpl(url, { ...init, redirect: "error" });
+      let request: AuthRequest = {
+        method: String(init.method ?? "GET"),
+        url,
+        headers: { ...(init.headers as Record<string, string>) },
+        body: init.body as string | undefined,
+      };
+      for (const [name, authenticator] of auth.authenticators) request = await authenticator.authenticate(request, name);
+      const response = await this.fetchImpl(request.url, {
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+        redirect: "error",
+      });
+      if (response.status === 401 && !refreshed && auth.authenticators.length) {
+        refreshed = true;
+        let again = false;
+        for (const [name, authenticator] of auth.authenticators) {
+          if (authenticator.refresh && (await authenticator.refresh(name))) again = true;
+        }
+        if (again) {
+          attempt--;
+          continue;
+        }
+      }
       if (!RETRY_STATUSES.has(response.status) || attempt >= retries) return response;
       await new Promise((resolve) => setTimeout(resolve, Math.min(8000, 500 * 2 ** attempt)));
     }
@@ -193,7 +319,7 @@ export class Runtime {
   private async callHttp(
     op: HttpOperation,
     args: Record<string, unknown>,
-    auth: { headers: Record<string, string>; query: [string, string][]; cookies: string[] },
+    auth: AppliedAuth,
   ): Promise<unknown> {
     let path = op.path;
     const query = new URLSearchParams();
@@ -220,7 +346,7 @@ export class Runtime {
     for (const [key, value] of auth.query) query.append(key, value);
     if (cookies.length) headers["Cookie"] = cookies.join("; ");
     const qs = query.toString();
-    const response = await this.send(op, this.baseUrl + path + (qs ? `?${qs}` : ""), { method: op.method, headers, body });
+    const response = await this.send(op, this.baseUrl + path + (qs ? `?${qs}` : ""), { method: op.method, headers, body }, auth);
     const bound = match(op.responses, response.status);
     const ok = response.status >= 200 && response.status < 300;
     const payload = await decode(response, bound?.[2] ?? "application/json");
@@ -231,7 +357,7 @@ export class Runtime {
   private async callGraphQL(
     op: GraphQLOperation,
     args: Record<string, unknown>,
-    auth: { headers: Record<string, string>; query: [string, string][]; cookies: string[] },
+    auth: AppliedAuth,
   ): Promise<unknown> {
     const variables: Record<string, unknown> = {};
     for (const [param, variable] of op.variables) if (args[param] !== undefined) variables[variable] = args[param];
@@ -247,7 +373,7 @@ export class Runtime {
       method: "POST",
       headers,
       body: JSON.stringify({ query: op.document, operationName: op.operationName, variables }),
-    });
+    }, auth);
     const document = (await decode(response, "application/json")) as { data?: Record<string, unknown> | null; errors?: unknown[] };
     if (document?.errors?.length) throw new GraphQLResponseError(op.name, document.errors, document.data);
     if (!response.ok || !document?.data) throw new ApiError(op.name, response.status, null, document);

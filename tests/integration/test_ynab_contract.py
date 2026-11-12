@@ -130,6 +130,7 @@ def test_strict_generation_has_conventional_command_names(ynab) -> None:
     names = {
         group: sorted(next(a for a in sub._actions if a.nargs == "A...").choices)
         for group, sub in groups.items()
+        if group not in {"describe", "doctor", "completion"}
     }
     assert names["transactions"] == sorted(
         [

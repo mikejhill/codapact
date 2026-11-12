@@ -59,7 +59,7 @@ unsound-assignment = "ignore"
 select = ["E", "F", "I", "UP", "B", "S"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S603", "S607", "S311"]
+"tests/**" = ["S101", "S105", "S106", "S603", "S607", "S311"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -86,6 +86,8 @@ parallel = true
 [tool.coverage.report]
 fail_under = 95
 show_missing = true
+# Protocol and abstract stubs never run.
+exclude_also = ["^\\s*\\.\\.\\.$", "raise NotImplementedError"]
 
 [tool.mutmut]
 source_paths = ["src/codapact/"]

@@ -16,8 +16,29 @@ from codapact.core.errors import ModelError
 
 Migration = Callable[[dict[str, Any]], dict[str, Any]]
 
+
+def _v1_oauth_flows(data: dict[str, Any]) -> dict[str, Any]:
+    """v1 -> v2: OAuth schemes move ``token_url``/``scopes`` into a ``flows`` list."""
+    schemes = []
+    for raw in data.get("auth_schemes") or []:
+        scheme = dict(raw) if isinstance(raw, dict) else raw
+        if isinstance(scheme, dict) and ("token_url" in scheme or "scopes" in scheme):
+            flow: dict[str, Any] = {"kind": "client_credentials"}
+            if scheme.get("token_url") is not None:
+                flow["token_url"] = scheme["token_url"]
+            if scheme.get("scopes"):
+                flow["scopes"] = scheme["scopes"]
+            scheme.pop("token_url", None)
+            scheme.pop("scopes", None)
+            scheme["flows"] = [flow]
+        schemes.append(scheme)
+    if "auth_schemes" in data:
+        data["auth_schemes"] = schemes
+    return data
+
+
 # MIGRATIONS[n] upgrades a version-n document to version n + 1.
-MIGRATIONS: dict[int, Migration] = {}
+MIGRATIONS: dict[int, Migration] = {1: _v1_oauth_flows}
 
 
 def migrate(data: dict[str, Any], *, target: int) -> dict[str, Any]:

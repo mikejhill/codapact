@@ -124,6 +124,12 @@ class Pipeline:
                 options.setdefault(
                     "command", result.commands.program.kebab if result.commands else None
                 )
+            if target.needs_commands:
+                for key in ("auth_plugin", "auth"):
+                    if key in config.cli:
+                        options.setdefault(key, config.cli[key])
+                if config.e2e:
+                    options.setdefault("e2e", dict(config.e2e))
             request = GenerationRequest(
                 api=api,
                 surface=surface,
