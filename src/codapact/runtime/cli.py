@@ -16,9 +16,9 @@ import sys
 import textwrap
 import time
 import warnings
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, NoReturn, TextIO, override
 from urllib.parse import quote, quote_plus
@@ -439,6 +439,17 @@ class CliRuntime:
             sub.add_argument(
                 "words", nargs="*", metavar="COMMAND", help="command path, e.g. pets list"
             )
+            sub.add_argument(
+                "--brief",
+                action="store_true",
+                help="only command names, summaries, and usage lines",
+            )
+            sub.add_argument(
+                "--schemas",
+                action="store_true",
+                help="include each command's output JSON Schema "
+                "(always included when COMMAND names one command)",
+            )
             self.add_global_options(sub, hidden=True)
             sub.set_defaults(builtin="describe")
         if "doctor" not in taken:
@@ -700,6 +711,7 @@ class CliRuntime:
                     print(candidate, file=out)
                 return EXIT_OK
             args = self.parse(parser, words)
+            args.command_words = " ".join(selected(parser, args).prog.split()[1:])
             builtin = getattr(args, "builtin", None)
             if builtin is not None:
                 return self._builtin(builtin, args, parser, load_model, out, err)
@@ -734,13 +746,24 @@ class CliRuntime:
                     "environment": self._environment(load_model()),
                     "exit_codes": {str(k): v for k, v in EXIT_CODES.items()},
                     "notes": [
+                        f"{self.program} describe COMMAND adds the output JSON Schema.",
                         "Results print to stdout as JSON unless --output says otherwise.",
                         "Errors print to stderr; --error-format json makes them one JSON object.",
                         "JSON arguments accept inline JSON, @file, or @- for stdin.",
                         "--dry-run prints the HTTP request without sending it.",
                     ],
                 }
-                result = cli_tools.describe(parser, args.words, header)
+                api = load_model()
+                if getattr(args, "brief", False):
+                    header = {k: header[k] for k in ("program", "version", "api", "usage", "notes")}
+                result = cli_tools.describe(
+                    parser,
+                    args.words,
+                    header,
+                    api=api,
+                    brief=getattr(args, "brief", False),
+                    schemas=getattr(args, "schemas", False),
+                )
                 render(result, fmt if fmt != "table" else "json", out)
                 return EXIT_OK
             doctor = cli_tools.Doctor(
@@ -785,7 +808,11 @@ class CliRuntime:
         options = self.settings(args)
         if getattr(args, "dry_run", False):
             options["transport"] = DryRunTransport()
-            options["auth"] = PlaceholderAuth(EnvAuth(self.env_prefix, self.env))
+            options["auth"] = PlaceholderAuth(
+                EnvAuth(self.env_prefix, self.env),
+                self.env,
+                fill_all=getattr(args, "placeholders", False),
+            )
             options["middleware"] = ()
         elif getattr(args, "verbose", False):
             options["middleware"] = (Retry(), Trace(err, self._secrets()))
@@ -877,6 +904,9 @@ class CliRuntime:
             message = describe_invalid(error, getattr(args, "flags", None) or {})
             return emit_error(p, "usage", f"invalid input: {message}", EXIT_USAGE, err)
         except AuthError as error:
+            if getattr(args, "dry_run", False) and not getattr(args, "placeholders", False):
+                args.placeholders = True  # show where the missing credential would go
+                return self._run(args, make_client, handler, stdout, stderr)
             return emit_error(p, "auth", str(error), EXIT_AUTH, err, hint=f"run {p} doctor")
         except TransportError as error:
             hint = f"run {p} doctor to check the base URL, proxy, and connectivity"
@@ -886,7 +916,7 @@ class CliRuntime:
             return emit_error(
                 p,
                 "auth" if auth else "api",
-                str(error),
+                _named(error, error.operation, args),
                 EXIT_AUTH if auth else EXIT_API,
                 err,
                 status=error.status,
@@ -894,11 +924,21 @@ class CliRuntime:
                 hint=f"run {p} doctor to check credentials" if auth else None,
             )
         except GraphQLResponseError as error:
-            return emit_error(p, "api", str(error), EXIT_API, err, details=error.errors)
+            message = _named(error, error.operation, args)
+            return emit_error(p, "api", message, EXIT_API, err, details=error.errors)
         except CodapactError as error:
             return emit_error(p, "usage", str(error), EXIT_USAGE, err)
         render(result, fmt, out)
         return EXIT_OK
+
+
+def _named(error: Exception, operation: str, args: argparse.Namespace) -> str:
+    """Name the command the person typed instead of the library operation."""
+    words = getattr(args, "command_words", "")
+    message = str(error)
+    if words and operation and message.startswith(operation):
+        return f"{words}{message[len(operation) :]}"
+    return message
 
 
 class DryRun(Exception):  # noqa: N818 - control flow, not an error condition
@@ -935,16 +975,29 @@ class DryRunTransport:
 
 @dataclass(frozen=True, slots=True)
 class PlaceholderAuth:
-    """Supply ``$VARIABLE`` placeholders so a dry run shows where credentials go."""
+    """Supply ``$VARIABLE`` placeholders so a dry run shows where credentials go.
+
+    A placeholder stands in only for a credential that is set, so optional auth
+    stays off the request when the person has none. If no alternative of the
+    requirement can then be met, every scheme gets a placeholder, which shows
+    where the missing credential would go.
+    """
 
     env: EnvAuth
+    environ: Mapping[str, str] = field(default_factory=dict)
+    fill_all: bool = False
 
-    def credential(self, scheme: AuthScheme) -> Credential:
+    def credential(self, scheme: AuthScheme) -> Credential | None:
         """Return a placeholder naming the variable, never the secret."""
-        variable = "$" + self.env.variable(scheme)
+        variable = self.env.variable(scheme)
         if scheme.kind.value == "basic":
-            return Credential(variable + "_PASSWORD", variable + "_USERNAME")
-        return Credential(variable)
+            names = (f"{variable}_USERNAME", f"{variable}_PASSWORD")
+            if not self.fill_all and not all(self.environ.get(n) for n in names):
+                return None
+            return Credential(f"${variable}_PASSWORD", f"${variable}_USERNAME")
+        if not self.fill_all and not self.environ.get(variable):
+            return None
+        return Credential("$" + variable)
 
 
 @dataclass(frozen=True, slots=True)

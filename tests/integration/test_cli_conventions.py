@@ -181,6 +181,7 @@ def test_failures_carry_hints_and_json_errors(cli, monkeypatch, server) -> None:
     error = json.loads(err)["error"]
     assert code == 1 and (error["type"], error["status"]) == ("api", 404)
     assert error["details"] == {"message": "no such pet"}
+    assert error["message"].startswith("pets get failed with HTTP 404")
     code, _, err = run_cli(
         cli, ["pets", "get", "2", "--base-url", "http://127.0.0.1:1/v1"], monkeypatch, **server
     )

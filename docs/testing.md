@@ -22,6 +22,7 @@ make sure they keep running.
 | Property | inside `integration` (Hypothesis) | Contract-level invariants on fuzzed inputs (below) | every PR (300 examples), nightly (3000) |
 | Wire parity | `integration/test_wire_parity.py` | Python and TypeScript clients send byte-identical requests | every PR |
 | Corpus | `integration/test_corpus.py` | Real contracts (PokeAPI, YNAB) generate in strict mode with no warnings | every PR |
+| CLI conformance | `integration/test_cli_conformance.py` | Every example CLI follows the CLI conventions; every command dry-runs from its `describe` entry | every PR |
 | End to end | `tests/e2e`, `e2e` | `python -m codapact` and generated CLIs as subprocesses over loopback HTTP; clean-venv install | every PR |
 | Prism | `e2e/test_public_apis.py` + `CODAPACT_PRISM_URL` | Every request validated by a Prism mock of the pinned PokeAPI spec | every PR |
 | Live | marker `live`, `CODAPACT_LIVE=1` | PokeAPI and Countries GraphQL respond as the generated CLI expects | nightly |
