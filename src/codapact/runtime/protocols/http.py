@@ -69,7 +69,9 @@ class HttpAdapter:
         if cookies:
             headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
         url = exchange.base_url + path + (f"?{urlencode(query)}" if query else "")
-        response = exchange.send(operation, HttpRequest(binding.method, url, headers, body))
+        response = exchange.send(
+            operation, HttpRequest(binding.method, url, headers, body), auth.authenticators
+        )
         return self._outcome(operation, binding, response)
 
     def _outcome(self, operation: Operation, binding: HttpBinding, response: HttpResponse) -> Any:

@@ -41,6 +41,16 @@ class Contract:
 CONTRACTS = [
     Contract("pokeapi/openapi.yml", "pokeapi", 102),
     Contract("ynab/openapi.yaml", "ynab_api", 44),
+    Contract(
+        "github/openapi.json",
+        "ghx",
+        6,
+        (
+            {"auth": {"schemes": {"token": "bearer"}, "optional": True}},
+            {"auth": {"schemes": {"token": "bearer"}, "operations": ["users_get_authenticated"]}},
+            {"group": {"by": "tag"}},
+        ),
+    ),
 ]
 
 

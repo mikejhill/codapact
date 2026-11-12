@@ -13,7 +13,7 @@ from enum import StrEnum
 from codapact.model.types import TypeDef, TypeExpr
 from codapact.model.values import JsonValue
 
-MODEL_VERSION = 1
+MODEL_VERSION = 2
 
 
 class OperationKind(StrEnum):
@@ -149,25 +149,61 @@ Binding = HttpBinding | GraphQLBinding
 
 
 class AuthKind(StrEnum):
-    """Supported authentication scheme families."""
+    """Supported authentication scheme families.
+
+    ``CUSTOM`` covers schemes no contract format describes portably (request
+    signing, digest, mutual TLS, vendor extensions). The runtime cannot apply
+    them on its own; callers supply an ``Authenticator`` for the scheme.
+    """
 
     BEARER = "bearer"
     BASIC = "basic"
     API_KEY = "api_key"
     OAUTH2 = "oauth2"
+    CUSTOM = "custom"
+
+
+class OAuthFlowKind(StrEnum):
+    """OAuth 2.0 grant types a scheme can declare."""
+
+    CLIENT_CREDENTIALS = "client_credentials"
+    AUTHORIZATION_CODE = "authorization_code"
+    DEVICE_CODE = "device_code"
+    PASSWORD = "password"  # noqa: S105 - grant type name, not a secret
+    IMPLICIT = "implicit"
+
+
+@dataclass(frozen=True, slots=True)
+class OAuthFlow:
+    """One OAuth 2.0 grant: where to get tokens and which scopes exist."""
+
+    kind: OAuthFlowKind
+    token_url: str | None = None
+    authorization_url: str | None = None
+    device_authorization_url: str | None = None
+    refresh_url: str | None = None
+    scopes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class AuthScheme:
-    """A named way to authenticate. API keys carry a location and wire name."""
+    """A named way to authenticate.
+
+    API keys carry a location and wire name. OAuth 2.0 schemes carry their flows
+    (and, for OpenID Connect, a discovery URL the runtime resolves on first use).
+    """
 
     name: str
     kind: AuthKind
     location: ParamLocation | None = None
     wire_name: str | None = None
-    token_url: str | None = None
-    scopes: tuple[str, ...] = ()
+    flows: tuple[OAuthFlow, ...] = ()
+    discovery_url: str | None = None
     docs: str = ""
+
+    def flow(self, kind: OAuthFlowKind) -> OAuthFlow | None:
+        """Return the declared flow of ``kind``, if any."""
+        return next((f for f in self.flows if f.kind is kind), None)
 
 
 @dataclass(frozen=True, slots=True)

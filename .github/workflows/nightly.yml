@@ -9,7 +9,7 @@ permissions:
   contents: read
 jobs:
   live:
-    name: Live public APIs (PokeAPI, Countries)
+    name: Live public APIs (PokeAPI, Countries, GitHub with auth)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -22,6 +22,10 @@ jobs:
           enable-cache: false
       - run: uv sync --locked
       - run: uv run poe test-live -v
+        env:
+          # The generated GitHub CLI's live e2e suite proves the token is sent
+          # (authenticated rate limit) and that GitHub rejects a bad one.
+          GHX_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   deep:
     name: Deep property-based fuzzing
     runs-on: ubuntu-latest

@@ -1,4 +1,4 @@
-"""End to end against public APIs: PokeAPI (REST) and Countries (GraphQL).
+"""End to end against public APIs: PokeAPI (REST), Countries (GraphQL), GitHub (auth).
 
 Three tiers share the same generated CLI and assertions:
 
@@ -24,7 +24,7 @@ from typing import Any
 
 import pytest
 
-from tests.support import FIXTURES
+from tests.support import FIXTURES, run_bundle_suite
 
 pytestmark = pytest.mark.e2e
 
@@ -176,3 +176,39 @@ def test_countries_graphql_live(tmp_path: Path) -> None:
     assert (brazil["name"], brazil["capital"], brazil["currency"]) == ("Brazil", "Brasília", "BRL")
     assert len(cli.json("continents")) == 7
     assert_live_conventions(cli, ["continents"])
+
+
+@pytest.fixture(scope="module")
+def github_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    project = tmp_path_factory.mktemp("github")
+    for name in ("codapact.yaml", "openapi.json"):
+        shutil.copy(CORPUS / "github" / name, project / name)
+    codapact("generate", cwd=project)
+    return project / "generated" / "python"
+
+
+def github_env(bundle: Path, **extra: str) -> dict[str, str]:
+    environ = {k: v for k, v in os.environ.items() if not k.startswith("GHX_")}
+    environ["PYTHONPATH"] = str(bundle / "src")
+    environ.update(extra)
+    return environ
+
+
+def test_github_bundle_offline_suite(github_bundle: Path) -> None:
+    output = run_bundle_suite(github_bundle, github_env(github_bundle))
+    assert "passed" in output and "failed" not in output
+
+
+@live
+def test_github_bundle_live_suite_with_token(github_bundle: Path) -> None:
+    """The bundle's own live tier; needs GITHUB_TOKEN (CI) or GHX_TOKEN.
+
+    It proves authentication end to end: the rate-limit scenario needs the
+    authenticated quota, and GitHub must reject an invalid token with exit 3.
+    """
+    token = os.environ.get("GHX_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        pytest.skip("set GITHUB_TOKEN or GHX_TOKEN")
+    environ = github_env(github_bundle, GHX_TOKEN=token, GHX_E2E_LIVE="1", GHX_E2E_REQUIRE_AUTH="1")
+    output = run_bundle_suite(github_bundle, environ)
+    assert "skipped" not in output, output

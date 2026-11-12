@@ -74,6 +74,7 @@ class TypeScriptLibraryTarget:
             "auth:basic",
             "auth:api_key",
             "auth:oauth2",
+            "auth:custom",
             "type:union",
             "type:map",
             "type:literal",
@@ -382,8 +383,19 @@ def _inner_wire(api: Api, method: Method, param: str, field: str, subfield: str)
 def _index() -> str:
     return (
         'export { Client } from "./client.ts";\n'
-        "export { ApiError, AuthError, GraphQLResponseError, ValidationError, type ClientOptions } "
-        'from "./runtime.ts";\n'
+        "export {\n"
+        "  ApiError,\n"
+        "  AuthError,\n"
+        "  GraphQLResponseError,\n"
+        "  ValidationError,\n"
+        "  clientCredentials,\n"
+        "  type AuthRequest,\n"
+        "  type Authenticator,\n"
+        "  type ClientCredentialsOptions,\n"
+        "  type ClientOptions,\n"
+        "  type Credential,\n"
+        "  type TokenProvider,\n"
+        '} from "./runtime.ts";\n'
         'export type * from "./types.ts";\n'
     )
 

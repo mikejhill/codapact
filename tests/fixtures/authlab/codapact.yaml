@@ -1,0 +1,21 @@
+version: 1
+source: {type: openapi, path: openapi.yaml}
+shape:
+  - group: {by: tag}
+surface: {trim_namespace: true}
+cli:
+  program: authlab
+  auth_plugin: authlab_plugin:provider
+  auth: {sso: {client_id: authlab-cli, scopes: [read]}}
+e2e:
+  scenarios:
+    - {name: anonymous call works, run: [lab, public], auth: none, expect: {contains: {scheme: none}}}
+    - {name: header key rejected without credentials, run: [lab, header-key], auth: none, expect: {exit: 3}}
+    - {name: header key accepted, run: [lab, header-key], auth: required, expect: {contains: {scheme: header_key, principal: alice}}}
+    - {name: bearer accepted, run: [lab, bearer], auth: required, expect: {contains: {scheme: bearer}}}
+    - {name: oauth client credentials, run: [lab, sso], auth: required, expect: {contains: {scheme: sso, principal: authlab-service}}}
+    - {name: custom signing plugin, run: [lab, signed, --message, hi], auth: required, expect: {contains: {scheme: signed, principal: key-1}}}
+targets:
+  - {name: python, output: generated/python, options: {package: authlab}}
+  - {name: python-cli, output: generated/python}
+  - {name: typescript, output: generated/typescript, options: {package: authlab}}

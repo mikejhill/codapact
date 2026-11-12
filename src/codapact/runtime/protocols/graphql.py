@@ -49,7 +49,9 @@ class GraphQLAdapter:
         if auth.query:
             url += ("&" if "?" in url else "?") + urlencode(auth.query)
         body = json.dumps(payload, allow_nan=False).encode("utf-8")
-        response = exchange.send(operation, HttpRequest("POST", url, headers, body))
+        response = exchange.send(
+            operation, HttpRequest("POST", url, headers, body), auth.authenticators
+        )
         document = parse_json(response, operation.name)
         if not isinstance(document, dict):
             raise ApiError(operation.name, response.status, None, document)

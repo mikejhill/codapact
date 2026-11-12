@@ -14,6 +14,7 @@ from codapact.core.naming import Name, env_variable
 from codapact.model.api import AuthKind
 from codapact.model.types import ScalarKind
 from codapact.plugins.protocol import GeneratedFile, GenerationRequest, GenerationResponse
+from codapact.targets.python.e2e import render_suite
 from codapact.targets.python.library import CAPABILITIES, PythonOptions
 from codapact.targets.python.naming import ident, method_ident
 
@@ -48,7 +49,16 @@ class PythonCliTarget:
                     version=options.version,
                     api_name=request.api.name,
                     api_version=request.api.version,
+                    auth_plugin=str(request.options.get("auth_plugin") or ""),
+                    auth_config=_auth_config(request),
                 ),
+            ),
+            *(
+                render_suite(
+                    request.api, request.surface, tree, options.package, request.options.get("e2e")
+                )
+                if request.options.get("tests", True)
+                else ()
             ),
             GeneratedFile(
                 f"{root}/__main__.py",
@@ -62,12 +72,38 @@ class PythonCliTarget:
 
 def _auth_help(request: GenerationRequest) -> str:
     prefix = request.commands.env_prefix if request.commands is not None else ""
+    program = request.commands.program.kebab if request.commands is not None else ""
     lines = []
     for scheme in request.api.auth_schemes:
         base = env_variable(prefix, scheme.name)
+        if scheme.kind is AuthKind.CUSTOM:
+            lines.append(
+                f"  {scheme.name}: custom; set {prefix}_AUTH_PLUGIN=package.module:factory"
+            )
+            continue
         where = f"{base}_USERNAME and {base}_PASSWORD" if scheme.kind is AuthKind.BASIC else base
-        lines.append(f"  {scheme.name}: set {where}")
+        extra = f", {base}_COMMAND, or run '{program} auth login'"
+        if scheme.kind is AuthKind.OAUTH2:
+            extra = f", {base}_CLIENT_ID + _CLIENT_SECRET, or run '{program} auth login'"
+        lines.append(f"  {scheme.name}: set {where}{extra}")
     return "\n".join(lines)
+
+
+def _auth_config(request: GenerationRequest) -> dict[str, dict[str, object]]:
+    """Validate ``cli.auth``: per-scheme OAuth defaults (client id, scopes, flow)."""
+    raw = request.options.get("auth") or {}
+    if not isinstance(raw, dict):
+        raise PluginError("cli.auth must map scheme names to settings")
+    known = {s.name for s in request.api.auth_schemes}
+    config: dict[str, dict[str, object]] = {}
+    for name, value in raw.items():
+        if name not in known:
+            raise PluginError(f"cli.auth: unknown scheme {name!r}")
+        if not isinstance(value, dict) or set(value) - {"client_id", "scopes", "flow", "audience"}:
+            # No client_secret: secrets must never be baked into generated code.
+            raise PluginError(f"cli.auth.{name} allows client_id, scopes, flow, audience")
+        config[str(name)] = dict(value)
+    return config
 
 
 def render_cli(
@@ -78,6 +114,8 @@ def render_cli(
     version: str = "0.1.0",
     api_name: str = "",
     api_version: str = "",
+    auth_plugin: str = "",
+    auth_config: dict[str, dict[str, object]] | None = None,
 ) -> str:
     """Render the argparse module."""
     handlers: list[str] = []
@@ -87,7 +125,8 @@ def render_cli(
     credentials = f"credentials:\n{auth_help}" if auth_help else ""
     runtime = (
         f"CliRuntime(program={program!r}, env_prefix={tree.env_prefix!r}, "
-        f"version={version!r}, api_name={api_name!r}, api_version={api_version!r})"
+        f"version={version!r}, api_name={api_name!r}, api_version={api_version!r}, "
+        f"model=_api_model, auth_plugin={auth_plugin!r}, auth_config={auth_config or {}!r})"
     )
     head = [
         '"""Command line interface generated from the command model. Do not edit."""\n',

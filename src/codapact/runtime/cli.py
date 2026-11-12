@@ -27,11 +27,12 @@ import yaml
 
 from codapact import __version__
 from codapact.core.errors import CodapactError, TransportError
-from codapact.core.net import HttpRequest, HttpResponse
-from codapact.model.api import Api, AuthScheme
-from codapact.runtime import cli_tools
-from codapact.runtime.abstractions import CallContext, Credential, Next
-from codapact.runtime.auth import EnvAuth
+from codapact.core.net import HttpRequest, HttpResponse, SafeHttpClient
+from codapact.model.api import Api, AuthKind, AuthScheme
+from codapact.runtime import cli_auth, cli_tools
+from codapact.runtime.abstractions import CallContext, Credential, Next, Secret
+from codapact.runtime.auth import ChainAuth, EnvAuth, FunctionAuthenticator
+from codapact.runtime.credentials import cli_auth as build_cli_auth
 from codapact.runtime.errors import (
     ApiError,
     AuthError,
@@ -41,6 +42,7 @@ from codapact.runtime.errors import (
     ValidationError,
 )
 from codapact.runtime.middleware import Retry
+from codapact.runtime.oauth import TokenStore, default_store
 
 EXIT_OK = 0
 EXIT_API = 1
@@ -59,7 +61,7 @@ EXIT_CODES = {
 OUTPUT_FORMATS = ("json", "jsonl", "yaml", "table", "raw")
 ERROR_FORMATS = ("text", "json")
 VALIDATION_MODES = ("strict", "warn", "off")
-BUILTINS = ("describe", "doctor", "completion")
+BUILTINS = ("describe", "doctor", "completion", "auth")
 MAX_JSON_FILE = 10_000_000
 MAX_LISTED_CHOICES = 8
 SETTINGS_KEYS = frozenset(
@@ -71,6 +73,8 @@ SETTINGS_KEYS = frozenset(
         "output",
         "error_format",
         "defaults",
+        "auth_plugin",
+        "auth",
     }
 )
 
@@ -250,6 +254,11 @@ class CliRuntime:
     version: str = ""
     api_name: str = ""
     api_version: str = ""
+    model: Callable[[], Api] | None = None
+    auth_plugin: str = ""
+    """Default ``package.module:factory`` auth plugin (``cli.auth_plugin`` in codapact.yaml)."""
+    auth_config: Mapping[str, Mapping[str, Any]] | None = None
+    """Per-scheme OAuth defaults baked in at generation (``cli.auth`` in codapact.yaml)."""
 
     @property
     def env(self) -> dict[str, str]:
@@ -470,6 +479,10 @@ class CliRuntime:
             )
             sub.add_argument("shell", choices=cli_tools.SHELLS)
             sub.set_defaults(builtin="completion")
+        if "auth" not in taken:
+            cli_auth.add_auth_commands(
+                commands, self.program, lambda p: self.add_global_options(p, hidden=True)
+            )
 
     # ------------------------------------------------------------ settings
 
@@ -540,8 +553,49 @@ class CliRuntime:
         if mode not in VALIDATION_MODES:
             raise CodapactError("response validation must be strict, warn, or off")
         options["response_validation"] = mode
-        options["auth"] = EnvAuth(self.env_prefix, self.env)
+        plugin, sources["auth_plugin"] = self._setting(args, file_settings, "auth_plugin")
+        if not plugin and self.auth_plugin:
+            plugin, sources["auth_plugin"] = self.auth_plugin, "generated default"
+        options["auth"] = self.credentials(options, file_settings, str(plugin or ""))
         return options, sources
+
+    def credential_store(self) -> TokenStore:
+        """Return where ``auth login`` saves secrets (keyring, or a 0600 file)."""
+        return default_store(self.program, self.env, self.env_prefix)
+
+    @staticmethod
+    def _auth_http(options: Mapping[str, Any]) -> SafeHttpClient:
+        """Return the transport for token endpoints, honouring the client settings."""
+        return SafeHttpClient(
+            allow_private=bool(options.get("allow_private")),
+            timeout=float(options.get("timeout") or 30.0),
+        )
+
+    def credentials(
+        self, options: Mapping[str, Any], file_settings: Mapping[str, Any], plugin: str = ""
+    ) -> ChainAuth:
+        """Build the credential chain: plugin, env, command, OAuth client, saved login."""
+        configured: dict[str, Mapping[str, Any]] = dict(self.auth_config or {})
+        file_auth = file_settings.get("auth") or {}
+        if not isinstance(file_auth, Mapping):
+            raise CodapactError("settings 'auth' must map scheme names to OAuth settings")
+        for name, value in file_auth.items():
+            if not isinstance(value, Mapping):
+                raise CodapactError(f"settings auth.{name} must be a mapping")
+            configured[str(name)] = {**configured.get(str(name), {}), **value}
+        if self.model is None and plugin:
+            raise CodapactError("auth plugins need the generated model; regenerate the CLI")
+        api = self.model() if self.model is not None else Api(self.api_name, "", ())
+        return build_cli_auth(
+            api,
+            program=self.program,
+            prefix=self.env_prefix,
+            environ=self.env,
+            store=self.credential_store(),
+            http=self._auth_http(options),
+            plugin=plugin or None,
+            configured=configured,
+        )
 
     def settings(self, args: argparse.Namespace) -> dict[str, Any]:
         """Resolve client options: flags, then environment, then the settings file."""
@@ -736,6 +790,8 @@ class CliRuntime:
                 out.write(cli_tools.completion_script(self.program, args.shell))
                 return EXIT_OK
             fmt = self.output_format(args)
+            if name == "auth":
+                return self._auth(args, load_model(), fmt, out, err)
             if name == "describe":
                 header = {
                     "program": self.program,
@@ -784,6 +840,34 @@ class CliRuntime:
         finally:
             _error_format.reset(token)
 
+    def _auth(self, args: argparse.Namespace, api: Api, fmt: str, out: TextIO, err: TextIO) -> int:
+        options, _ = self.resolve(args)
+        chain = options["auth"]
+        commands = cli_auth.AuthCommands(
+            program=self.program,
+            prefix=self.env_prefix,
+            api=api,
+            chain=chain,
+            store=self.credential_store(),
+            http=self._auth_http(options),
+            environ=self.env,
+            configured=self.auth_config or {},
+            err=err,
+        )
+        try:
+            if args.auth_action == "token":
+                # Printing the credential is this command's purpose (`$(prog auth token)`).
+                out.write(commands.secret(args) + "\n")
+                return 0
+            result = commands.run(args)
+        except AuthError as error:
+            return emit_error(self.program, "auth", str(error), EXIT_AUTH, err)
+        if args.auth_action == "status":
+            render(result, self.output_format(args, "table" if out.isatty() else "json"), out)
+        else:
+            render(result, fmt if fmt != "table" else "json", out)
+        return EXIT_OK
+
     def _environment(self, api: Api) -> dict[str, str]:
         e = self.env_prefix
         found = {
@@ -795,13 +879,25 @@ class CliRuntime:
             f"{e}_ERROR_FORMAT": "text or json",
         }
         auth = EnvAuth(e, {})
+        if api.auth_schemes:
+            found[f"{e}_AUTH_PLUGIN"] = "package.module:factory returning an AuthProvider"
+            found[f"{e}_CREDENTIAL_STORE"] = "where auth login saves: keyring, file, or memory"
         for scheme in api.auth_schemes:
             variable = auth.variable(scheme)
-            if scheme.kind.value == "basic":
+            if scheme.kind is AuthKind.CUSTOM:
+                continue
+            if scheme.kind is AuthKind.BASIC:
                 found[f"{variable}_USERNAME"] = f"username for {scheme.name}"
                 found[f"{variable}_PASSWORD"] = f"password for {scheme.name}"
             else:
                 found[variable] = f"credential for {scheme.name} ({scheme.kind.value})"
+            found[f"{variable}_COMMAND"] = f"command printing the {scheme.name} credential"
+            if scheme.kind is AuthKind.OAUTH2:
+                found[f"{variable}_CLIENT_ID"] = f"OAuth client id for {scheme.name}"
+                found[f"{variable}_CLIENT_SECRET"] = (
+                    f"OAuth client secret for {scheme.name} (client credentials)"
+                )
+                found[f"{variable}_SCOPES"] = f"OAuth scopes for {scheme.name}"
         return found
 
     def _client_options(self, args: argparse.Namespace, err: TextIO) -> dict[str, Any]:
@@ -815,8 +911,23 @@ class CliRuntime:
             )
             options["middleware"] = ()
         elif getattr(args, "verbose", False):
-            options["middleware"] = (Retry(), Trace(err, self._secrets()))
+            secrets = self._secrets() + self._resolved_secrets(options.get("auth"))
+            options["middleware"] = (Retry(), Trace(err, secrets))
         return options
+
+    def _resolved_secrets(self, chain: Any) -> tuple[str, ...]:
+        """Return static secrets the chain hands out (command output, saved logins)."""
+        if not isinstance(chain, ChainAuth) or self.model is None:
+            return ()
+        found = []
+        for scheme in self.model().auth_schemes:
+            try:
+                secret = chain.credential(scheme)
+            except AuthError:
+                continue
+            if isinstance(secret, Credential) and secret.secret:
+                found.append(secret.secret)
+        return tuple(found)
 
     def _secrets(self) -> tuple[str, ...]:
         """Return credential values from the environment, to mask in logs."""
@@ -987,8 +1098,10 @@ class PlaceholderAuth:
     environ: Mapping[str, str] = field(default_factory=dict)
     fill_all: bool = False
 
-    def credential(self, scheme: AuthScheme) -> Credential | None:
+    def credential(self, scheme: AuthScheme) -> Secret | None:
         """Return a placeholder naming the variable, never the secret."""
+        if scheme.kind is AuthKind.CUSTOM:
+            return FunctionAuthenticator(_unchanged)
         variable = self.env.variable(scheme)
         if scheme.kind.value == "basic":
             names = (f"{variable}_USERNAME", f"{variable}_PASSWORD")
@@ -998,6 +1111,11 @@ class PlaceholderAuth:
         if not self.fill_all and not self.environ.get(variable):
             return None
         return Credential("$" + variable)
+
+
+def _unchanged(request: HttpRequest, scheme: AuthScheme) -> HttpRequest:
+    """Leave a dry-run request as is: custom schemes run only for real requests."""
+    return request
 
 
 @dataclass(frozen=True, slots=True)

@@ -225,7 +225,7 @@ def test_cli_quick_mode_and_dry_run(tmp_path: Path) -> None:
 def test_cli_inspect_every_artifact() -> None:
     config = str(EXAMPLES / "petstore" / "codapact.yaml")
     code, out, _ = run("inspect", "model", "-c", config)
-    assert code == 0 and json.loads(out)["model_version"] == 1
+    assert code == 0 and json.loads(out)["model_version"] == 2
     code, out, _ = run("inspect", "surface", "-c", config)
     assert code == 0 and json.loads(out)["root"]["children"][0]["name"] == {"words": ["pets"]}
     code, out, _ = run("inspect", "commands", "-c", config)

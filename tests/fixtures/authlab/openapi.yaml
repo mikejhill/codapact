@@ -1,0 +1,82 @@
+openapi: 3.1.0
+info:
+  title: AuthLab
+  version: "1.0"
+  description: Every auth flow codapact supports, served by tests/authlab.py.
+servers:
+  - url: http://127.0.0.1:1
+components:
+  securitySchemes:
+    header_key: {type: apiKey, in: header, name: X-Api-Key}
+    query_key: {type: apiKey, in: query, name: api_key}
+    cookie_key: {type: apiKey, in: cookie, name: session}
+    basic: {type: http, scheme: basic}
+    bearer: {type: http, scheme: bearer}
+    sso:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: http://127.0.0.1:1/oauth/token
+          scopes: {read: read things}
+        deviceAuthorization:
+          deviceAuthorizationUrl: http://127.0.0.1:1/oauth/device
+          tokenUrl: http://127.0.0.1:1/oauth/token
+          scopes: {read: read things}
+        authorizationCode:
+          authorizationUrl: http://127.0.0.1:1/oauth/authorize
+          tokenUrl: http://127.0.0.1:1/oauth/token
+          scopes: {read: read things}
+    signed: {type: http, scheme: hmac-sha256, description: HMAC request signing}
+  schemas:
+    Whoami:
+      type: object
+      required: [scheme, principal]
+      properties:
+        scheme: {type: string}
+        principal: {type: string}
+paths:
+  /public:
+    get:
+      operationId: public
+      tags: [lab]
+      responses:
+        "200": {description: ok, content: {application/json: {schema: {$ref: "#/components/schemas/Whoami"}}}}
+  /whoami/header-key:
+    get:
+      operationId: header_key
+      tags: [lab]
+      security: [{header_key: []}]
+      responses:
+        "200": {description: ok, content: {application/json: {schema: {$ref: "#/components/schemas/Whoami"}}}}
+        "401": {description: unauthorized}
+  /whoami/query-key:
+    get: {operationId: query_key, tags: [lab], security: [{query_key: []}], responses: {"200": {description: ok, content: {application/json: {schema: {$ref: "#/components/schemas/Whoami"}}}}, "401": {description: unauthorized}}}
+  /whoami/cookie-key:
+    get: {operationId: cookie_key, tags: [lab], security: [{cookie_key: []}], responses: {"200": {description: ok, content: {application/json: {schema: {$ref: "#/components/schemas/Whoami"}}}}, "401": {description: unauthorized}}}
+  /whoami/basic:
+    get: {operationId: basic, tags: [lab], security: [{basic: []}], responses: {"200": {description: ok, content: {application/json: {schema: {$ref: "#/components/schemas/Whoami"}}}}, "401": {description: unauthorized}}}
+  /whoami/bearer:
+    get: {operationId: bearer, tags: [lab], security: [{bearer: []}], responses: {"200": {description: ok, content: {application/json: {schema: {$ref: "#/components/schemas/Whoami"}}}}, "401": {description: unauthorized}}}
+  /whoami/sso:
+    get: {operationId: sso, tags: [lab], security: [{sso: [read]}], responses: {"200": {description: ok, content: {application/json: {schema: {$ref: "#/components/schemas/Whoami"}}}}, "401": {description: unauthorized}}}
+  /whoami/signed:
+    post:
+      operationId: signed
+      tags: [lab]
+      security: [{signed: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [message], properties: {message: {type: string}}}
+      responses:
+        "200": {description: ok, content: {application/json: {schema: {$ref: "#/components/schemas/Whoami"}}}}
+        "401": {description: unauthorized}
+  /whoami/either:
+    get:
+      operationId: either
+      tags: [lab]
+      security: [{header_key: []}, {bearer: []}, {}]
+      responses:
+        "200": {description: ok, content: {application/json: {schema: {$ref: "#/components/schemas/Whoami"}}}}
+        "401": {description: unauthorized}

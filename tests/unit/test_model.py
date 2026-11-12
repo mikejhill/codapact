@@ -8,6 +8,7 @@ import pytest
 
 from codapact.core.errors import ModelError
 from codapact.model import (
+    MODEL_VERSION,
     Api,
     AuthRequirement,
     Field,
@@ -61,7 +62,7 @@ def test_round_trip_is_lossless_and_canonical(factory) -> None:
     text = dumps(api)
     assert loads(text) == api
     assert dumps(loads(text)) == text
-    assert json.loads(text)["model_version"] == 1
+    assert json.loads(text)["model_version"] == MODEL_VERSION == 2
 
 
 def test_defaults_are_omitted_and_unions_tagged() -> None:
@@ -150,3 +151,29 @@ def test_from_data_generic_nodes() -> None:
     assert from_data(
         Field, {"name": "a", "type": {"kind": "primitive", "scalar": "string"}}
     ) == Field("a", STRING)
+
+
+def test_v1_documents_move_oauth_token_url_into_flows() -> None:
+    v1 = {
+        "name": "x",
+        "model_version": 1,
+        "auth_schemes": [
+            {"name": "o", "kind": "oauth2", "token_url": "https://t", "scopes": ["a"]},
+            {"name": "p", "kind": "oauth2", "scopes": []},
+            {"name": "b", "kind": "bearer"},
+        ],
+    }
+    upgraded = migrations.migrate(v1, target=2)
+    assert upgraded["auth_schemes"] == [
+        {
+            "name": "o",
+            "kind": "oauth2",
+            "flows": [{"kind": "client_credentials", "token_url": "https://t", "scopes": ["a"]}],
+        },
+        {"name": "p", "kind": "oauth2", "flows": [{"kind": "client_credentials"}]},
+        {"name": "b", "kind": "bearer"},
+    ]
+    assert migrations.migrate({"name": "y", "model_version": 1}, target=2) == {
+        "name": "y",
+        "model_version": 2,
+    }
