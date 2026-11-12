@@ -290,7 +290,8 @@ def test_device_code_login(capsys: pytest.CaptureFixture[str]) -> None:
     )
     auth.http = FakeTransport(device_idp)
     result = auth.run(args("login"))
-    assert result.pop("expires_in") in (119, 120)
+    expires_in = result.pop("expires_in")
+    assert expires_in in (119, 120)
     assert result == {"scheme": "sso", "saved": "memory", "flow": "DeviceCode", "refreshable": True}
     assert isinstance(auth.err, io.StringIO)
     assert auth.err.getvalue() == "To sign in, open https://idp/verify and enter code ABCD\n"
