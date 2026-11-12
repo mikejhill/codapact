@@ -1,6 +1,6 @@
 name: Mutation
 # Mutation testing measures whether the tests notice behavior changes. It is slow
-# (~9k mutants), so it runs in parallel shards after merges to main, weekly, and on
+# (~18k mutants), so it runs in parallel shards after merges to main, weekly, and on
 # demand; it never gates a PR. Each shard must finish and meet the score floor.
 on:
   push:
@@ -25,9 +25,12 @@ jobs:
           - {name: openapi, patterns: 'codapact.sources.openapi.*'}
           - {name: sources, patterns: 'codapact.sources.graphql.* codapact.sources.loader.* codapact.sources.base.*'}
           - {name: targets, patterns: 'codapact.targets.*'}
-          # runtime is split three ways: as one shard it outgrew the 65-minute cap.
+          # runtime is split five ways: as one shard it outgrew the 65-minute cap, and
+          # the CLI modules alone (~3.8k slow mutants) did too.
           # A new codapact.runtime module must be added to one of these patterns.
-          - {name: runtime-cli, patterns: 'codapact.runtime.cli.* codapact.runtime.cli_*'}
+          - {name: runtime-cli, patterns: 'codapact.runtime.cli.*'}
+          - {name: runtime-cli-auth, patterns: 'codapact.runtime.cli_auth.*'}
+          - {name: runtime-cli-tools, patterns: 'codapact.runtime.cli_tools.*'}
           - {name: runtime-auth, patterns: 'codapact.runtime.oauth.* codapact.runtime.auth.* codapact.runtime.credentials.*'}
           - {name: runtime-core, patterns: 'codapact.runtime.arguments.* codapact.runtime.middleware.* codapact.runtime.errors.* codapact.runtime.abstractions.* codapact.runtime.protocols.* codapact.runtime.client.* codapact.runtime.codec.* codapact.runtime.selftest.*'}
           - {name: pipeline, patterns: 'codapact.pipeline.* codapact.plugins.* codapact.commands.*'}
