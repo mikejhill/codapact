@@ -202,20 +202,41 @@ class FileTokenStore:
         return True
 
 
+KEYRING_NAMESPACE = "codapact"
+
+
+def keyring_service(program: str) -> str:
+    """The keyring namespace of a generated CLI: ``codapact:<program>``."""
+    return f"{KEYRING_NAMESPACE}:{program}"
+
+
 @dataclass(frozen=True, slots=True)
 class KeyringTokenStore:
-    """The OS keyring (macOS Keychain, Windows Credential Locker, Secret Service).
+    """The OS keyring (macOS Keychain, Windows Credential Manager, Secret Service).
+
+    Each key is its own entry, with service ``<service>:<key>`` and the key as
+    user name, so entries read as ``codapact:ynab:bearer`` in Windows Credential
+    Manager or Keychain Access and never collide with other applications.
+
+    ``legacy_service`` names where older versions saved (service ``<program>``,
+    user name ``<key>``): an entry found only there is moved to the new name the
+    first time it is read, and ``save``/``delete`` remove the old entry too.
 
     Needs the optional ``keyring`` package.
     """
 
     service: str
     backend: Any = None
+    legacy_service: str | None = None
 
     @property
     def location(self) -> str:
         """Describe where secrets live."""
-        return f"keyring service {self.service!r}"
+        return f"keyring service {self.service + ':<scheme>'!r}"
+
+    def entry(self, key: str) -> str:
+        """The keyring service name that holds ``key``."""
+        return f"{self.service}:{key}"
 
     def _keyring(self) -> Any:
         if self.backend is not None:
@@ -227,27 +248,52 @@ class KeyringTokenStore:
         return keyring
 
     def load(self, key: str) -> dict[str, Any] | None:
-        """Return the stored data for ``key``."""
-        raw = self._keyring().get_password(self.service, key)
-        if not raw:
-            return None
-        try:
-            data = json.loads(raw)
-        except ValueError:
-            return None
-        return data if isinstance(data, dict) else None
+        """Return the stored data for ``key``, moving a legacy entry to its new name."""
+        backend = self._keyring()
+        data = _decode(backend.get_password(self.entry(key), key))
+        if data is not None or not self.legacy_service:
+            return data
+        data = _decode(backend.get_password(self.legacy_service, key))
+        if data is not None:
+            backend.set_password(self.entry(key), key, json.dumps(data, sort_keys=True))
+            self._drop_legacy(backend, key)
+        return data
 
     def save(self, key: str, data: dict[str, Any]) -> None:
         """Store ``data`` under ``key``."""
-        self._keyring().set_password(self.service, key, json.dumps(data, sort_keys=True))
+        backend = self._keyring()
+        backend.set_password(self.entry(key), key, json.dumps(data, sort_keys=True))
+        self._drop_legacy(backend, key)
 
     def delete(self, key: str) -> bool:
-        """Remove ``key``."""
+        """Remove ``key`` (and any legacy entry for it)."""
         backend = self._keyring()
-        if backend.get_password(self.service, key) is None:
+        removed = self._drop_legacy(backend, key)
+        if backend.get_password(self.entry(key), key) is not None:
+            backend.delete_password(self.entry(key), key)
+            removed = True
+        return removed
+
+    def _drop_legacy(self, backend: Any, key: str) -> bool:
+        if not self.legacy_service:
             return False
-        backend.delete_password(self.service, key)
+        try:
+            if backend.get_password(self.legacy_service, key) is None:
+                return False
+            backend.delete_password(self.legacy_service, key)
+        except Exception:  # noqa: BLE001 - a stale legacy entry must never block the new one
+            return False
         return True
+
+
+def _decode(raw: str | None) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def default_store(program: str, env: Mapping[str, str], prefix: str) -> TokenStore:
@@ -266,7 +312,7 @@ def default_store(program: str, env: Mapping[str, str], prefix: str) -> TokenSto
         return MemoryTokenStore()
     keyring = _usable_keyring()
     if keyring is not None:
-        return KeyringTokenStore(program, keyring)
+        return KeyringTokenStore(keyring_service(program), keyring, legacy_service=program)
     if choice == "keyring":
         raise AuthError("the keyring credential store needs the 'keyring' package")
     return file_store
@@ -837,6 +883,7 @@ __all__ = [
     "FileTokenStore",
     "Grant",
     "KeyringTokenStore",
+    "keyring_service",
     "MemoryTokenStore",
     "OAuth2",
     "OAuthSettings",

@@ -8,7 +8,7 @@ import threading
 import types
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -139,19 +139,61 @@ class FakeKeyring:
 
 def test_keyring_store() -> None:
     backend = FakeKeyring()
-    store = KeyringTokenStore("acme", backend)
-    assert store.location == "keyring service 'acme'"
+    store = KeyringTokenStore("codapact:acme", backend)
+    assert store.location == "keyring service 'codapact:acme:<scheme>'"
     assert store.load("k") is None
     removed = store.delete("k")
     assert removed is False
     store.save("k", {"secret": "s"})
+    assert ("codapact:acme:k", "k") in backend.items
     assert store.load("k") == {"secret": "s"}
     removed = store.delete("k")
     assert removed is True
     assert store.load("k") is None
-    backend.items[("acme", "bad")] = "{"
-    backend.items[("acme", "list")] = "[1]"
+    backend.items[("codapact:acme:bad", "bad")] = "{"
+    backend.items[("codapact:acme:list", "list")] = "[1]"
     assert store.load("bad") is None and store.load("list") is None
+
+
+def test_keyring_store_moves_legacy_entries() -> None:
+    backend = FakeKeyring()
+    backend.items[("acme", "bearer")] = json.dumps({"secret": "old"})
+    backend.items[("acme", "broken")] = "{"
+    store = KeyringTokenStore("codapact:acme", backend, legacy_service="acme")
+    moved = store.load("bearer")
+    assert moved == {"secret": "old"}
+    assert backend.items == {
+        ("codapact:acme:bearer", "bearer"): json.dumps({"secret": "old"}),
+        ("acme", "broken"): "{",
+    }
+    reread = store.load("bearer")  # now from the new entry
+    broken = store.load("broken")
+    assert reread == {"secret": "old"}
+    assert broken is None
+    assert ("acme", "broken") in backend.items  # unreadable entries stay put
+    store.save("broken", {"secret": "new"})  # re-login replaces the legacy entry
+    assert ("acme", "broken") not in backend.items
+    backend.items[("acme", "gone")] = json.dumps({"secret": "x"})
+    first = store.delete("gone")
+    again = store.delete("gone")
+    assert first is True
+    assert again is False
+
+
+def test_keyring_store_ignores_legacy_delete_failures() -> None:
+    class Stubborn(FakeKeyring):
+        @override
+        def delete_password(self, service: str, key: str) -> None:
+            if service == "acme":
+                raise RuntimeError("access denied")
+            super().delete_password(service, key)
+
+    backend = Stubborn()
+    backend.items[("acme", "bearer")] = json.dumps({"secret": "old"})
+    store = KeyringTokenStore("codapact:acme", backend, legacy_service="acme")
+    moved = store.load("bearer")
+    assert moved == {"secret": "old"}
+    assert backend.items[("codapact:acme:bearer", "bearer")] == json.dumps({"secret": "old"})
 
 
 def fake_keyring_module(monkeypatch: pytest.MonkeyPatch, *, failing: bool) -> FakeKeyring:
@@ -195,11 +237,15 @@ def test_default_store_choices(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
 def test_default_store_uses_a_working_keyring(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = fake_keyring_module(monkeypatch, failing=False)
+    backend.items[("acme", "old")] = json.dumps({"a": 0})
     store = default_store("acme", {}, "ACME")
     assert isinstance(store, KeyringTokenStore)
+    migrated = store.load("old")
+    assert migrated == {"a": 0}
+    assert ("acme", "old") not in backend.items
     store.save("k", {"a": 1})
-    assert json.loads(backend.items[("acme", "k")]) == {"a": 1}
-    assert KeyringTokenStore("acme").load("k") == {"a": 1}  # imports the module itself
+    assert json.loads(backend.items[("codapact:acme:k", "k")]) == {"a": 1}
+    assert KeyringTokenStore("codapact:acme").load("k") == {"a": 1}  # imports the module itself
     fake_keyring_module(monkeypatch, failing=True)
     assert isinstance(default_store("acme", {}, "ACME"), FileTokenStore)
 
