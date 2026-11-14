@@ -151,11 +151,13 @@ class Suite:
             input=stdin,
             capture_output=True,
             text=True,
+            encoding="utf-8",  # generated CLIs write UTF-8 to pipes on every platform
+            errors="replace",
             timeout=TIMEOUT,
             check=False,
         )
         shown = (str(self.data["program"]), *argv)
-        return Result(shown, completed.returncode, completed.stdout, completed.stderr)
+        return Result(shown, completed.returncode, completed.stdout or "", completed.stderr or "")
 
     def credential_variables(self) -> list[str]:
         """Every environment variable that can carry a credential for this CLI."""

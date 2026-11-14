@@ -104,6 +104,7 @@ Precedence: flag, then environment, then settings file.
 | Timeout | `--timeout` | `<PREFIX>_TIMEOUT` | `timeout` |
 | Private network | `--allow-private` | `<PREFIX>_ALLOW_PRIVATE` | `allow_private` |
 | Response validation | `--response-validation strict\|warn\|off` | `<PREFIX>_RESPONSE_VALIDATION` | `response_validation` |
+| Response size limit | none | `<PREFIX>_MAX_RESPONSE_BYTES` | `max_response_bytes` (default 100 MB) |
 | Output format | `-o`/`--output json\|jsonl\|yaml\|table\|raw` | `<PREFIX>_OUTPUT` | `output` |
 | Error format | `--error-format text\|json` | `<PREFIX>_ERROR_FORMAT` | `error_format` |
 | Credentials | none | `<PREFIX>_<SCHEME>`; basic uses `_USERNAME`/`_PASSWORD`; full chain under [Authentication](#authentication) | `auth_plugin`; secrets are never read from the file |
@@ -119,7 +120,8 @@ result is the item list, so `[].name`), `--dry-run`, `-v/--verbose`, `--error-fo
 `--allow-private`, and `--response-validation`. Command help lists them in one line;
 `<program> --help` describes each.
 `table` renders a list of objects, unwrapping single-list envelopes such as `{"data": {"items": [...]}}`.
-`jsonl` prints one JSON value per line and streams `--all` results page by page.
+`jsonl` prints one JSON value per line, unwrapping the same envelopes as `table`, and streams
+`--all` results page by page. Output to a pipe or file is UTF-8 on every platform.
 
 ### Conventions every generated CLI follows
 

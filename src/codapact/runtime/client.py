@@ -28,6 +28,8 @@ from codapact.runtime.protocols.http import HttpAdapter
 AdapterFactory = Callable[[Exchange], ProtocolAdapter]
 DEFAULT_ADAPTERS: tuple[AdapterFactory, ...] = (HttpAdapter, GraphQLAdapter)
 MAX_PAGES = 10_000
+DEFAULT_MAX_RESPONSE_BYTES = 100_000_000
+"""Largest response body the default transport accepts (100 MB)."""
 
 
 def load_model(resource: Traversable) -> Api:
@@ -53,12 +55,14 @@ class RuntimeClient:
         user_agent: str | None = None,
         response_validation: str = "strict",
         proxy: str | None = None,
+        max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
     ) -> None:
         """Configure the client; ``base_url`` defaults to the model's first server.
 
         ``response_validation`` is ``strict`` (mismatching responses raise
         ``ResponseValidationError``), ``warn`` (emit ``ResponseValidationWarning`` and
         return the data), or ``off``. ``proxy`` overrides the ``HTTPS_PROXY`` environment.
+        ``max_response_bytes`` caps each response body of the default transport.
         """
         if response_validation not in RESPONSE_VALIDATION_MODES:
             raise ConfigError(
@@ -78,7 +82,12 @@ class RuntimeClient:
             codec=self._codec,
             base_url=self.base_url,
             transport=transport
-            or SafeHttpClient(allow_private=allow_private, timeout=timeout, proxy=proxy),
+            or SafeHttpClient(
+                allow_private=allow_private,
+                timeout=timeout,
+                proxy=proxy,
+                max_bytes=max_response_bytes,
+            ),
             auth=auth,
             middleware=tuple(middleware) if middleware is not None else (Retry(),),
             validate=validate,

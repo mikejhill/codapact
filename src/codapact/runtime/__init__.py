@@ -28,6 +28,7 @@ from codapact.runtime.errors import (
     AuthError,
     ClientError,
     GraphQLResponseError,
+    ResponseTooLargeError,
     TransportError,
     ValidationError,
 )
@@ -64,6 +65,7 @@ __all__ = [
     "HttpRequest",
     "HttpResponse",
     "Middleware",
+    "ResponseTooLargeError",
     "Retry",
     "RuntimeClient",
     "StaticAuth",

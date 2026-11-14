@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from codapact.core.errors import CodapactError, TransportError
+from codapact.core.errors import CodapactError, ResponseTooLargeError, TransportError
 
 __all__ = [
     "ApiError",
     "AuthError",
     "ClientError",
     "GraphQLResponseError",
+    "ResponseTooLargeError",
     "ResponseValidationError",
     "ResponseValidationWarning",
     "TransportError",
