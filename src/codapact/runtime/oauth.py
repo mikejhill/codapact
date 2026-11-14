@@ -134,6 +134,10 @@ class MemoryTokenStore:
     items: dict[str, dict[str, Any]] = field(default_factory=dict)
     location: str = "memory"
 
+    def where(self, key: str) -> str:
+        """Describe where ``key`` lives."""
+        return self.location
+
     def load(self, key: str) -> dict[str, Any] | None:
         """Return the stored data for ``key``."""
         return self.items.get(key)
@@ -160,6 +164,10 @@ class FileTokenStore:
     def location(self) -> str:
         """Describe where secrets live."""
         return str(self.path)
+
+    def where(self, key: str) -> str:
+        """Describe where ``key`` lives."""
+        return f"{self.path} [{key}]"
 
     def _read(self) -> dict[str, Any]:
         try:
@@ -232,11 +240,15 @@ class KeyringTokenStore:
     @property
     def location(self) -> str:
         """Describe where secrets live."""
-        return f"keyring service {self.service + ':<scheme>'!r}"
+        return f"keyring ({self.service}:*)"
 
     def entry(self, key: str) -> str:
         """The keyring service name that holds ``key``."""
         return f"{self.service}:{key}"
+
+    def where(self, key: str) -> str:
+        """Describe where ``key`` lives: its keyring entry name."""
+        return f"keyring entry {self.entry(key)!r}"
 
     def _keyring(self) -> Any:
         if self.backend is not None:
@@ -294,6 +306,14 @@ def _decode(raw: str | None) -> dict[str, Any] | None:
     except ValueError:
         return None
     return data if isinstance(data, dict) else None
+
+
+def store_location(store: TokenStore, key: str | None = None) -> str:
+    """Describe where ``store`` keeps ``key`` (or its secrets in general)."""
+    where = getattr(store, "where", None)
+    if key is not None and callable(where):
+        return str(where(key))
+    return str(getattr(store, "location", type(store).__name__))
 
 
 def default_store(program: str, env: Mapping[str, str], prefix: str) -> TokenStore:
@@ -884,6 +904,7 @@ __all__ = [
     "Grant",
     "KeyringTokenStore",
     "keyring_service",
+    "store_location",
     "MemoryTokenStore",
     "OAuth2",
     "OAuthSettings",

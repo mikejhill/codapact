@@ -76,14 +76,17 @@ def test_auth_group_shape() -> None:
     )
     actions = subparsers(group)
     assert (actions.dest, actions.metavar, actions.required) == ("auth_action", "ACTION", True)
-    assert tuple(actions.choices) == ACTIONS == ("login", "logout", "status", "token")
+    assert tuple(actions.choices) == ACTIONS
+    assert ACTIONS == ("login", "logout", "status", "token", "profiles", "use")
     assert helps(actions) == {
         "login": "save a credential (prompt, stdin, or an OAuth sign-in)",
-        "logout": "forget a saved credential",
+        "logout": "forget a saved credential (all of them removes the profile)",
         "status": "show where each credential comes from",
         "token": "print the credential a command would send",
+        "profiles": "list saved-login profiles and the default",
+        "use": "make a profile the default",
     }
-    assert seen == [actions.choices[name] for name in ("login", "logout", "status", "token")]
+    assert seen == [actions.choices[name] for name in ACTIONS]
     for name in ACTIONS:
         assert actions.choices[name].get_default("builtin") == "auth"
     with pytest.raises(SystemExit):
@@ -97,7 +100,9 @@ def test_auth_action_options() -> None:
     assert login.description == "Save a credential for later commands."
     assert login.epilog == (
         "examples:\n  acme auth login\n  echo $TOKEN | acme auth login --with-token\n"
-        "  acme auth login --flow device_code"
+        "  acme auth login --flow device_code\n"
+        "  acme auth login --new              (another account, auto-named)\n"
+        "  acme auth login --profile work"
     )
     assert login.formatter_class is argparse.RawDescriptionHelpFormatter
     assert options(login) == {
@@ -107,6 +112,13 @@ def test_auth_action_options() -> None:
             None,
             None,
             "_StoreAction",
+        ),
+        "--new": (
+            "new",
+            "save to a new profile, named automatically unless --profile names it",
+            None,
+            False,
+            "_StoreTrueAction",
         ),
         "--with-token": (
             "with_token",

@@ -1,4 +1,5 @@
-"""The ``auth`` command group of every generated CLI: login, logout, status, token.
+"""The ``auth`` command group of every generated CLI: login, logout, status, token,
+profiles, use.
 
 ``login`` saves a credential so later commands need no environment variables:
 
@@ -13,6 +14,10 @@
 
 Secrets go to the OS keyring when the ``keyring`` package is available, and to
 ``~/.config/<program>/credentials.json`` (mode 0600) otherwise.
+
+Each login belongs to a profile (see ``codapact.runtime.profiles``): ``login --new``
+adds an automatically named one, ``--profile NAME`` names or selects one,
+``profiles`` lists them, and ``use NAME`` changes the default.
 """
 
 from __future__ import annotations
@@ -22,7 +27,7 @@ import getpass
 import sys
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, TextIO
 
 from codapact.core.naming import env_variable
@@ -38,9 +43,17 @@ from codapact.runtime.credentials import (
     session_key,
 )
 from codapact.runtime.errors import AuthError
-from codapact.runtime.oauth import OAuth2, Token, TokenEndpoint, TokenStore, grant_for_scheme
+from codapact.runtime.oauth import (
+    OAuth2,
+    Token,
+    TokenEndpoint,
+    TokenStore,
+    grant_for_scheme,
+    store_location,
+)
+from codapact.runtime.profiles import ProfileIndex, ProfileStore
 
-ACTIONS = ("login", "logout", "status", "token")
+ACTIONS = ("login", "logout", "status", "token", "profiles", "use")
 
 
 def add_auth_commands(
@@ -48,7 +61,7 @@ def add_auth_commands(
     program: str,
     add_global_options: Callable[[argparse.ArgumentParser], None],
 ) -> None:
-    """Register ``auth login|logout|status|token``."""
+    """Register ``auth login|logout|status|token|profiles|use``."""
     group = commands.add_parser(
         "auth",
         help="sign in, sign out, and inspect credentials",
@@ -62,10 +75,17 @@ def add_auth_commands(
         description="Save a credential for later commands.",
         epilog=f"examples:\n  {program} auth login\n"
         f"  echo $TOKEN | {program} auth login --with-token\n"
-        f"  {program} auth login --flow device_code",
+        f"  {program} auth login --flow device_code\n"
+        f"  {program} auth login --new              (another account, auto-named)\n"
+        f"  {program} auth login --profile work",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     login.add_argument("--scheme", help="credential scheme (default: the only one)")
+    login.add_argument(
+        "--new",
+        action="store_true",
+        help="save to a new profile, named automatically unless --profile names it",
+    )
     login.add_argument("--with-token", action="store_true", help="read the secret from stdin")
     login.add_argument("--username", help="username for basic auth")
     login.add_argument(
@@ -80,12 +100,22 @@ def add_auth_commands(
         choices=[k.value for k in OAuthFlowKind if k is not OAuthFlowKind.IMPLICIT],
         help="OAuth flow to run",
     )
-    logout = actions.add_parser("logout", help="forget a saved credential")
+    logout = actions.add_parser(
+        "logout", help="forget a saved credential (all of them removes the profile)"
+    )
     logout.add_argument("--scheme", help="credential scheme (default: all)")
     status = actions.add_parser("status", help="show where each credential comes from")
     token = actions.add_parser("token", help="print the credential a command would send")
     token.add_argument("--scheme", help="credential scheme (default: the only one)")
-    for parser in (login, logout, status, token):
+    profiles = actions.add_parser(
+        "profiles",
+        help="list saved-login profiles and the default",
+        description="List profiles. Pick one per command with --profile NAME or "
+        "the PREFIX_PROFILE environment variable.",
+    )
+    use = actions.add_parser("use", help="make a profile the default")
+    use.add_argument("name", metavar="NAME", help="profile name")
+    for parser in (login, logout, status, token, profiles, use):
         add_global_options(parser)
         parser.set_defaults(builtin="auth")
 
@@ -102,6 +132,7 @@ class AuthCommands:
     http: Transport
     environ: Mapping[str, str]
     configured: Mapping[str, Mapping[str, Any]]
+    profiles: ProfileIndex = field(default_factory=lambda: ProfileIndex(None))
     stdin: TextIO | None = None
     err: TextIO | None = None
     prompt: Callable[[str], str] = input
@@ -111,11 +142,60 @@ class AuthCommands:
         """Return the data to render for ``args.auth_action`` (never a secret)."""
         self._require_schemes()
         action = args.auth_action
+        if action == "profiles":
+            return self.list_profiles()
+        if action == "use":
+            self.profiles.use(args.name)
+            return {"default": args.name}
         if action == "status":
             return self.status()
         if action == "logout":
             return self.logout(args.scheme)
-        return self.login(self.scheme(args.scheme), args)
+        if getattr(args, "new", False):
+            self.store = self._new_profile(getattr(args, "profile", None))
+        result = self._scoped(self.login(self.scheme(args.scheme), args))
+        if self.profile and self.profile != self.profiles.default:
+            result["note"] = (
+                f"{self.profile} is not the default profile: pass --profile {self.profile}, "
+                f"or run {self.program} auth use {self.profile}"
+            )
+        return result
+
+    @property
+    def profile(self) -> str:
+        """The profile this command works on."""
+        return str(getattr(self.store, "profile", ""))
+
+    def _scoped(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Put the profile first in ``data`` when the store has profiles."""
+        return {"profile": self.profile, **data} if self.profile else data
+
+    def _new_profile(self, name: str | None) -> TokenStore:
+        if not isinstance(self.store, ProfileStore):
+            raise AuthError("this credential store has no profiles")
+        if name and name in self.profiles.names:
+            raise AuthError(f"profile {name!r} already exists; drop --new to replace its login")
+        chosen = name or self.profiles.next_name()
+        return ProfileStore(self.store.inner, chosen, on_save=self.profiles.add)
+
+    def list_profiles(self) -> list[dict[str, Any]]:
+        """Each known profile, whether it is the default, and which schemes it has saved."""
+        names = self.profiles.names or [self.profiles.default]
+        if self.profile and self.profile not in names:
+            names.append(self.profile)
+        inner = self.store.inner if isinstance(self.store, ProfileStore) else None
+        rows = []
+        for name in names:
+            view = ProfileStore(inner, name) if inner is not None else self.store
+            saved = [s.name for s in self.api.auth_schemes if view.load(s.name) is not None]
+            rows.append(
+                {
+                    "profile": name,
+                    "default": name == self.profiles.default,
+                    "saved": ", ".join(saved) or "nothing",
+                }
+            )
+        return rows
 
     def secret(self, args: argparse.Namespace) -> str:
         """Return the credential ``auth token`` prints, kept apart from rendered data."""
@@ -145,12 +225,14 @@ class AuthCommands:
         rows = []
         for scheme in self.api.auth_schemes:
             source = describe_source(self.chain, scheme)
-            row: dict[str, Any] = {
-                "scheme": scheme.name,
-                "kind": scheme.kind.value,
-                "status": _status(source),
-                "source": source or self.chain.hint(scheme) or "not configured",
-            }
+            row: dict[str, Any] = self._scoped(
+                {
+                    "scheme": scheme.name,
+                    "kind": scheme.kind.value,
+                    "status": _status(source),
+                    "source": source or self.chain.hint(scheme) or "not configured",
+                }
+            )
             stored = self.store.load(scheme.name)
             token = Token.from_data(stored) if stored and stored.get("type") == "oauth2" else None
             if token is not None and token.expires_at is not None:
@@ -184,7 +266,11 @@ class AuthCommands:
             session = self.store.delete(session_key(scheme.name))
             if self.store.delete(scheme.name) or session:
                 removed.append(scheme.name)
-        return {"removed": removed}
+        result = self._scoped({"removed": removed})
+        if not name and self.profile and self.profiles.remove(self.profile):
+            result["profile_removed"] = True
+            result["default"] = self.profiles.default
+        return result
 
     def token(self, scheme: AuthScheme) -> str:
         """Return the secret a request would carry."""
@@ -222,7 +308,7 @@ class AuthCommands:
         else:
             secret = self._read_secret(args.with_token, f"{scheme.name} token: ")
             self.store.save(scheme.name, {"type": "token", "secret": secret})
-        return {"scheme": scheme.name, "saved": _location(self.store)}
+        return {"scheme": scheme.name, "saved": _location(self.store, scheme.name)}
 
     def _fields_login(
         self, scheme: AuthScheme, spec: Mapping[str, Mapping[str, Any]], given: list[str]
@@ -260,7 +346,11 @@ class AuthCommands:
                 raise AuthError(f"{name} is required")
         self.store.save(scheme.name, {"type": "fields", "fields": values})
         self.store.delete(session_key(scheme.name))  # new values: drop the old session
-        return {"scheme": scheme.name, "saved": _location(self.store), "fields": list(values)}
+        return {
+            "scheme": scheme.name,
+            "saved": _location(self.store, scheme.name),
+            "fields": list(values),
+        }
 
     def _read_secret(self, from_stdin: bool, label: str) -> str:
         if from_stdin:
@@ -296,7 +386,10 @@ class AuthCommands:
             metadata={"token_url": grant.token_url, "client_id": settings.client_id},
         )
         token = session.login()
-        result: dict[str, Any] = {"scheme": scheme.name, "saved": _location(self.store)}
+        result: dict[str, Any] = {
+            "scheme": scheme.name,
+            "saved": _location(self.store, scheme.name),
+        }
         result["flow"] = type(grant).__name__
         if token.expires_at is not None:
             result["expires_in"] = int(token.expires_at - time.time())
@@ -310,8 +403,8 @@ def _status(source: str | None) -> str:
     return "error" if source.startswith("error") else "ok"
 
 
-def _location(store: TokenStore) -> str:
-    return str(getattr(store, "location", type(store).__name__))
+def _location(store: TokenStore, key: str | None = None) -> str:
+    return store_location(store, key)
 
 
 __all__ = ["ACTIONS", "AuthCommands", "add_auth_commands"]

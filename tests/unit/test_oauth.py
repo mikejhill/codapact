@@ -140,7 +140,8 @@ class FakeKeyring:
 def test_keyring_store() -> None:
     backend = FakeKeyring()
     store = KeyringTokenStore("codapact:acme", backend)
-    assert store.location == "keyring service 'codapact:acme:<scheme>'"
+    assert store.location == "keyring (codapact:acme:*)"
+    assert store.where("k") == "keyring entry 'codapact:acme:k'"
     assert store.load("k") is None
     removed = store.delete("k")
     assert removed is False
