@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import io
 import json
 import warnings
@@ -65,6 +66,16 @@ def test_version_line_and_epilog() -> None:
     assert runtime().version_line().startswith("acme 1.2.3 (Acme 2; codapact ")
     assert CliRuntime("x", "X").version_line().startswith("x 0.0.0 (codapact ")
     assert "credentials:\n  login" in runtime().epilog("credentials:\n  login")
+
+
+def test_program_version_prefers_installed_distribution() -> None:
+    installed = importlib.metadata.version("pytest")
+    rt = CliRuntime("x", "X", {}, version="0.1.0", distribution="pytest")
+    assert rt.program_version == installed
+    assert rt.version_line().startswith(f"x {installed} (")
+    missing = CliRuntime("x", "X", {}, version="0.1.0", distribution="no-such-dist-codapact")
+    assert missing.program_version == "0.1.0"
+    assert CliRuntime("x", "X", {}, version="0.1.0").program_version == "0.1.0"
 
 
 def test_improve_messages() -> None:
