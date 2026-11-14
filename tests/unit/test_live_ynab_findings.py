@@ -6,7 +6,7 @@ import argparse
 import io
 import sys
 from pathlib import Path
-from typing import Any, TextIO, cast
+from typing import Any
 
 import pytest
 
@@ -132,12 +132,12 @@ class _Stream:
 
 
 def test_pipes_get_utf8_whatever_the_locale() -> None:
-    piped = _Stream("cp1252", tty=False)
-    assert _utf8(cast("TextIO", piped)) is piped
+    piped: Any = _Stream("cp1252", tty=False)
+    assert _utf8(piped) is piped
     assert piped.reconfigured == {"encoding": "utf-8", "errors": "backslashreplace"}
-    console = _Stream("cp1252", tty=True)
-    already = _Stream("UTF-8", tty=False)
-    _utf8(cast("TextIO", console)), _utf8(cast("TextIO", already))
+    console: Any = _Stream("cp1252", tty=True)
+    already: Any = _Stream("UTF-8", tty=False)
+    _utf8(console), _utf8(already)
     assert console.reconfigured is None and already.reconfigured is None
     plain = io.StringIO()  # no real encoding to change: left alone
     assert _utf8(plain) is plain
