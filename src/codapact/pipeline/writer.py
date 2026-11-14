@@ -12,8 +12,11 @@ import hashlib
 import json
 import os
 import tempfile
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from codapact.core.errors import OwnershipError
 from codapact.plugins.protocol import GeneratedFile
@@ -105,8 +108,19 @@ def plan(root: Path, files: tuple[GeneratedFile, ...]) -> WritePlan:
     return WritePlan(root, tuple(create), tuple(update), tuple(unchanged), tuple(delete), encoded)
 
 
-def write(write_plan: WritePlan, *, generator: str) -> None:
-    """Apply a plan produced by ``plan``."""
+def write(
+    write_plan: WritePlan,
+    *,
+    generator: str,
+    metadata: Mapping[str, Any] | None = None,
+    now: Callable[[], datetime] | None = None,
+) -> None:
+    """Apply a plan produced by ``plan``.
+
+    The manifest records ``generator``, ``metadata`` (e.g. source hashes) and
+    ``generated_at``. The timestamp only moves when anything else in the manifest
+    changes, so regenerating identical output rewrites nothing.
+    """
     root = write_plan.root
     root.mkdir(parents=True, exist_ok=True)
     for relative in (*write_plan.create, *write_plan.update):
@@ -115,12 +129,32 @@ def write(write_plan: WritePlan, *, generator: str) -> None:
         _atomic(path, write_plan.files[relative])
     for relative in write_plan.delete:
         _target(root, relative).unlink(missing_ok=True)
-    manifest = {
+    manifest: dict[str, Any] = {
         "version": MANIFEST_VERSION,
         "generator": generator,
+        **(metadata or {}),
         "files": {p: _digest(d) for p, d in sorted(write_plan.files.items())},
     }
+    previous = read_manifest(root)
+    stamp = previous.pop("generated_at", None) if previous else None
+    if previous != manifest or not isinstance(stamp, str):
+        stamp = (now or _utc_now)().strftime("%Y-%m-%dT%H:%M:%SZ")
+    manifest["generated_at"] = stamp
     _atomic(root / MANIFEST, (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode())
+
+
+def read_manifest(root: Path) -> dict[str, Any] | None:
+    """Return an output directory's manifest, or ``None`` when absent or unreadable."""
+    path = root / MANIFEST
+    try:
+        data = json.loads(path.read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _atomic(path: Path, data: bytes) -> None:

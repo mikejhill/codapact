@@ -8,6 +8,7 @@ acquire → translate → validate → shape → surface → commands → genera
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,8 @@ class PipelineResult:
     shape_report: list[dict[str, Any]] = field(default_factory=list)
     outputs: dict[Path, tuple[GeneratedFile, ...]] = field(default_factory=dict)
     plans: dict[Path, writer.WritePlan] = field(default_factory=dict)
+    source: dict[str, Any] = field(default_factory=dict)
+    """What was generated from: contract location, upstream and SHA-256 digests."""
 
 
 class Pipeline:
@@ -61,6 +64,7 @@ class Pipeline:
             self.fetcher.fetch(d, base=config.base, max_bytes=limit)
             for d in config.source.documents
         )
+        result.source = source_metadata(config, document.content, [c.content for c in companions])
         translated = source.parse(SourceInput(document, companions, config.source.options))
         result.diagnostics.extend(translated.diagnostics)
         if translated.api is None:
@@ -160,8 +164,30 @@ class Pipeline:
             result.plans[root] = writer.plan(root, files)
         if not dry_run:
             for plan in result.plans.values():
-                writer.write(plan, generator=f"codapact/{__version__}")
+                metadata: dict[str, Any] = {"source": result.source}
+                if config.digest:
+                    metadata["config_sha256"] = config.digest
+                writer.write(plan, generator=f"codapact/{__version__}", metadata=metadata)
         return result
+
+
+def source_metadata(
+    config: ProjectConfig, content: bytes, companions: list[bytes]
+) -> dict[str, Any]:
+    """Describe the contract an output was generated from, for the manifest."""
+    metadata: dict[str, Any] = {
+        "type": config.source.type,
+        "location": config.source.location,
+        "sha256": hashlib.sha256(content).hexdigest(),
+    }
+    if config.source.upstream:
+        metadata["upstream"] = config.source.upstream
+    if config.source.documents:
+        metadata["documents"] = {
+            name: hashlib.sha256(data).hexdigest()
+            for name, data in zip(config.source.documents, companions, strict=True)
+        }
+    return metadata
 
 
 def _selects_first(shape: tuple[Any, ...]) -> bool:
