@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+import hashlib
 import os
 import tempfile
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from typing import Any
 
 from codapact.core.errors import CodapactError
 from codapact.pipeline.config import ProjectConfig
+from codapact.pipeline.writer import read_manifest
 from codapact.sources.loader import Fetcher, SourceDocument, parse_structured
 
 
@@ -36,11 +38,17 @@ class SyncResult:
     added: int = 0
     removed: int = 0
     written: bool = False
+    behind: tuple[Path, ...] = ()
+    """Output directories whose manifest records a different local contract."""
 
     @property
     def stale(self) -> bool:
         """Whether generating from the local copy would differ from upstream."""
         return self.state in (SyncState.CHANGED, SyncState.MISSING)
+
+    def describe_outputs(self) -> list[str]:
+        """One line per output directory generated from an older local contract."""
+        return [f"generated output is behind {self.local.name}: {root}" for root in self.behind]
 
     def describe(self) -> str:
         """One line for people and CI logs."""
@@ -93,7 +101,21 @@ def sync(
     written = write and state is not SyncState.CURRENT
     if written:
         _atomic(local, remote.content)
-    return SyncResult(state, local, url, old, new, added, removed, written)
+    digest = hashlib.sha256(local.read_bytes()).hexdigest() if local.is_file() else None
+    behind = tuple(root for root in _outputs(config) if _generated_from(root) not in (None, digest))
+    return SyncResult(state, local, url, old, new, added, removed, written, behind)
+
+
+def _outputs(config: ProjectConfig) -> list[Path]:
+    return list(dict.fromkeys(t.output for t in config.targets))
+
+
+def _generated_from(root: Path) -> str | None:
+    """The contract digest an output directory's manifest records, if any."""
+    manifest = read_manifest(root) or {}
+    source = manifest.get("source")
+    digest = source.get("sha256") if isinstance(source, dict) else None
+    return digest if isinstance(digest, str) else None
 
 
 def _compare(local: SourceDocument, remote: SourceDocument) -> SyncState:

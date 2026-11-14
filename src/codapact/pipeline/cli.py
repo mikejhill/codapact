@@ -118,7 +118,11 @@ def _sync(config: ProjectConfig, args: argparse.Namespace, out: TextIO) -> int:
         print("codapact: run 'codapact generate' to regenerate", file=out)
         return 0
     print(result.describe(), file=out)
-    return EXIT_STALE if args.check and result.stale else 0
+    for line in result.describe_outputs():
+        print(line, file=out)
+    if result.behind:
+        print("codapact: run 'codapact generate' to regenerate", file=out)
+    return EXIT_STALE if args.check and (result.stale or result.behind) else 0
 
 
 def main(

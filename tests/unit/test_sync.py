@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
 import io
+import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -11,11 +15,14 @@ import pytest
 from codapact.core.errors import CodapactError, ConfigError
 from codapact.core.net import HttpRequest, HttpResponse, SafeHttpClient
 from codapact.pipeline import sync as sync_module
+from codapact.pipeline import writer
 from codapact.pipeline.cli import EXIT_STALE, main
 from codapact.pipeline.config import ProjectConfig
+from codapact.pipeline.pipeline import source_metadata
 from codapact.pipeline.sync import SyncState, sync
+from codapact.plugins.protocol import GeneratedFile
 from codapact.sources.loader import Fetcher
-from tests.support import serve
+from tests.support import EXAMPLES, serve
 
 URL = "https://api.example.test/openapi.yaml"
 V1 = b"openapi: 3.1.0\ninfo: {title: T, version: '1.0'}\npaths: {}\n"
@@ -201,3 +208,81 @@ def test_sync_over_real_http(tmp_path: Path) -> None:
             _project(tmp_path, V1), upstream=url + "/spec.yaml", write=True, fetcher=fetcher
         )
     assert result.state is SyncState.CHANGED and (tmp_path / "openapi.yaml").read_bytes() == V2
+
+
+# ---------------------------------------------------------------- generation metadata
+
+
+def _manifest(root: Path) -> dict[str, Any]:
+    return json.loads((root / writer.MANIFEST).read_text())
+
+
+def test_manifest_timestamp_moves_only_when_something_changes(tmp_path: Path) -> None:
+    times = iter([datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 2, 2, tzinfo=UTC)])
+    files = (GeneratedFile("a.txt", "a"),)
+    meta = {"source": {"sha256": "x"}}
+
+    def write(files: tuple[GeneratedFile, ...], metadata: dict[str, Any]) -> str:
+        plan = writer.plan(tmp_path, files)
+        writer.write(plan, generator="g", metadata=metadata, now=lambda: next(times))
+        return _manifest(tmp_path)["generated_at"]
+
+    assert write(files, meta) == "2026-01-01T00:00:00Z"
+    assert write(files, meta) == "2026-01-01T00:00:00Z"  # identical run: no new stamp
+    assert write(files, {"source": {"sha256": "y"}}) == "2026-02-02T00:00:00Z"
+    assert _manifest(tmp_path)["source"] == {"sha256": "y"}
+    assert writer.read_manifest(tmp_path / "nowhere") is None
+    (tmp_path / writer.MANIFEST).write_text("[1]")
+    assert writer.read_manifest(tmp_path) is None
+
+
+def test_generate_records_source_and_config_digests(tmp_path: Path) -> None:
+    spec = (EXAMPLES / "petstore" / "openapi.yaml").read_bytes()
+    (tmp_path / "openapi.yaml").write_bytes(spec)
+    (tmp_path / "ops.graphql").write_text("query A { a }\n")
+    project = tmp_path / "codapact.yaml"
+    project.write_text(
+        f"version: 1\nsource: {{type: openapi, path: openapi.yaml, upstream: '{URL}'}}\n"
+        "targets: [{name: python, output: out, options: {package: pets}}]\n"
+    )
+    assert main(["generate", "-c", str(project)], out=io.StringIO(), err=io.StringIO()) == 0
+    manifest = _manifest(tmp_path / "out")
+    assert manifest["generator"].startswith("codapact/")
+    assert manifest["generated_at"].endswith("Z")
+    assert manifest["config_sha256"] == hashlib.sha256(project.read_bytes()).hexdigest()
+    assert manifest["source"] == {
+        "type": "openapi",
+        "location": "openapi.yaml",
+        "upstream": URL,
+        "sha256": hashlib.sha256(spec).hexdigest(),
+    }
+    config = ProjectConfig.load(project)
+    meta = source_metadata(
+        dataclasses.replace(
+            config, source=dataclasses.replace(config.source, documents=("ops.graphql",))
+        ),
+        spec,
+        [b"query A { a }\n"],
+    )
+    assert meta["documents"] == {"ops.graphql": hashlib.sha256(b"query A { a }\n").hexdigest()}
+
+
+def test_check_reports_outputs_generated_from_an_older_contract(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = project / "out"
+    out.mkdir()
+    old = hashlib.sha256(b"older").hexdigest()
+    (out / writer.MANIFEST).write_text(json.dumps({"source": {"sha256": old}, "files": {}}))
+    code, text, _ = _cli(project, monkeypatch, V1, "--check")
+    assert code == EXIT_STALE
+    assert text.splitlines() == [
+        f"up to date: {project / 'openapi.yaml'} vs {URL}",
+        f"generated output is behind openapi.yaml: {out}",
+        "codapact: run 'codapact generate' to regenerate",
+    ]
+    current = hashlib.sha256(V1).hexdigest()
+    (out / writer.MANIFEST).write_text(json.dumps({"source": {"sha256": current}, "files": {}}))
+    assert _cli(project, monkeypatch, V1, "--check")[0] == 0
+    (out / writer.MANIFEST).write_text(json.dumps({"files": {}}))  # older manifest: unknown
+    assert _cli(project, monkeypatch, V1, "--check")[0] == 0

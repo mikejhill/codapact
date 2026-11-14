@@ -25,6 +25,8 @@ targets:
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -69,12 +71,15 @@ class ProjectConfig:
     cli: Mapping[str, Any] = field(default_factory=dict)
     e2e: Mapping[str, Any] = field(default_factory=dict)
     base: Path = field(default_factory=Path.cwd)
+    digest: str | None = None
+    """SHA-256 of the project file, when loaded from one (recorded in output manifests)."""
 
     @classmethod
     def load(cls, path: Path) -> ProjectConfig:
         """Read and validate a configuration file."""
-        data = parse_structured(Fetcher().fetch(str(path)))
-        return cls.from_data(data, base=path.parent)
+        document = Fetcher().fetch(str(path))
+        config = cls.from_data(parse_structured(document), base=path.parent)
+        return dataclasses.replace(config, digest=hashlib.sha256(document.content).hexdigest())
 
     @classmethod
     def from_data(cls, data: Mapping[str, Any], *, base: Path) -> ProjectConfig:

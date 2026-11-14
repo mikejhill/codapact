@@ -37,6 +37,12 @@ targets:
   - {plugin: [python, my_plugin.py], output: out/custom}
 ```
 
+Each output directory gets a `.codapact-manifest.json`: the SHA-256 of every generated file
+(used to refuse overwriting edits), the `generator` (`codapact/<version>`), `source` (type,
+location, upstream, and SHA-256 of the contract and each document), `config_sha256` of the
+project file, and `generated_at` (UTC). The timestamp only changes when anything else in the
+manifest changes, so regenerating identical output leaves every file untouched.
+
 Targets that share an `output` directory share options. When `python-cli` shares the
 `python` directory, the library's `pyproject.toml` gains the CLI script entry.
 
@@ -72,7 +78,11 @@ A copy that differs only in line endings is current. A copy that parses to the s
 as upstream (formatting only) passes `--check` and is rewritten by `codapact sync`. Drift
 reports `info.version` old and new plus changed line counts, e.g.
 `out of date (version 1.88.0 -> 1.89.0, +120 -30 lines): openapi.yaml vs https://...`.
-`source.documents` are not synced. A CI step that warns but does not fail:
+`source.documents` are not synced.
+
+`--check` also reads each target's `.codapact-manifest.json` and reports output generated from an
+older local contract (`generated output is behind openapi.yaml: gen/python`), also exit 3. A CI
+step that warns but does not fail:
 
 ```yaml
 - run: codapact sync --check || { [ $? -eq 3 ] && echo "::warning::contract is out of date"; }
