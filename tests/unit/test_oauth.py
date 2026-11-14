@@ -160,18 +160,24 @@ def test_keyring_store_moves_legacy_entries() -> None:
     backend.items[("acme", "bearer")] = json.dumps({"secret": "old"})
     backend.items[("acme", "broken")] = "{"
     store = KeyringTokenStore("codapact:acme", backend, legacy_service="acme")
-    assert store.load("bearer") == {"secret": "old"}
+    moved = store.load("bearer")
+    assert moved == {"secret": "old"}
     assert backend.items == {
         ("codapact:acme:bearer", "bearer"): json.dumps({"secret": "old"}),
         ("acme", "broken"): "{",
     }
-    assert store.load("bearer") == {"secret": "old"}  # now from the new entry
-    assert store.load("broken") is None
+    reread = store.load("bearer")  # now from the new entry
+    broken = store.load("broken")
+    assert reread == {"secret": "old"}
+    assert broken is None
     assert ("acme", "broken") in backend.items  # unreadable entries stay put
     store.save("broken", {"secret": "new"})  # re-login replaces the legacy entry
     assert ("acme", "broken") not in backend.items
     backend.items[("acme", "gone")] = json.dumps({"secret": "x"})
-    assert store.delete("gone") is True and store.delete("gone") is False
+    first = store.delete("gone")
+    again = store.delete("gone")
+    assert first is True
+    assert again is False
 
 
 def test_keyring_store_ignores_legacy_delete_failures() -> None:
@@ -185,7 +191,8 @@ def test_keyring_store_ignores_legacy_delete_failures() -> None:
     backend = Stubborn()
     backend.items[("acme", "bearer")] = json.dumps({"secret": "old"})
     store = KeyringTokenStore("codapact:acme", backend, legacy_service="acme")
-    assert store.load("bearer") == {"secret": "old"}
+    moved = store.load("bearer")
+    assert moved == {"secret": "old"}
     assert backend.items[("codapact:acme:bearer", "bearer")] == json.dumps({"secret": "old"})
 
 
@@ -233,7 +240,8 @@ def test_default_store_uses_a_working_keyring(monkeypatch: pytest.MonkeyPatch) -
     backend.items[("acme", "old")] = json.dumps({"a": 0})
     store = default_store("acme", {}, "ACME")
     assert isinstance(store, KeyringTokenStore)
-    assert store.load("old") == {"a": 0}
+    migrated = store.load("old")
+    assert migrated == {"a": 0}
     assert ("acme", "old") not in backend.items
     store.save("k", {"a": 1})
     assert json.loads(backend.items[("codapact:acme:k", "k")]) == {"a": 1}
