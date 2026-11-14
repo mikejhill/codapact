@@ -116,7 +116,7 @@ credential variables for the contract's auth schemes.
 
 Global options work before or after the command: `--base-url`, `--timeout`, `--config`,
 `-o/--output`, `--query PATH` (`data.items[].name`, `data.items[0]`; with `--all` the
-result is the item list, so `[].name`), `--dry-run`, `-v/--verbose`, `--error-format`,
+result is the item list, so `[].name`; a path that matches nothing fails with exit 2 and lists the keys that exist), `--dry-run`, `-v/--verbose`, `--error-format`,
 `--allow-private`, and `--response-validation`. Command help lists them in one line;
 `<program> --help` describes each.
 `table` renders a list of objects, unwrapping single-list envelopes such as `{"data": {"items": [...]}}`.

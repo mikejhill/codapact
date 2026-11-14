@@ -1038,7 +1038,7 @@ class CliRuntime:
             if streamed:
                 return EXIT_OK
             if query:
-                result = select(result, query)
+                result = select(result, query, strict=True)
             elif fields:
                 result = _pick_target(result, fields)
             result = pick(result, fields)
@@ -1244,36 +1244,65 @@ def describe_invalid(error: ValidationError, flags: dict[str, str]) -> str:
 
 
 _STEP = re.compile(r"(?P<key>[^.\[\]]*)(?P<index>\[(?:-?\d+)?\])?")
+_QUERY_SYNTAX = "--query takes a dotted path: a.b, a[0], a[-1], a[] (not JMESPath)"
+_MISSING = object()
 
 
-def select(value: Any, query: str) -> Any:
+def select(value: Any, query: str, *, strict: bool = False) -> Any:
     """Return the part of ``value`` at a dotted path.
 
     ``a.b`` reads keys, ``a[0]`` / ``a[-1]`` index a list, and ``a[]`` maps the
-    rest of the path over every element (the result is then a list).
+    rest of the path over every element (the result is then a list). A part that
+    is absent reads as ``None``; with ``strict``, a path that matches nothing at
+    all raises instead, naming the step that failed.
     """
     current: list[Any] = [value]
     spread = False
-    for raw in query.split("."):
+    miss: tuple[str, Any] | None = None  # first step that found nothing, and what it looked in
+    for number, raw in enumerate(query.split(".")):
         step = _STEP.fullmatch(raw)
         if step is None:
-            raise CodapactError(f"invalid --query step {raw!r}")
+            raise CodapactError(f"invalid --query step {raw!r}; {_QUERY_SYNTAX}")
         key, index = step.group("key"), step.group("index")
         nxt: list[Any] = []
         for item in current:
-            if key:
-                item = item.get(key) if isinstance(item, dict) else None
+            parent = item
+            if key and item is not _MISSING:
+                item = item.get(key, _MISSING) if isinstance(item, dict) else _MISSING
+                parent = parent if item is _MISSING else item
             if index == "[]":
-                nxt.extend(item if isinstance(item, list) else [])
-            elif index:
+                if isinstance(item, list):
+                    nxt.extend(item)
+                    continue
+                item = _MISSING
+            elif index and item is not _MISSING:
                 position = int(index[1:-1])
                 ok = isinstance(item, list) and -len(item) <= position < len(item)
-                nxt.append(item[position] if ok else None)
-            else:
+                item = item[position] if ok else _MISSING
+            if item is _MISSING and parent is not _MISSING and miss is None:
+                miss = (".".join(query.split(".")[: number + 1]), parent)
+            if item is not _MISSING or index != "[]":
                 nxt.append(item)
         current = nxt
         spread = spread or index == "[]"
-    return current if spread else current[0]
+    if strict and miss is not None and all(item is _MISSING for item in current):
+        raise CodapactError(_no_match(query, *miss))
+    found = [None if item is _MISSING else item for item in current]
+    return found if spread else found[0]
+
+
+def _no_match(query: str, path: str, parent: Any) -> str:
+    """Explain a ``--query`` that matched nothing."""
+    message = f"--query {query!r} matched nothing at {path!r}"
+    if isinstance(parent, dict) and parent:
+        keys = list(parent)
+        more = f", ... ({len(keys)} keys)" if len(keys) > 12 else ""
+        message += f"; available keys: {', '.join(map(str, keys[:12]))}{more}"
+    elif isinstance(parent, list):
+        message += f"; that is a list of {len(parent)}, index it with [N] or []"
+    if re.search(r"[()@|*?=!&\s'\"`]", query):
+        message += f"; {_QUERY_SYNTAX}"
+    return message
 
 
 def render(value: Any, fmt: str, out: TextIO) -> None:

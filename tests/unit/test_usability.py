@@ -188,7 +188,7 @@ def test_select_paths() -> None:
     assert select(value, "data.items[].tags[]") == ["a"]
     assert select(value, "data.missing.x") is None
     assert select(value, "data") == value["data"]
-    with pytest.raises(CodapactError, match="invalid --query"):
+    with pytest.raises(CodapactError, match=r"invalid --query.*dotted path"):
         select(value, "data.items[x]")
 
 

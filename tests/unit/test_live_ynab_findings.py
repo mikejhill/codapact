@@ -13,7 +13,7 @@ import pytest
 from codapact.core.errors import CodapactError, ResponseTooLargeError, TransportError
 from codapact.core.net import HttpRequest, SafeHttpClient
 from codapact.runtime import RuntimeClient, StaticAuth
-from codapact.runtime.cli import CliRuntime, _utf8, render
+from codapact.runtime.cli import CliRuntime, _utf8, render, select
 from codapact.runtime.client import DEFAULT_MAX_RESPONSE_BYTES
 from codapact.runtime.selftest import Suite
 from tests.support import Petstore, petstore_api, serve
@@ -155,3 +155,63 @@ def test_bundle_suite_decodes_cli_output_as_utf8(tmp_path: Path) -> None:
     result = suite.invoke([], {"PYTHONPATH": str(tmp_path)})
     assert result.code == 0
     assert result.stdout.startswith('{"n": "café ”q”"}') and result.stdout.endswith("\ufffd")
+
+
+# ---------------------------------------------------------------- --query that matches nothing
+
+_VALUE = {"data": {"items": [{"id": 1, "tags": ["a"]}, {"id": 2}], "plan": {"note": None}}}
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("data.items[].id", [1, 2]),
+        ("data.items[].tags", [["a"], None]),  # some elements lack it: still a match
+        ("data.items[].tags[]", ["a"]),
+        ("data.plan.note", None),  # present but null is a match
+        ("data.items[-1].id", 2),
+    ],
+)
+def test_strict_query_keeps_real_matches(query: str, expected: Any) -> None:
+    assert select(_VALUE, query, strict=True) == expected
+
+
+@pytest.mark.parametrize(
+    ("query", "message"),
+    [
+        ("data.nonexistent", "at 'data.nonexistent'; available keys: items, plan"),
+        ("data.missing.x", "at 'data.missing'; available keys"),
+        ("data.items.id", "that is a list of 2, index it with [N] or []"),
+        ("data.items[5].id", "at 'data.items[5]'; that is a list of 2"),
+        ("data.items[].nokey", "available keys: id, tags"),
+        ("data.plan[]", "at 'data.plan[]'; available keys: note"),
+        ("length(data.items)", "not JMESPath"),
+        ("7.x", "matched nothing at '7'"),
+        ("data.items[0].id.x", "at 'data.items[0].id.x'"),  # a scalar has no keys
+    ],
+)
+def test_strict_query_explains_a_path_that_matches_nothing(query: str, message: str) -> None:
+    with pytest.raises(CodapactError, match="matched nothing") as caught:
+        select(_VALUE, query, strict=True)
+    assert message in str(caught.value)
+    lenient = select(_VALUE, query)  # --fields stays lenient
+    assert lenient is None or not any(lenient)
+
+
+def test_many_keys_are_truncated() -> None:
+    wide = {f"k{n}": n for n in range(20)}
+    with pytest.raises(CodapactError, match=r"k11, \.\.\. \(20 keys\)"):
+        select(wide, "nope", strict=True)
+
+
+def test_cli_query_that_matches_nothing_fails_with_a_usage_error(tmp_path: Path) -> None:
+    runtime = CliRuntime("hub", "HUB", environ={"XDG_CONFIG_HOME": str(tmp_path)})
+    out, err = io.StringIO(), io.StringIO()
+    args = _parse(runtime, "--query", "data.nonexistent")
+    code = runtime.run(args, lambda _o: None, lambda _c, _a: _VALUE, stdout=out, stderr=err)
+    assert code == 2 and out.getvalue() == ""
+    assert "matched nothing at 'data.nonexistent'" in err.getvalue()
+    out = io.StringIO()
+    args = _parse(runtime, "--query", "data.items[].id", "-o", "json")
+    assert runtime.run(args, lambda _o: None, lambda _c, _a: _VALUE, stdout=out, stderr=err) == 0
+    assert out.getvalue().split() == ["[", "1,", "2", "]"]
