@@ -50,6 +50,7 @@ class PythonOptions:
     distribution: str
     version: str
     command: str | None
+    env_prefix: str | None = None
 
     @classmethod
     def from_request(cls, request: GenerationRequest) -> PythonOptions:
@@ -62,6 +63,7 @@ class PythonOptions:
             distribution=str(options.get("distribution") or package.replace("_", "-")),
             version=str(options.get("version") or "0.1.0"),
             command=str(command) if command else None,
+            env_prefix=str(options["env_prefix"]) if options.get("env_prefix") else None,
         )
 
 
@@ -352,7 +354,7 @@ def _readme(api: Api, options: PythonOptions) -> str:
     cli = ""
     if options.command:
         program = options.command
-        prefix = Name.parse(program).screaming
+        prefix = options.env_prefix or Name.parse(program).screaming
         credentials = "".join(
             f"- `{scheme.name}`: `{_env_hint(prefix, scheme)}`\n" for scheme in api.auth_schemes
         )

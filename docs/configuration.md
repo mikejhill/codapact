@@ -25,6 +25,7 @@ shape:                       # ordered transforms; the model is re-validated aft
 surface: {flatten_body: true, trim_namespace: true}
 cli:
   program: petstore
+  env_prefix: PETSTORE        # optional; environment variable prefix (default: program)
   auth_plugin: my_auth:provider   # optional; see Authentication
   auth: {sso: {client_id: petstore-cli, scopes: [read]}}
 e2e:                         # optional; tests shipped with the generated CLI
@@ -144,8 +145,9 @@ Precedence: flag, then environment, then settings file.
 | Option defaults | the option itself | none | `defaults: {plan_id: "…"}` (option names, `_` or `-`) |
 
 The settings file is `--config PATH` or `$XDG_CONFIG_HOME/<program>/config.json`.
-`<PREFIX>` is the program name in upper snake case. `<program> --help` lists the
-credential variables for the contract's auth schemes.
+`<PREFIX>` is `cli.env_prefix` when set (upper snake case, e.g. `ACME`), else the program
+name in upper snake case (`cli.program: my-tool` gives `MY_TOOL`). `<program> --help` lists
+the credential variables for the contract's auth schemes.
 
 Global options work before or after the command: `--base-url`, `--timeout`, `--config`,
 `-o/--output`, `--query PATH` (`data.items[].name`, `data.items[0]`; with `--all` the

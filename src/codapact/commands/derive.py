@@ -52,12 +52,19 @@ def derive_commands(
     surface: Surface,
     *,
     program: str | None = None,
+    env_prefix: str | None = None,
     diagnostics: Diagnostics | None = None,
 ) -> CommandTree:
-    """Build the command tree for ``surface``; ``api`` resolves type references only."""
+    """Build the command tree for ``surface``; ``api`` resolves type references only.
+
+    Environment variables are named ``<env_prefix>_*``; the default is the program
+    name in upper snake case.
+    """
     diagnostics = diagnostics if diagnostics is not None else Diagnostics()
     name = Name.parse(program) if program else surface.name
-    return CommandTree(name, _group(api, surface.root, (), diagnostics), name.screaming)
+    return CommandTree(
+        name, _group(api, surface.root, (), diagnostics), env_prefix or name.screaming
+    )
 
 
 def _group(

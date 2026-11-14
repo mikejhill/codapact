@@ -97,10 +97,12 @@ class Pipeline:
             api, SurfaceOptions.from_config(config.surface), result.diagnostics
         )
         program = config.cli.get("program")
+        prefix = config.cli.get("env_prefix")
         result.commands = derive_commands(
             api,
             result.surface,
             program=str(program) if program else None,
+            env_prefix=str(prefix) if prefix else None,
             diagnostics=result.diagnostics,
         )
 
@@ -127,6 +129,9 @@ class Pipeline:
             ):
                 options.setdefault(
                     "command", result.commands.program.kebab if result.commands else None
+                )
+                options.setdefault(
+                    "env_prefix", result.commands.env_prefix if result.commands else None
                 )
             if target.needs_commands:
                 for key in ("auth_plugin", "auth"):
