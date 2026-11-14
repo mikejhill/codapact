@@ -8,7 +8,7 @@ import threading
 import types
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -176,6 +176,7 @@ def test_keyring_store_moves_legacy_entries() -> None:
 
 def test_keyring_store_ignores_legacy_delete_failures() -> None:
     class Stubborn(FakeKeyring):
+        @override
         def delete_password(self, service: str, key: str) -> None:
             if service == "acme":
                 raise RuntimeError("access denied")
