@@ -45,6 +45,7 @@ from codapact.runtime.errors import (
 )
 from codapact.runtime.middleware import Retry
 from codapact.runtime.oauth import TokenStore, default_store
+from codapact.runtime.profiles import ProfileIndex, ProfileStore, check_profile_name, profiles_path
 
 EXIT_OK = 0
 EXIT_API = 1
@@ -78,6 +79,7 @@ SETTINGS_KEYS = frozenset(
         "defaults",
         "auth_plugin",
         "auth",
+        "profile",
     }
 )
 
@@ -426,6 +428,12 @@ class CliRuntime:
             help=text(f"request timeout in seconds (env {e}_TIMEOUT)"),
         )
         group.add_argument(
+            "--profile",
+            default=keep,
+            metavar="NAME",
+            help=text(f"saved-login profile to use (env {e}_PROFILE; default: auth use)"),
+        )
+        group.add_argument(
             "--config", default=keep, metavar="FILE", help=text("settings file (default: XDG dir)")
         )
         group.add_argument(
@@ -446,7 +454,8 @@ class CliRuntime:
         options = (
             f"-o/--output {{{','.join(OUTPUT_FORMATS)}}}, --query PATH, --pick KEYS, "
             "--dry-run, -v/--verbose, "
-            "--error-format {text,json}, --base-url URL, --timeout SECONDS, --config FILE, "
+            "--error-format {text,json}, --base-url URL, --timeout SECONDS, --profile NAME, "
+            "--config FILE, "
             "--allow-private, --response-validation {strict,warn,off}"
         )
         body = textwrap.fill(
@@ -589,12 +598,38 @@ class CliRuntime:
         plugin, sources["auth_plugin"] = self._setting(args, file_settings, "auth_plugin")
         if not plugin and self.auth_plugin:
             plugin, sources["auth_plugin"] = self.auth_plugin, "generated default"
-        options["auth"] = self.credentials(options, file_settings, str(plugin or ""))
+        profile, source = self.profile(args, file_settings)
+        sources["profile"] = f"{profile} (from {source})"
+        options["auth"] = self.credentials(options, file_settings, str(plugin or ""), profile)
         return options, sources
 
-    def credential_store(self) -> TokenStore:
-        """Return where ``auth login`` saves secrets (keyring, or a 0600 file)."""
-        return default_store(self.program, self.env, self.env_prefix)
+    def profiles(self) -> ProfileIndex:
+        """Return the list of saved-login profiles and the default one."""
+        memory = self.env.get(f"{self.env_prefix}_CREDENTIAL_STORE", "").lower() == "memory"
+        return ProfileIndex(None if memory else profiles_path(self.program, self.env))
+
+    def profile(self, args: argparse.Namespace, file_settings: dict[str, Any]) -> tuple[str, str]:
+        """Return the profile in effect and where it came from.
+
+        A profile named explicitly must exist, except for ``auth login``, which creates it.
+        """
+        index = self.profiles()
+        name, source = self._setting(args, file_settings, "profile")
+        if name is None:
+            return index.default, "profiles default" if index.names else "default"
+        name = check_profile_name(str(name))
+        if not index.known(name) and getattr(args, "auth_action", None) != "login":
+            raise index.unknown(name)
+        return name, source
+
+    def credential_store(self, profile: str | None = None) -> TokenStore:
+        """Return where ``auth login`` saves secrets for ``profile`` (default: the default).
+
+        The OS keyring or a 0600 file, with keys scoped to the profile.
+        """
+        index = self.profiles()
+        inner = default_store(self.program, self.env, self.env_prefix)
+        return ProfileStore(inner, profile or index.default, on_save=index.add)
 
     @staticmethod
     def _auth_http(options: Mapping[str, Any]) -> SafeHttpClient:
@@ -605,7 +640,11 @@ class CliRuntime:
         )
 
     def credentials(
-        self, options: Mapping[str, Any], file_settings: Mapping[str, Any], plugin: str = ""
+        self,
+        options: Mapping[str, Any],
+        file_settings: Mapping[str, Any],
+        plugin: str = "",
+        profile: str | None = None,
     ) -> ChainAuth:
         """Build the credential chain: plugin, env, command, OAuth client, saved login."""
         configured: dict[str, Mapping[str, Any]] = dict(self.auth_config or {})
@@ -624,7 +663,7 @@ class CliRuntime:
             program=self.program,
             prefix=self.env_prefix,
             environ=self.env,
-            store=self.credential_store(),
+            store=self.credential_store(profile),
             http=self._auth_http(options),
             plugin=plugin or None,
             configured=configured,
@@ -876,12 +915,14 @@ class CliRuntime:
     def _auth(self, args: argparse.Namespace, api: Api, fmt: str, out: TextIO, err: TextIO) -> int:
         options, _ = self.resolve(args)
         chain = options["auth"]
+        profile, _ = self.profile(args, self._file_settings(getattr(args, "config", None)))
         commands = cli_auth.AuthCommands(
             program=self.program,
             prefix=self.env_prefix,
             api=api,
             chain=chain,
-            store=self.credential_store(),
+            store=self.credential_store(profile),
+            profiles=self.profiles(),
             http=self._auth_http(options),
             environ=self.env,
             configured=self.auth_config or {},
@@ -915,6 +956,7 @@ class CliRuntime:
         if api.auth_schemes:
             found[f"{e}_AUTH_PLUGIN"] = "package.module:factory returning an AuthProvider"
             found[f"{e}_CREDENTIAL_STORE"] = "where auth login saves: keyring, file, or memory"
+            found[f"{e}_PROFILE"] = "saved-login profile to use (see auth profiles)"
         for scheme in api.auth_schemes:
             variable = auth.variable(scheme)
             for name, spec in field_specs((self.auth_config or {}).get(scheme.name)).items():

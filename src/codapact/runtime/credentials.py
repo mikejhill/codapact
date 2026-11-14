@@ -35,6 +35,7 @@ from codapact.runtime.oauth import (
     TokenEndpoint,
     TokenStore,
     grant_for_scheme,
+    store_location,
 )
 
 COMMAND_TIMEOUT = 60.0
@@ -370,8 +371,7 @@ def _provider_label(provider: AuthProvider, scheme: AuthScheme) -> str:
         case OAuthClientAuth():
             return "OAuth client credentials"
         case StoreAuth():
-            location = getattr(provider.store, "location", "credential store")
-            return f"saved login ({location})"
+            return f"saved login ({store_location(provider.store, scheme.name)})"
         case _:
             pass
     return f"auth plugin ({type(provider).__name__})"

@@ -118,6 +118,16 @@ GLOBALS = {
         number,
         "_StoreAction",
     ),
+    ("--profile",): (
+        "profile",
+        "saved-login profile to use (env ACME_PROFILE; default: auth use)",
+        "NAME",
+        None,
+        SUPPRESS,
+        None,
+        None,
+        "_StoreAction",
+    ),
     ("--config",): (
         "config",
         "settings file (default: XDG dir)",
@@ -302,8 +312,8 @@ GLOBAL_HELP = (
     "global options (details: acme --help):\n"
     "  -o/--output {json,jsonl,yaml,table,raw}, --query PATH, --pick KEYS,\n"
     "  --dry-run, -v/--verbose, --error-format {text,json}, --base-url URL,\n"
-    "  --timeout SECONDS, --config FILE, --allow-private, --response-validation\n"
-    "  {strict,warn,off}"
+    "  --timeout SECONDS, --profile NAME, --config FILE, --allow-private,\n"
+    "  --response-validation {strict,warn,off}"
 )
 
 

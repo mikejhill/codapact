@@ -42,6 +42,7 @@ RESERVED_FLAGS = frozenset(
         "dry-run",
         "verbose",
         "error-format",
+        "profile",
     }
 )
 DESTRUCTIVE_VERBS = frozenset({"delete", "remove", "destroy", "purge"})

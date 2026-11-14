@@ -143,13 +143,14 @@ Precedence: flag, then environment, then settings file.
 | Error format | `--error-format text\|json` | `<PREFIX>_ERROR_FORMAT` | `error_format` |
 | Credentials | none | `<PREFIX>_<SCHEME>`; basic uses `_USERNAME`/`_PASSWORD`; full chain under [Authentication](#authentication) | `auth_plugin`; secrets are never read from the file |
 | Option defaults | the option itself | none | `defaults: {plan_id: "…"}` (option names, `_` or `-`) |
+| Saved-login profile | `--profile NAME` | `<PREFIX>_PROFILE` | `profile`; otherwise the default from `auth use` ([Profiles](#profiles)) |
 
 The settings file is `--config PATH` or `$XDG_CONFIG_HOME/<program>/config.json`.
 `<PREFIX>` is `cli.env_prefix` when set (upper snake case, e.g. `ACME`), else the program
 name in upper snake case (`cli.program: my-tool` gives `MY_TOOL`). `<program> --help` lists
 the credential variables for the contract's auth schemes.
 
-Global options work before or after the command: `--base-url`, `--timeout`, `--config`,
+Global options work before or after the command: `--base-url`, `--timeout`, `--profile`, `--config`,
 `-o/--output`, `--query PATH` (`data.items[].name`, `data.items[0]`; with `--all` the
 result is the item list, so `[].name`; a path that matches nothing fails with exit 2 and lists the keys that exist), `--dry-run`, `-v/--verbose`, `--error-format`,
 `--allow-private`, and `--response-validation`. Command help lists them in one line;
@@ -172,11 +173,11 @@ result is the item list, so `[].name`; a path that matches nothing fails with ex
 | Mistakes | unknown commands, choices, and options get "did you mean" hints; leftovers are reported by the command they were given to; API failures name the command typed (`pets get failed with HTTP 404`) |
 | Machine-readable errors | `--error-format json` prints one `{"error": {"type", "message", "exit_code", "status", "hint", "details"}}` object on stderr; contract warnings become `{"warning": …}` lines |
 
-| Credentials | `<program> auth login\|logout\|status\|token`; see [Authentication](#authentication) |
+| Credentials | `<program> auth login\|logout\|status\|token\|profiles\|use`; see [Authentication](#authentication) |
 
 `describe`, `doctor`, `completion`, and `auth` are skipped when the API has a top-level command
-of the same name; `--version`, `--dry-run`, `--verbose`, and `--error-format` are reserved, so
-API parameters with those names become `--arg-version` and so on.
+of the same name; `--version`, `--dry-run`, `--verbose`, `--error-format`, and `--profile` are
+reserved, so API parameters with those names become `--arg-version` and so on.
 
 `tests/integration/test_cli_conformance.py` checks these conventions for every example
 contract (Petstore, Library, PokéAPI, YNAB, Countries), including a `--dry-run` of every
@@ -282,12 +283,34 @@ The sign-in itself (multi-step forms, SSO, redirects, MFA) stays in the plugin; 
 supply and store its inputs. Field names are lower snake case; `secret`, `optional` and `help`
 are the only keys.
 
-Saved credentials and tokens go to the OS keyring when one is usable, one entry per scheme
-named `codapact:<program>:<scheme>` (user name `<scheme>`; for example `codapact:ynab:bearer`
-in Windows Credential Manager), otherwise to a
-`0600` JSON file at `$XDG_CONFIG_HOME/<program>/credentials.json`.
-`<PREFIX>_CREDENTIAL_STORE=keyring|file|memory` forces one. Entries saved by codapact
-before 0.6.1 (service `<program>`) are moved to the new name the first time they are read.
+Saved credentials and tokens go to the OS keyring when one is usable, one entry per profile
+and scheme named `codapact:<program>:<profile>:<scheme>` (user name `<profile>:<scheme>`; for
+example `codapact:ynab:default:bearer` in Windows Credential Manager), otherwise to a
+`0600` JSON file at `$XDG_CONFIG_HOME/<program>/credentials.json` (keys `<profile>:<scheme>`).
+`<PREFIX>_CREDENTIAL_STORE=keyring|file|memory` forces one. Logins saved before profiles
+existed (keyring service `<program>` before 0.6.1, `codapact:<program>:<scheme>` in 0.6.1)
+belong to the `default` profile and move to its name the first time they are read.
+
+### Profiles
+
+Several saved logins per CLI: different accounts, or tokens with different access levels.
+
+| Need | Command |
+| --- | --- |
+| First login | `auth login` saves to profile `default`, which becomes the default |
+| Another login, named automatically | `auth login --new` (`profile-2`, `profile-3`, …) |
+| Another login, named by you | `auth login --profile work` (creates `work`, or replaces its login) |
+| List | `auth profiles`: name, whether it is the default, which schemes are saved |
+| Change the default | `auth use work` |
+| Use one for a single command | `--profile work` on any command, or `<PREFIX>_PROFILE=work` |
+| Remove | `auth logout --profile work` (without `--scheme` it also forgets the profile) |
+
+Selection order: `--profile`, `<PREFIX>_PROFILE`, the settings file's `profile`, the default
+set by `auth use` (stored in `$XDG_CONFIG_HOME/<program>/profiles.json`, no secrets), then
+`default`. Naming a profile that does not exist fails, except for `auth login`, which creates
+it. Profiles scope saved logins only: `<PREFIX>_<SCHEME>` variables, credential commands and
+OAuth client settings still come first. `auth status` and `doctor` show the profile in use and
+the exact keyring entry or file key a saved login came from.
 
 Libraries take the same objects directly:
 

@@ -192,8 +192,51 @@ def test_login_with_token_then_status_token_and_logout(cli: Cli) -> None:
     assert rows["basic"]["status"] == "missing"
     token = cli("auth", "token", "--scheme", "bearer")
     assert token.stdout.strip() == STATIC_BEARER
-    assert cli.json("auth", "logout", "--scheme", "bearer") == {"removed": ["bearer"]}
+    assert cli.json("auth", "logout", "--scheme", "bearer") == {
+        "profile": "default",
+        "removed": ["bearer"],
+    }
     assert cli("lab", "bearer").returncode == 3
+
+
+def test_profiles_keep_separate_logins(cli: Cli) -> None:
+    login = ("auth", "login", "--scheme", "bearer", "--with-token")
+    first = json.loads(cli(*login, stdin=STATIC_BEARER + "\n").stdout)
+    assert first["profile"] == "default" and "note" not in first
+    second = cli(*login, "--new", stdin="wrong-token\n")
+    assert second.returncode == 0, second.stderr
+    added = json.loads(second.stdout)
+    assert added["profile"] == "profile-2"
+    assert "auth use profile-2" in added["note"]
+    named = json.loads(cli(*login, "--profile", "ops", stdin=STATIC_BEARER + "\n").stdout)
+    assert named["profile"] == "ops"
+    saved = json.loads((cli.home / "authlab" / "credentials.json").read_text())
+    assert set(saved) == {"default:bearer", "profile-2:bearer", "ops:bearer"}
+    rows = cli.json("auth", "profiles")
+    assert [(r["profile"], r["default"], r["saved"]) for r in rows] == [
+        ("default", True, "bearer"),
+        ("profile-2", False, "bearer"),
+        ("ops", False, "bearer"),
+    ]
+    assert cli("lab", "bearer").returncode == 0  # default profile
+    assert cli("lab", "bearer", "--profile", "profile-2").returncode == 3  # its token is wrong
+    assert cli("lab", "bearer", AUTHLAB_PROFILE="profile-2").returncode == 3
+    assert cli.json("auth", "use", "profile-2") == {"default": "profile-2"}
+    assert cli("lab", "bearer").returncode == 3
+    assert cli("lab", "bearer", "--profile", "ops").returncode == 0
+    status = {r["scheme"]: r for r in cli.json("auth", "status", "-o", "json", "--profile", "ops")}
+    assert status["bearer"]["profile"] == "ops"
+    assert status["bearer"]["source"].endswith("credentials.json [ops:bearer])")
+    typo = cli("lab", "bearer", "--profile", "opz")
+    assert typo.returncode != 0 and "unknown profile 'opz'" in typo.stderr
+    gone = cli.json("auth", "logout", "--profile", "profile-2")
+    assert gone == {
+        "profile": "profile-2",
+        "removed": ["bearer"],
+        "profile_removed": True,
+        "default": "default",
+    }
+    assert cli("lab", "bearer").returncode == 0
 
 
 def test_basic_login_reads_password_from_stdin(cli: Cli) -> None:

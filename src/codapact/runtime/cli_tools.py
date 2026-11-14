@@ -495,6 +495,8 @@ class Doctor:
             return checks
         base_url = options.get("base_url") or (api.servers[0].url if api.servers else "")
         base_ok = self._base_url(checks, base_url, sources.get("base_url", "contract"), options)
+        if api.auth_schemes and sources.get("profile"):
+            checks.append(Check("profile", "info", sources["profile"]))
         checks.extend(self._credentials(api, options.get("auth")))
         scheme = urlsplit(base_url).scheme if base_ok else ""
         proxy = urllib.request.getproxies_environment().get(scheme) if scheme else None
