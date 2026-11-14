@@ -2,6 +2,13 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.8.0](https://github.com/mikejhill/codapact/compare/v0.7.0...v0.8.0) (2026-11-14)
+
+
+### Features
+
+* **cli:** report the installed distribution's version ([#49](https://github.com/mikejhill/codapact/issues/49)) ([d7d663d](https://github.com/mikejhill/codapact/commit/d7d663d611548534e3657b1ffc6ec8a048ebc96d))
+
 ## [0.7.0](https://github.com/mikejhill/codapact/compare/v0.6.1...v0.7.0) (2026-11-14)
 
 
