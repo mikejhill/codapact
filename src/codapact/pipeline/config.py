@@ -173,9 +173,6 @@ class ProjectConfig:
         )
 
 
-_ENV_PREFIX = r"[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*"
-
-
 def _mapping(value: Any, where: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ConfigError(f"{where} must be a mapping")
