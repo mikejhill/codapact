@@ -2,6 +2,13 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.5.2](https://github.com/mikejhill/codapact/compare/v0.5.1...v0.5.2) (2026-11-14)
+
+
+### Bug Fixes
+
+* **cli:** fail when --query matches nothing ([#39](https://github.com/mikejhill/codapact/issues/39)) ([08bd3aa](https://github.com/mikejhill/codapact/commit/08bd3aa5a3e45192461633c084feb7d9438cb193))
+
 ## [0.5.1](https://github.com/mikejhill/codapact/compare/v0.5.0...v0.5.1) (2026-11-14)
 
 
