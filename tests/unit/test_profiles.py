@@ -271,3 +271,31 @@ def test_profiles_listing_before_any_login_and_without_profiles() -> None:
     assert unscoped == [{"profile": "default", "default": True, "saved": "nothing"}]
     with pytest.raises(AuthError, match="this credential store has no profiles"):
         commands(prompts=["s"]).run(args("login", scheme="token", new=True))
+
+
+def test_upgrade_keeps_the_existing_login_as_default() -> None:
+    # Codex review of #47: --new must not reuse "default" over an unmigrated login, and
+    # listing must register what it migrates.
+    inner = MemoryTokenStore()
+    inner.save("token", {"type": "token", "secret": "old"})
+    index = ProfileIndex(None)
+    store = ProfileStore(inner, index.default, on_save=index.add)
+    added = profiled(store, index, ["new"]).run(args("login", scheme="token", new=True))
+    assert added["profile"] == "profile-2"
+    assert inner.items == {
+        "default:token": {"type": "token", "secret": "old"},
+        "profile-2:token": {"type": "token", "secret": "new"},
+    }
+    assert (index.names, index.default) == (["default", "profile-2"], "default")
+
+
+def test_listing_after_upgrade_registers_the_default() -> None:
+    inner = MemoryTokenStore()
+    inner.save("token", {"type": "token", "secret": "old"})
+    index = ProfileIndex(None)
+    listed = profiled(ProfileStore(inner, "default"), index).run(args("profiles"))
+    assert listed == [{"profile": "default", "default": True, "saved": "token"}]
+    assert index.names == ["default"]
+    work = ProfileStore(inner, "work", on_save=index.add)
+    profiled(work, index, ["w"]).run(args("login", scheme="token"))
+    assert (index.names, index.default) == (["default", "work"], "default")

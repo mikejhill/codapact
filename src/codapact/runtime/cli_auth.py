@@ -52,7 +52,7 @@ from codapact.runtime.oauth import (
     grant_for_scheme,
     store_location,
 )
-from codapact.runtime.profiles import ProfileIndex, ProfileStore
+from codapact.runtime.profiles import DEFAULT_PROFILE, ProfileIndex, ProfileStore
 
 ACTIONS = ("login", "logout", "status", "token", "profiles", "use")
 
@@ -142,6 +142,7 @@ class AuthCommands:
     def run(self, args: argparse.Namespace) -> Any:
         """Return the data to render for ``args.auth_action`` (never a secret)."""
         self._require_schemes()
+        self._adopt_legacy()
         action = args.auth_action
         if action == "profiles":
             return self.list_profiles()
@@ -167,6 +168,19 @@ class AuthCommands:
         """The profile this command works on."""
         return str(getattr(self.store, "profile", ""))
 
+    def _adopt_legacy(self) -> None:
+        """Move logins saved before profiles into ``default`` and register it.
+
+        Runs before any profile is created or listed, so an upgrade never makes a new
+        profile the default over (or overwrite) the login the user already had.
+        """
+        if not isinstance(self.store, ProfileStore):
+            return
+        view = ProfileStore(self.store.inner, DEFAULT_PROFILE, on_save=self.profiles.add)
+        for scheme in self.api.auth_schemes:
+            view.load(scheme.name)
+            view.load(session_key(scheme.name))
+
     def _scoped(self, data: dict[str, Any]) -> dict[str, Any]:
         """Put the profile first in ``data`` when the store has profiles."""
         return {"profile": self.profile, **data} if self.profile else data
@@ -187,7 +201,11 @@ class AuthCommands:
         inner = self.store.inner if isinstance(self.store, ProfileStore) else None
         rows = []
         for name in names:
-            view = ProfileStore(inner, name) if inner is not None else self.store
+            view = (
+                ProfileStore(inner, name, on_save=self.profiles.add)
+                if inner is not None
+                else self.store
+            )
             saved = [s.name for s in self.api.auth_schemes if view.load(s.name) is not None]
             rows.append(
                 {
