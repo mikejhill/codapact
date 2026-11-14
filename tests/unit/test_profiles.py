@@ -118,8 +118,9 @@ def test_store_scopes_keys_and_registers_profiles() -> None:
     assert (deleted, deleted_again) == (True, False)
     assert inner.items == {"token": {"secret": "unscoped"}}  # only default adopts these
     assert (work.location, work.where("token")) == ("memory", "memory")
-    file_view = ProfileStore(FileTokenStore(Path("/x/credentials.json")), "ops")
-    assert file_view.where("token") == "/x/credentials.json [ops:token]"
+    credentials = Path("/x/credentials.json")
+    file_view = ProfileStore(FileTokenStore(credentials), "ops")
+    assert file_view.where("token") == f"{credentials} [ops:token]"
     assert ProfileStore(MemoryTokenStore(), "default").legacy
     ProfileStore(inner, "quiet").save("k", {})  # no callback
 
