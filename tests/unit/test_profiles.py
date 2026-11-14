@@ -37,10 +37,12 @@ def test_index_names_default_and_file(tmp_path: Path) -> None:
     index = ProfileIndex(path)
     assert (index.names, index.default, index.next_name()) == ([], "default", "default")
     assert index.known("default") and not index.known("work")
-    assert index.add("work") is True and index.add("work") is False
+    added, again_added = index.add("work"), index.add("work")
+    assert (added, again_added) == (True, False)
     assert index.default == "work"  # the first profile becomes the default
     assert index.next_name() == "default"
-    assert index.add("default") is True
+    added = index.add("default")
+    assert added is True
     assert index.next_name() == "profile-2"
     index.add("profile-2")
     assert index.next_name() == "profile-3"
@@ -53,7 +55,8 @@ def test_index_names_default_and_file(tmp_path: Path) -> None:
     assert (again.names, again.default) == (["work", "default", "profile-2"], "profile-2")
     with pytest.raises(AuthError, match=r"unknown profile 'nope' \(known: work, default"):
         again.use("nope")
-    assert again.remove("profile-2") is True and again.remove("profile-2") is False
+    removed, removed_again = again.remove("profile-2"), again.remove("profile-2")
+    assert (removed, removed_again) == (True, False)
     assert again.default == "work"
     again.remove("work")
     again.remove("default")
@@ -103,13 +106,16 @@ def test_store_scopes_keys_and_registers_profiles() -> None:
     inner = MemoryTokenStore()
     seen: list[str] = []
     work = ProfileStore(inner, "work", on_save=seen.append)
-    assert work.load("token") is None
+    missing = work.load("token")
+    assert missing is None
     work.save("token", {"secret": "w"})
     assert inner.items == {"work:token": {"secret": "w"}}
     assert seen == ["work"]
     inner.save("token", {"secret": "unscoped"})
-    assert work.load("token") == {"secret": "w"}
-    assert work.delete("token") is True and work.delete("token") is False
+    scoped = work.load("token")
+    assert scoped == {"secret": "w"}
+    deleted, deleted_again = work.delete("token"), work.delete("token")
+    assert (deleted, deleted_again) == (True, False)
     assert inner.items == {"token": {"secret": "unscoped"}}  # only default adopts these
     assert (work.location, work.where("token")) == ("memory", "memory")
     file_view = ProfileStore(FileTokenStore(Path("/x/credentials.json")), "ops")
@@ -139,7 +145,8 @@ def test_default_profile_adopts_logins_from_before_profiles() -> None:
     store.save("login", {"secret": "y"})
     assert ("acme", "login") not in backend.items
     backend.items[("acme", "gone")] = json.dumps({"secret": "x"})
-    assert store.delete("gone") is True
+    deleted = store.delete("gone")
+    assert deleted is True
 
 
 # ---------------------------------------------------------------- runtime
@@ -230,17 +237,20 @@ def test_login_new_profiles_list_use_and_logout() -> None:
         {"profile": "profile-2", "default": False, "saved": "token"},
         {"profile": "ops", "default": False, "saved": "token"},
     ]
-    assert profiled(store, index).run(args("use", name="ops")) == {"default": "ops"}
+    used = profiled(store, index).run(args("use", name="ops"))
+    assert used == {"default": "ops"}
     assert index.default == "ops"
     ops = ProfileStore(inner, "ops", on_save=index.add)
     status = profiled(ops, index).run(args("status"))
     assert status[0]["profile"] == "ops"
-    assert profiled(ops, index).run(args("logout", scheme="token")) == {
+    one = profiled(ops, index).run(args("logout", scheme="token"))
+    assert one == {
         "profile": "ops",
         "removed": ["token"],
     }
     assert "ops" in index.names  # one scheme out: the profile stays
-    assert profiled(ops, index).run(args("logout")) == {
+    everything = profiled(ops, index).run(args("logout"))
+    assert everything == {
         "profile": "ops",
         "removed": [],
         "profile_removed": True,
@@ -251,14 +261,13 @@ def test_login_new_profiles_list_use_and_logout() -> None:
 def test_profiles_listing_before_any_login_and_without_profiles() -> None:
     index = ProfileIndex(None)
     fresh = profiled(ProfileStore(MemoryTokenStore(), "default"), index)
-    assert fresh.run(args("profiles")) == [
-        {"profile": "default", "default": True, "saved": "nothing"}
-    ]
+    listed = fresh.run(args("profiles"))
+    assert listed == [{"profile": "default", "default": True, "saved": "nothing"}]
     other = profiled(ProfileStore(MemoryTokenStore(), "work"), index)
-    assert [r["profile"] for r in other.run(args("profiles"))] == ["default", "work"]
+    others = other.run(args("profiles"))
+    assert [r["profile"] for r in others] == ["default", "work"]
     plain = commands()
-    assert plain.run(args("profiles")) == [
-        {"profile": "default", "default": True, "saved": "nothing"}
-    ]
+    unscoped = plain.run(args("profiles"))
+    assert unscoped == [{"profile": "default", "default": True, "saved": "nothing"}]
     with pytest.raises(AuthError, match="this credential store has no profiles"):
         commands(prompts=["s"]).run(args("login", scheme="token", new=True))
