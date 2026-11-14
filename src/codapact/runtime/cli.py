@@ -34,6 +34,7 @@ from codapact.runtime.abstractions import CallContext, Credential, Next, Secret
 from codapact.runtime.auth import ChainAuth, EnvAuth, FunctionAuthenticator
 from codapact.runtime.client import DEFAULT_MAX_RESPONSE_BYTES
 from codapact.runtime.credentials import cli_auth as build_cli_auth
+from codapact.runtime.credentials import field_specs
 from codapact.runtime.errors import (
     ApiError,
     AuthError,
@@ -916,6 +917,10 @@ class CliRuntime:
             found[f"{e}_CREDENTIAL_STORE"] = "where auth login saves: keyring, file, or memory"
         for scheme in api.auth_schemes:
             variable = auth.variable(scheme)
+            for name, spec in field_specs((self.auth_config or {}).get(scheme.name)).items():
+                kind = "secret field" if spec.get("secret") else "field"
+                help_text = f": {spec['help']}" if spec.get("help") else ""
+                found[f"{variable}_{name.upper()}"] = f"{scheme.name} {kind} {name}{help_text}"
             if scheme.kind is AuthKind.CUSTOM:
                 continue
             if scheme.kind is AuthKind.BASIC:

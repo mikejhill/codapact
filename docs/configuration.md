@@ -245,11 +245,42 @@ The first source that has a credential wins, per scheme:
 5. Saved login from `<program> auth login`.
 
 `cli.auth: {SCHEME: {client_id, scopes, flow, audience}}` bakes public OAuth settings into
-the CLI (no secrets). `auth login` picks a flow in this order: `--flow`, then client
-credentials when a secret is set, then device code, then authorization code with PKCE.
+the CLI (no secrets); `fields` declares [credential fields](#credential-fields).
+`auth login` picks a flow in this order: `--flow`, then client credentials when a secret is
+set, then device code, then authorization code with PKCE.
 `--with-token` reads a static token from stdin; `--username` saves basic credentials.
 `auth status` shows each scheme's source; `auth token` prints what a command would send;
 `doctor` reports the same, never printing secrets.
+
+### Credential fields
+
+When a scheme needs several values that belong together (a login URL, username, password and
+cookie name for a browser sign-in; a key ID and secret for request signing; an API key plus a
+tenant), declare them as fields and let an auth plugin use them:
+
+```yaml
+cli:
+  auth_plugin: browser_cookie_auth:provider
+  auth:
+    portal:
+      fields:
+        login_url: {help: page that sets the cookie}
+        username: {}
+        password: {secret: true}
+        cookie_domain: {optional: true}
+```
+
+| Piece | Behaviour |
+| --- | --- |
+| `auth login --scheme portal` | Prompts for each field (secret ones hidden, saved values offered as defaults) and saves them together; `--field NAME=VALUE` sets a non-secret field without prompting |
+| Environment | `<PREFIX>_<SCHEME>_<FIELD>` (e.g. `ACME_PORTAL_PASSWORD`) wins over a saved value |
+| Plugin | `context.fields("portal")` returns `{name: value}`; missing required fields raise an error naming the variables and `auth login`. `context.session_key("portal")` is a store key for what the plugin obtains (e.g. a session cookie) |
+| `auth status` | Shows where each field comes from (`set (VAR)`, `saved`, `missing`), never the value |
+| `auth logout` | Forgets the fields and the plugin's cached session |
+
+The sign-in itself (multi-step forms, SSO, redirects, MFA) stays in the plugin; fields only
+supply and store its inputs. Field names are lower snake case; `secret`, `optional` and `help`
+are the only keys.
 
 Saved credentials and tokens go to the OS keyring when one is usable, otherwise to a
 `0600` JSON file at `$XDG_CONFIG_HOME/<program>/credentials.json`.

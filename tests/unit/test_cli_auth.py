@@ -116,6 +116,13 @@ def test_auth_action_options() -> None:
             "_StoreTrueAction",
         ),
         "--username": ("username", "username for basic auth", None, None, "_StoreAction"),
+        "--field": (
+            "field",
+            "set a non-secret declared field without prompting (repeatable)",
+            None,
+            [],
+            "_AppendAction",
+        ),
         "--flow": (
             "flow",
             "OAuth flow to run",

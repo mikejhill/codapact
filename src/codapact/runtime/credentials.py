@@ -233,6 +233,67 @@ class AuthContext:
     environ: Mapping[str, str]
     store: TokenStore
     http: Transport
+    configured: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    """``cli.auth`` per scheme, including declared ``fields``."""
+
+    def fields(self, scheme: str, *, required: bool = True) -> dict[str, str]:
+        """Return the declared credential fields of ``scheme`` (see ``credential_fields``).
+
+        With ``required``, a missing field raises ``AuthError`` naming its variable and
+        ``auth login``.
+        """
+        spec = field_specs(self.configured.get(scheme))
+        values = credential_fields(scheme, spec, self.env_prefix, self.environ, self.store)
+        missing = [n for n, o in spec.items() if n not in values and not o.get("optional")]
+        if required and missing:
+            names = ", ".join(field_variable(self.env_prefix, scheme, n) for n in missing)
+            raise AuthError(
+                f"{scheme}: missing {', '.join(missing)}; set {names}, "
+                f"or run {self.program} auth login --scheme {scheme}"
+            )
+        return values
+
+    def session_key(self, scheme: str) -> str:
+        """Store key for state a plugin obtains at runtime (e.g. a session cookie).
+
+        ``auth logout`` removes it together with the saved fields.
+        """
+        return session_key(scheme)
+
+
+def session_key(scheme: str) -> str:
+    """Store key for runtime state an auth plugin caches for ``scheme``."""
+    return f"{scheme}.session"
+
+
+def field_specs(settings: Mapping[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """The ``fields`` a scheme declares in ``cli.auth``: ``{name: {secret, optional, help}}``."""
+    raw = (settings or {}).get("fields") or {}
+    return {str(k): dict(v) if isinstance(v, Mapping) else {} for k, v in raw.items()}
+
+
+def field_variable(prefix: str, scheme: str, name: str) -> str:
+    """``<PREFIX>_<SCHEME>_<FIELD>``."""
+    return env_variable(env_variable(prefix, scheme), name)
+
+
+def credential_fields(
+    scheme: str,
+    spec: Mapping[str, Mapping[str, Any]],
+    prefix: str,
+    environ: Mapping[str, str],
+    store: TokenStore,
+) -> dict[str, str]:
+    """Values of declared fields: environment variables first, then ``auth login``'s."""
+    data = (store.load(scheme) or {}) if spec else {}
+    saved = data.get("fields") if data.get("type") == "fields" else None
+    saved = saved if isinstance(saved, dict) else {}
+    values: dict[str, str] = {}
+    for name in spec:
+        value = environ.get(field_variable(prefix, scheme, name)) or saved.get(name)
+        if isinstance(value, str) and value:
+            values[name] = value
+    return values
 
 
 def load_plugin(spec: str, context: AuthContext) -> AuthProvider:
@@ -277,7 +338,7 @@ def cli_auth(
     """Build the credential chain every generated CLI uses (see the module docs)."""
     providers: list[AuthProvider] = []
     if plugin:
-        context = AuthContext(api, program, prefix, environ, store, http)
+        context = AuthContext(api, program, prefix, environ, store, http, dict(configured or {}))
         providers.append(load_plugin(plugin, context))
     providers += [
         EnvAuth(prefix, environ),
