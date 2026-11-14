@@ -41,6 +41,15 @@ class TransportError(CodapactError):
     """A request could not be sent or the response was rejected before decoding."""
 
 
+class ResponseTooLargeError(TransportError):
+    """The response body is larger than the client's ``max_bytes`` limit."""
+
+    def __init__(self, limit: int) -> None:
+        """Record the limit that was exceeded."""
+        super().__init__(f"response exceeds {limit} bytes")
+        self.limit = limit
+
+
 def expect[T](value: T | None, what: str) -> T:
     """Return ``value`` or raise when an internal invariant is broken."""
     if value is None:

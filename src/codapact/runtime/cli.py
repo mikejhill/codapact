@@ -26,12 +26,13 @@ from urllib.parse import quote, quote_plus
 import yaml
 
 from codapact import __version__
-from codapact.core.errors import CodapactError, TransportError
+from codapact.core.errors import CodapactError, ResponseTooLargeError, TransportError
 from codapact.core.net import HttpRequest, HttpResponse, SafeHttpClient
 from codapact.model.api import Api, AuthKind, AuthScheme
 from codapact.runtime import cli_auth, cli_tools
 from codapact.runtime.abstractions import CallContext, Credential, Next, Secret
 from codapact.runtime.auth import ChainAuth, EnvAuth, FunctionAuthenticator
+from codapact.runtime.client import DEFAULT_MAX_RESPONSE_BYTES
 from codapact.runtime.credentials import cli_auth as build_cli_auth
 from codapact.runtime.errors import (
     ApiError,
@@ -69,6 +70,7 @@ SETTINGS_KEYS = frozenset(
         "base_url",
         "timeout",
         "allow_private",
+        "max_response_bytes",
         "response_validation",
         "output",
         "error_format",
@@ -99,6 +101,32 @@ def json_value(text: str) -> Any:
         return json.loads(text)
     except ValueError:
         raise argparse.ArgumentTypeError("expected JSON or @file") from None
+
+
+def _utf8(stream: TextIO) -> TextIO:
+    """Write UTF-8 to pipes and files, whatever the locale (cp1252 on Windows).
+
+    Consoles keep their own encoding; JSON output with non-ASCII text must not depend
+    on the code page of whoever redirects it.
+    """
+    encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+    reconfigure = getattr(stream, "reconfigure", None)
+    if encoding != "utf8" and reconfigure is not None and not stream.isatty():
+        reconfigure(encoding="utf-8", errors="backslashreplace")
+    return stream
+
+
+def _positive_int(value: Any, name: str) -> int:
+    """Parse a byte limit from a flag, environment variable, or settings file."""
+    if value is None or value == "":
+        return DEFAULT_MAX_RESPONSE_BYTES
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise CodapactError(f"{name} must be a whole number of bytes, not {value!r}") from None
+    if number <= 0 or isinstance(value, bool):
+        raise CodapactError(f"{name} must be a positive number of bytes")
+    return number
 
 
 def integer(text: str) -> int:
@@ -546,6 +574,10 @@ class CliRuntime:
         )
         if allow_private in (True, "1", "true", "yes"):
             options["allow_private"] = True
+        limit, sources["max_response_bytes"] = self._setting(
+            args, file_settings, "max_response_bytes"
+        )
+        options["max_response_bytes"] = _positive_int(limit, "max_response_bytes")
         mode, sources["response_validation"] = self._setting(
             args, file_settings, "response_validation"
         )
@@ -755,8 +787,8 @@ class CliRuntime:
     ) -> int:
         """Parse ``argv`` and run one generated or built-in command; return the exit code."""
         words = list(sys.argv[1:] if argv is None else argv)
-        out = stdout or sys.stdout
-        err = stderr or sys.stderr
+        out = stdout or _utf8(sys.stdout)
+        err = stderr or _utf8(sys.stderr)
         token = _error_format.set(self._error_mode(self._pre_scan(words).error_format))
         try:
             parser = build_parser()
@@ -902,6 +934,13 @@ class CliRuntime:
 
     def _client_options(self, args: argparse.Namespace, err: TextIO) -> dict[str, Any]:
         options = self.settings(args)
+        # The CLI builds the transport so the response cap also applies to clients
+        # generated before ``max_response_bytes`` existed.
+        options["transport"] = SafeHttpClient(
+            allow_private=bool(options.get("allow_private")),
+            timeout=float(options.get("timeout") or 30.0),
+            max_bytes=options.pop("max_response_bytes"),
+        )
         if getattr(args, "dry_run", False):
             options["transport"] = DryRunTransport()
             options["auth"] = PlaceholderAuth(
@@ -1021,6 +1060,12 @@ class CliRuntime:
                 args.placeholders = True  # show where the missing credential would go
                 return self._run(args, make_client, handler, stdout, stderr)
             return emit_error(p, "auth", str(error), EXIT_AUTH, err, hint=f"run {p} doctor")
+        except ResponseTooLargeError as error:
+            hint = (
+                f"raise the limit with {self.env_prefix}_MAX_RESPONSE_BYTES or "
+                "max_response_bytes in the settings file"
+            )
+            return emit_error(p, "transport", str(error), EXIT_TRANSPORT, err, hint=hint)
         except TransportError as error:
             hint = f"run {p} doctor to check the base URL, proxy, and connectivity"
             return emit_error(p, "transport", str(error), EXIT_TRANSPORT, err, hint=hint)
@@ -1245,7 +1290,7 @@ def render(value: Any, fmt: str, out: TextIO) -> None:
     if isinstance(value, bytes):
         value = value.decode("utf-8", errors="replace")
     if fmt == "jsonl":
-        items = value if isinstance(value, list) else [value]
+        items = value if isinstance(value, list) else (_rows(value) or [value])
         for item in items:
             out.write(json.dumps(item, ensure_ascii=False, default=str) + "\n")
         return

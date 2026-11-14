@@ -22,7 +22,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from urllib.parse import SplitResult, urlsplit
 
-from codapact.core.errors import ConfigError, TransportError
+from codapact.core.errors import ConfigError, ResponseTooLargeError, TransportError
 
 DEFAULT_MAX_BYTES = 10_000_000
 
@@ -153,7 +153,7 @@ class SafeHttpClient:
         finally:
             connection.close()
         if len(body) > self.max_bytes:
-            raise TransportError(f"response exceeds {self.max_bytes} bytes")
+            raise ResponseTooLargeError(self.max_bytes)
         if 300 <= response.status < 400:
             raise TransportError("redirects are not followed")
         return HttpResponse(response.status, dict(response.getheaders()), body)

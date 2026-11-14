@@ -503,6 +503,10 @@ class Doctor:
         mode = options.get("response_validation", "warn")
         source = sources.get("response_validation", "default")
         checks.append(Check("response validation", "info", f"{mode} (from {source})"))
+        limit = options.get("max_response_bytes")
+        if limit:
+            source = sources.get("max_response_bytes", "default")
+            checks.append(Check("response limit", "info", f"{limit} bytes (from {source})"))
         if offline:
             checks.append(Check("connectivity", "skip", "skipped (--offline)"))
         elif base_ok:

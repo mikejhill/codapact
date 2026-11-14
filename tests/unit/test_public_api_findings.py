@@ -343,6 +343,7 @@ def _hub_cli(tmp_path: Path, mode: str | None, *extra: str) -> tuple[int, str, s
 
     def make(options: dict[str, Any]) -> RuntimeClient:
         options.pop("auth")
+        assert isinstance(options.pop("transport"), SafeHttpClient)  # replaced by the fake
         return RuntimeClient(
             translate(GITHUBISH), transport=FakeTransport(hub), middleware=(), **options
         )
