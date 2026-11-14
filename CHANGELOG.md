@@ -2,6 +2,13 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.7.0](https://github.com/mikejhill/codapact/compare/v0.6.1...v0.7.0) (2026-11-14)
+
+
+### Features
+
+* **auth:** credential profiles; doctor names the exact keyring entry ([#47](https://github.com/mikejhill/codapact/issues/47)) ([de86a9e](https://github.com/mikejhill/codapact/commit/de86a9ec0eefd7cc9e4b65ba76abb8ee99088fcd))
+
 ## [0.6.1](https://github.com/mikejhill/codapact/compare/v0.6.0...v0.6.1) (2026-11-14)
 
 
