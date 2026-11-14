@@ -6,6 +6,7 @@ surface path (``client.pets.list(...)``); no handler touches the protocol.
 
 from __future__ import annotations
 
+import re
 import textwrap
 
 from codapact.commands.model import Arg, ArgKind, Command, CommandTree, Group
@@ -74,8 +75,15 @@ def _auth_help(request: GenerationRequest) -> str:
     prefix = request.commands.env_prefix if request.commands is not None else ""
     program = request.commands.program.kebab if request.commands is not None else ""
     lines = []
+    config = _auth_config(request)
     for scheme in request.api.auth_schemes:
         base = env_variable(prefix, scheme.name)
+        fields = config.get(scheme.name, {}).get("fields")
+        if isinstance(fields, dict):
+            names = ", ".join(env_variable(base, n) for n in fields)
+            plugin = f" (used by {prefix}_AUTH_PLUGIN)" if scheme.kind is AuthKind.CUSTOM else ""
+            lines.append(f"  {scheme.name}: set {names}, or run '{program} auth login'{plugin}")
+            continue
         if scheme.kind is AuthKind.CUSTOM:
             lines.append(
                 f"  {scheme.name}: custom; set {prefix}_AUTH_PLUGIN=package.module:factory"
@@ -99,11 +107,35 @@ def _auth_config(request: GenerationRequest) -> dict[str, dict[str, object]]:
     for name, value in raw.items():
         if name not in known:
             raise PluginError(f"cli.auth: unknown scheme {name!r}")
-        if not isinstance(value, dict) or set(value) - {"client_id", "scopes", "flow", "audience"}:
+        allowed = ("client_id", "scopes", "flow", "audience", "fields")
+        if not isinstance(value, dict) or set(value) - set(allowed):
             # No client_secret: secrets must never be baked into generated code.
-            raise PluginError(f"cli.auth.{name} allows client_id, scopes, flow, audience")
+            raise PluginError(f"cli.auth.{name} allows {', '.join(allowed)}")
         config[str(name)] = dict(value)
+        if "fields" in value:
+            config[str(name)]["fields"] = _fields(str(name), value["fields"])
     return config
+
+
+def _fields(scheme: str, raw: object) -> dict[str, dict[str, object]]:
+    """Validate ``cli.auth.<scheme>.fields``: ``{name: {secret, optional, help}}``."""
+    where = f"cli.auth.{scheme}.fields"
+    if not isinstance(raw, dict) or not raw:
+        raise PluginError(f"{where} must map field names to {{secret, optional, help}}")
+    fields: dict[str, dict[str, object]] = {}
+    for name, spec in raw.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_]*", name):
+            raise PluginError(f"{where}: field names are lower snake case, not {name!r}")
+        spec = {} if spec is None else spec
+        if not isinstance(spec, dict) or set(spec) - {"secret", "optional", "help"}:
+            raise PluginError(f"{where}.{name} allows secret, optional, and help")
+        for flag in ("secret", "optional"):
+            if not isinstance(spec.get(flag, False), bool):
+                raise PluginError(f"{where}.{name}.{flag} must be true or false")
+        if not isinstance(spec.get("help", ""), str):
+            raise PluginError(f"{where}.{name}.help must be a string")
+        fields[name] = dict(spec)
+    return fields
 
 
 def render_cli(

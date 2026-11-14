@@ -7,7 +7,9 @@
 * basic: prompts for a username and password;
 * OAuth 2.0 with declared flows: runs device code or authorization code + PKCE
   (``--flow`` chooses), or client credentials when a client secret is set;
-* custom: refuses, because only an auth plugin can satisfy it.
+* declared fields (``cli.auth.<scheme>.fields``): prompts for each field, secret
+  ones hidden, and saves them together for an auth plugin to use;
+* custom without fields: refuses, because only an auth plugin can satisfy it.
 
 Secrets go to the OS keyring when the ``keyring`` package is available, and to
 ``~/.config/<program>/credentials.json`` (mode 0600) otherwise.
@@ -27,7 +29,14 @@ from codapact.core.naming import env_variable
 from codapact.model.api import Api, AuthKind, AuthScheme, OAuthFlowKind
 from codapact.runtime.abstractions import Credential, Transport
 from codapact.runtime.auth import ChainAuth
-from codapact.runtime.credentials import describe_source, scheme_settings
+from codapact.runtime.credentials import (
+    credential_fields,
+    describe_source,
+    field_specs,
+    field_variable,
+    scheme_settings,
+    session_key,
+)
 from codapact.runtime.errors import AuthError
 from codapact.runtime.oauth import OAuth2, Token, TokenEndpoint, TokenStore, grant_for_scheme
 
@@ -59,6 +68,13 @@ def add_auth_commands(
     login.add_argument("--scheme", help="credential scheme (default: the only one)")
     login.add_argument("--with-token", action="store_true", help="read the secret from stdin")
     login.add_argument("--username", help="username for basic auth")
+    login.add_argument(
+        "--field",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help="set a non-secret declared field without prompting (repeatable)",
+    )
     login.add_argument(
         "--flow",
         choices=[k.value for k in OAuthFlowKind if k is not OAuthFlowKind.IMPLICIT],
@@ -142,13 +158,32 @@ class AuthCommands:
                 row["expires_in"] = f"{left}s" if left > 0 else "expired"
                 if token.refresh_token:
                     row["expires_in"] += " (refreshable)"
+            spec = field_specs(self.configured.get(scheme.name))
+            if spec:
+                row["fields"] = self._field_status(scheme.name, spec)
             rows.append(row)
         return rows
 
+    def _field_status(self, scheme: str, spec: Mapping[str, Mapping[str, Any]]) -> dict[str, str]:
+        saved = credential_fields(scheme, spec, self.prefix, {}, self.store)
+        result = {}
+        for name in spec:
+            variable = field_variable(self.prefix, scheme, name)
+            if self.environ.get(variable):
+                result[name] = f"set ({variable})"
+            else:
+                unset = "not set (optional)" if spec[name].get("optional") else "missing"
+                result[name] = "saved" if name in saved else unset
+        return result
+
     def logout(self, name: str | None) -> dict[str, Any]:
-        """Remove saved credentials."""
+        """Remove saved credentials, and any session an auth plugin cached for them."""
         targets = [self.scheme(name)] if name else list(self.api.auth_schemes)
-        removed = [s.name for s in targets if self.store.delete(s.name)]
+        removed = []
+        for scheme in targets:
+            session = self.store.delete(session_key(scheme.name))
+            if self.store.delete(scheme.name) or session:
+                removed.append(scheme.name)
         return {"removed": removed}
 
     def token(self, scheme: AuthScheme) -> str:
@@ -165,6 +200,9 @@ class AuthCommands:
 
     def login(self, scheme: AuthScheme, args: argparse.Namespace) -> dict[str, Any]:
         """Obtain and save a credential."""
+        spec = field_specs(self.configured.get(scheme.name))
+        if spec:
+            return self._fields_login(scheme, spec, getattr(args, "field", None) or [])
         if scheme.kind is AuthKind.CUSTOM:
             raise AuthError(
                 f"{scheme.name} is a custom scheme; set {self.prefix}_AUTH_PLUGIN to code "
@@ -185,6 +223,44 @@ class AuthCommands:
             secret = self._read_secret(args.with_token, f"{scheme.name} token: ")
             self.store.save(scheme.name, {"type": "token", "secret": secret})
         return {"scheme": scheme.name, "saved": _location(self.store)}
+
+    def _fields_login(
+        self, scheme: AuthScheme, spec: Mapping[str, Mapping[str, Any]], given: list[str]
+    ) -> dict[str, Any]:
+        """Prompt for every declared field and save them as one credential."""
+        preset: dict[str, str] = {}
+        for item in given:
+            name, sep, value = item.partition("=")
+            if not sep or name not in spec:
+                raise AuthError(f"--field takes NAME=VALUE with NAME one of {', '.join(spec)}")
+            if spec[name].get("secret"):
+                raise AuthError(
+                    f"{name} is secret: enter it at the prompt, not on the command line"
+                )
+            preset[name] = value
+        current = credential_fields(scheme.name, spec, self.prefix, {}, self.store)
+        values: dict[str, str] = {}
+        for name, options in spec.items():
+            label = f"{scheme.name} {name}"
+            if options.get("help"):
+                label += f" ({options['help']})"
+            if options.get("optional"):
+                label += " (optional)"
+            if name in preset:
+                value = preset[name]
+            elif options.get("secret"):
+                value = self.secret_prompt(f"{label}: ").strip()
+            else:
+                default = current.get(name, "")
+                shown = f" [{default}]" if default else ""
+                value = self.prompt(f"{label}{shown}: ").strip() or default
+            if value:
+                values[name] = value
+            elif not options.get("optional"):
+                raise AuthError(f"{name} is required")
+        self.store.save(scheme.name, {"type": "fields", "fields": values})
+        self.store.delete(session_key(scheme.name))  # new values: drop the old session
+        return {"scheme": scheme.name, "saved": _location(self.store), "fields": list(values)}
 
     def _read_secret(self, from_stdin: bool, label: str) -> str:
         if from_stdin:
