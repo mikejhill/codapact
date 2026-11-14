@@ -1,5 +1,6 @@
-"""The ``auth`` command group of every generated CLI: login, logout, status, token,
-profiles, use.
+"""The ``auth`` command group of every generated CLI: login, logout, status, token, and more.
+
+Actions: ``login``, ``logout``, ``status``, ``token``, ``profiles``, ``use``.
 
 ``login`` saves a credential so later commands need no environment variables:
 
