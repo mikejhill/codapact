@@ -1,6 +1,6 @@
 [project]
 name = "codapact"
-version = "0.5.1"
+version = "0.5.2"
 description = "Contracts into callable tools: generate libraries, then CLIs, from OpenAPI, GraphQL, and other API contracts."
 readme = "README.md"
 license = "MIT"
