@@ -282,9 +282,12 @@ The sign-in itself (multi-step forms, SSO, redirects, MFA) stays in the plugin; 
 supply and store its inputs. Field names are lower snake case; `secret`, `optional` and `help`
 are the only keys.
 
-Saved credentials and tokens go to the OS keyring when one is usable, otherwise to a
+Saved credentials and tokens go to the OS keyring when one is usable, one entry per scheme
+named `codapact:<program>:<scheme>` (user name `<scheme>`; for example `codapact:ynab:bearer`
+in Windows Credential Manager), otherwise to a
 `0600` JSON file at `$XDG_CONFIG_HOME/<program>/credentials.json`.
-`<PREFIX>_CREDENTIAL_STORE=keyring|file|memory` forces one.
+`<PREFIX>_CREDENTIAL_STORE=keyring|file|memory` forces one. Entries saved by codapact
+before 0.6.1 (service `<program>`) are moved to the new name the first time they are read.
 
 Libraries take the same objects directly:
 
