@@ -16,6 +16,7 @@ version: 1
 source:
   type: openapi              # openapi | graphql
   path: openapi.yaml         # local path (relative to this file) or https URL
+  upstream: https://api.example.com/openapi.yaml   # optional; remote copy `codapact sync` tracks
   documents: []              # companion documents, e.g. GraphQL operations
   options: {strict: true}
 shape:                       # ordered transforms; the model is re-validated after each
@@ -54,6 +55,28 @@ Targets that share an `output` directory share options. When `python-cli` shares
 document; the default is 64 MB. Remote contracts and generated clients honour
 `HTTPS_PROXY`, `HTTP_PROXY`, and `NO_PROXY`. Proxy URLs must use `http://` without
 credentials; HTTPS traffic is tunnelled with `CONNECT`.
+
+### Pinned contracts and `codapact sync`
+
+Generating from a remote `path` always uses the remote's current version. To pin a local copy
+instead and still notice when the provider changes it, set `source.path` to the local file
+and `source.upstream` to its URL:
+
+| Command | Effect | Exit code |
+| --- | --- | --- |
+| `codapact sync` | Replaces the local file with the upstream bytes when they differ | 0, or 1 on error |
+| `codapact sync --check` | Reports drift without writing (for CI) | 0 current, 3 out of date, 1 error |
+| `--from URL` | Overrides `source.upstream` for one run | |
+
+A copy that differs only in line endings is current. A copy that parses to the same JSON or YAML
+as upstream (formatting only) passes `--check` and is rewritten by `codapact sync`. Drift
+reports `info.version` old and new plus changed line counts, e.g.
+`out of date (version 1.88.0 -> 1.89.0, +120 -30 lines): openapi.yaml vs https://...`.
+`source.documents` are not synced. A CI step that warns but does not fail:
+
+```yaml
+- run: codapact sync --check || { [ $? -eq 3 ] && echo "::warning::contract is out of date"; }
+```
 
 GraphQL with `documents` generates one operation per document operation with exact result
 types. Without documents, it generates one operation per root field. A `#` comment block

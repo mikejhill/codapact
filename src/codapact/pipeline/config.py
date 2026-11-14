@@ -45,6 +45,7 @@ class SourceConfig:
     documents: tuple[str, ...] = ()
     options: Mapping[str, Any] = field(default_factory=dict)
     max_bytes: int | None = None
+    upstream: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,7 +91,15 @@ class ProjectConfig:
         documents = source.get("documents", [])
         if not isinstance(documents, list) or not all(isinstance(d, str) for d in documents):
             raise ConfigError("source.documents must be a list of paths")
-        extra_source = set(source) - {"type", "path", "url", "documents", "options", "max_bytes"}
+        extra_source = set(source) - {
+            "type",
+            "path",
+            "url",
+            "documents",
+            "options",
+            "max_bytes",
+            "upstream",
+        }
         if extra_source:
             raise ConfigError(f"source: unknown keys {sorted(extra_source)}")
         max_bytes = source.get("max_bytes")
@@ -98,6 +107,11 @@ class ProjectConfig:
             not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes <= 0
         ):
             raise ConfigError("source.max_bytes must be a positive integer")
+        upstream = source.get("upstream")
+        if upstream is not None and (
+            not isinstance(upstream, str) or not upstream.startswith(("https://", "http://"))
+        ):
+            raise ConfigError("source.upstream must be an http(s) URL")
         shape = data.get("shape", [])
         if not isinstance(shape, list):
             raise ConfigError("shape must be a list of steps")
@@ -135,6 +149,7 @@ class ProjectConfig:
                 documents=tuple(documents),
                 options=_mapping(source.get("options", {}), "source.options"),
                 max_bytes=max_bytes,
+                upstream=upstream,
             ),
             targets=tuple(targets),
             shape=tuple(shape),

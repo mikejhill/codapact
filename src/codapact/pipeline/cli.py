@@ -17,8 +17,11 @@ from codapact.pipeline import writer
 from codapact.pipeline.config import ProjectConfig
 from codapact.pipeline.defaults import default_registry
 from codapact.pipeline.pipeline import Pipeline, PipelineResult
+from codapact.pipeline.sync import sync
 
 DEFAULT_CONFIG = "codapact.yaml"
+EXIT_STALE = 3
+"""``codapact sync --check``: the local contract differs from upstream (errors exit 1)."""
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,6 +40,20 @@ def build_parser() -> argparse.ArgumentParser:
     inspect = commands.add_parser("inspect", help="print an intermediate artifact as JSON")
     inspect.add_argument("artifact", choices=("model", "surface", "commands", "report"))
     _config_options(inspect)
+
+    sync = commands.add_parser(
+        "sync",
+        help="update the local contract from source.upstream (--check: only report drift)",
+        description=(
+            "Compare the local contract (source.path) with the remote copy it tracks "
+            "(source.upstream or --from) and replace it when it differs. With --check, "
+            f"nothing is written and the exit code is {EXIT_STALE} when the local copy is "
+            "out of date, so CI can warn."
+        ),
+    )
+    sync.add_argument("-c", "--config", help=f"project file (default: ./{DEFAULT_CONFIG})")
+    sync.add_argument("--from", dest="upstream", metavar="URL", help="override source.upstream")
+    sync.add_argument("--check", action="store_true", help="report drift without writing")
     return parser
 
 
@@ -54,7 +71,7 @@ def _config_options(parser: argparse.ArgumentParser) -> None:
 
 def load_config(args: argparse.Namespace) -> ProjectConfig:
     """Build configuration from a project file or quick-mode flags."""
-    if args.source:
+    if getattr(args, "source", None):
         if not args.out or not args.target:
             raise CodapactError("quick mode needs --source, --target, and --out")
         options = {"package": args.package} if args.package else {}
@@ -94,6 +111,16 @@ def _report_unchanged(config: ProjectConfig, err: TextIO) -> None:
             print(f"codapact: {root} still holds output from an earlier run", file=err)
 
 
+def _sync(config: ProjectConfig, args: argparse.Namespace, out: TextIO) -> int:
+    result = sync(config, upstream=args.upstream, write=not args.check)
+    if result.written:
+        print(f"updated {result.local} from {result.upstream} ({result.describe()})", file=out)
+        print("codapact: run 'codapact generate' to regenerate", file=out)
+        return 0
+    print(result.describe(), file=out)
+    return EXIT_STALE if args.check and result.stale else 0
+
+
 def main(
     argv: Sequence[str] | None = None, *, out: TextIO | None = None, err: TextIO | None = None
 ) -> int:
@@ -103,6 +130,8 @@ def main(
     args = build_parser().parse_args(argv)
     try:
         config = load_config(args)
+        if args.command == "sync":
+            return _sync(config, args, out)
         pipeline = Pipeline(default_registry())
         if args.command == "inspect":
             result = PipelineResult()
