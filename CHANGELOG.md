@@ -2,6 +2,13 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.5.1](https://github.com/mikejhill/codapact/compare/v0.5.0...v0.5.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **cli:** configurable response limit, UTF-8 pipes, jsonl records ([#37](https://github.com/mikejhill/codapact/issues/37)) ([f8a3b72](https://github.com/mikejhill/codapact/commit/f8a3b72ac2d95f2d873cfa65db2104a4750b029a))
+
 ## [0.5.0](https://github.com/mikejhill/codapact/compare/v0.4.0...v0.5.0) (2026-11-12)
 
 
