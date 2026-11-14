@@ -227,9 +227,11 @@ def test_manifest_timestamp_moves_only_when_something_changes(tmp_path: Path) ->
         writer.write(plan, generator="g", metadata=metadata, now=lambda: next(times))
         return _manifest(tmp_path)["generated_at"]
 
-    assert write(files, meta) == "2026-01-01T00:00:00Z"
-    assert write(files, meta) == "2026-01-01T00:00:00Z"  # identical run: no new stamp
-    assert write(files, {"source": {"sha256": "y"}}) == "2026-02-02T00:00:00Z"
+    first = write(files, meta)
+    again = write(files, meta)  # identical run: no new stamp
+    changed = write(files, {"source": {"sha256": "y"}})
+    assert (first, again) == ("2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
+    assert changed == "2026-02-02T00:00:00Z"
     assert _manifest(tmp_path)["source"] == {"sha256": "y"}
     assert writer.read_manifest(tmp_path / "nowhere") is None
     (tmp_path / writer.MANIFEST).write_text("[1]")
