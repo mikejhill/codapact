@@ -2,6 +2,13 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.6.1](https://github.com/mikejhill/codapact/compare/v0.6.0...v0.6.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **auth:** namespace keyring entries as codapact:PROGRAM:SCHEME ([#45](https://github.com/mikejhill/codapact/issues/45)) ([8c46322](https://github.com/mikejhill/codapact/commit/8c463221052a017e2a5626e888f76eb26bc84c43))
+
 ## [0.6.0](https://github.com/mikejhill/codapact/compare/v0.5.2...v0.6.0) (2026-11-14)
 
 
