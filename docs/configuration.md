@@ -164,7 +164,7 @@ result is the item list, so `[].name`; a path that matches nothing fails with ex
 | Need | How |
 | --- | --- |
 | Help | `-h`/`--help` on every level; bare `<program>` or `<program> GROUP` prints help (exit `0`). Command help has a usage line with positionals and required options, examples, and a global-options reminder. |
-| Version | `-V`/`--version`: `poke 0.1.0 (PokéAPI 2.10.0; codapact 0.4.0)` |
+| Version | `-V`/`--version`: `poke 0.1.0 (PokéAPI 2.10.0; codapact 0.4.0)`; the installed distribution's version when it differs from the generated `version` option (so a release tool can bump packaging alone) |
 | Discovery for agents | `<program> describe [COMMAND…]`: JSON with every command's arguments (type, required, positional, choices, repeated), `read_only`/`destructive`/`paginated`, `requires_one_of` option groups, environment variables, exit codes. `describe --brief` keeps only names, summaries, and usage lines. Naming one command (or passing `--schemas`) adds the JSON Schema of its output and of each JSON-valued argument |
 | Diagnosis | `<program> doctor [--offline]`: version, settings file, base URL and its source, credentials (set or missing, never printed), proxy, connectivity. Table on a terminal, JSON otherwise; exit `1` when a check fails |
 | Completion | `<program> completion bash\|zsh\|fish\|powershell` prints a script that asks the program for candidates |

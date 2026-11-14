@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import importlib.metadata
 import json
 import os
 import re
@@ -290,6 +291,23 @@ class CliRuntime:
     """Default ``package.module:factory`` auth plugin (``cli.auth_plugin`` in codapact.yaml)."""
     auth_config: Mapping[str, Mapping[str, Any]] | None = None
     """Per-scheme OAuth defaults baked in at generation (``cli.auth`` in codapact.yaml)."""
+    distribution: str = ""
+    """Installed distribution name; its metadata version wins over ``version``."""
+
+    @property
+    def program_version(self) -> str:
+        """Return the installed distribution's version, else the generated ``version``.
+
+        Packaging may set the release version outside the generated code (for example a
+        hand-written ``pyproject.toml`` that release tooling bumps), so the installed
+        metadata is the source of truth when it exists.
+        """
+        if self.distribution:
+            try:
+                return importlib.metadata.version(self.distribution)
+            except importlib.metadata.PackageNotFoundError:
+                pass
+        return self.version
 
     @property
     def env(self) -> dict[str, str]:
@@ -326,7 +344,7 @@ class CliRuntime:
         """Return ``program version (API version; codapact version)``."""
         api = f"{self.api_name} {self.api_version}".strip()
         parts = [p for p in (api, f"codapact {__version__}") if p]
-        return f"{self.program} {self.version or '0.0.0'} ({'; '.join(parts)})"
+        return f"{self.program} {self.program_version or '0.0.0'} ({'; '.join(parts)})"
 
     def epilog(self, credentials: str = "", examples: Sequence[str] = ()) -> str:
         """Return the root help epilog: examples, credentials, settings, exit codes."""
@@ -867,7 +885,7 @@ class CliRuntime:
             if name == "describe":
                 header = {
                     "program": self.program,
-                    "version": self.version,
+                    "version": self.program_version,
                     "api": {"name": self.api_name, "version": self.api_version},
                     "usage": f"{self.program} [global options] COMMAND [arguments]",
                     "global_options": _global_options(parser),
@@ -896,7 +914,7 @@ class CliRuntime:
                 return EXIT_OK
             doctor = cli_tools.Doctor(
                 program=self.program,
-                version=self.version,
+                version=self.program_version,
                 env_prefix=self.env_prefix,
                 env=self.env,
                 load_model=load_model,

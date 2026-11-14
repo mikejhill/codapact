@@ -48,6 +48,7 @@ class PythonCliTarget:
                     request.api.docs or request.api.name,
                     _auth_help(request),
                     version=options.version,
+                    distribution=options.distribution,
                     api_name=request.api.name,
                     api_version=request.api.version,
                     auth_plugin=str(request.options.get("auth_plugin") or ""),
@@ -144,6 +145,7 @@ def render_cli(
     auth_help: str = "",
     *,
     version: str = "0.1.0",
+    distribution: str = "",
     api_name: str = "",
     api_version: str = "",
     auth_plugin: str = "",
@@ -157,7 +159,8 @@ def render_cli(
     credentials = f"credentials:\n{auth_help}" if auth_help else ""
     runtime = (
         f"CliRuntime(program={program!r}, env_prefix={tree.env_prefix!r}, "
-        f"version={version!r}, api_name={api_name!r}, api_version={api_version!r}, "
+        f"version={version!r}, distribution={distribution!r}, "
+        f"api_name={api_name!r}, api_version={api_version!r}, "
         f"model=_api_model, auth_plugin={auth_plugin!r}, auth_config={auth_config or {}!r})"
     )
     head = [
