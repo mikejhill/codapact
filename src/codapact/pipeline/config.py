@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -147,6 +148,13 @@ class ProjectConfig:
             )
         if not targets:
             raise ConfigError("at least one target is required")
+        cli = _mapping(data.get("cli", {}), "cli")
+        prefix = cli.get("env_prefix")
+        if prefix is not None and (
+            not isinstance(prefix, str)
+            or not re.fullmatch(r"[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*", prefix)
+        ):
+            raise ConfigError("cli.env_prefix must be upper snake case, e.g. ACME or MY_TOOL")
         return cls(
             source=SourceConfig(
                 type=source["type"],
@@ -159,7 +167,7 @@ class ProjectConfig:
             targets=tuple(targets),
             shape=tuple(shape),
             surface=_mapping(data.get("surface", {}), "surface"),
-            cli=_mapping(data.get("cli", {}), "cli"),
+            cli=cli,
             e2e=_mapping(data.get("e2e", {}), "e2e"),
             base=base,
         )
