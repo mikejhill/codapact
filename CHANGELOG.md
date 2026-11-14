@@ -2,6 +2,15 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.6.0](https://github.com/mikejhill/codapact/compare/v0.5.2...v0.6.0) (2026-11-14)
+
+
+### Features
+
+* **auth:** credential fields for schemes that need several values ([#43](https://github.com/mikejhill/codapact/issues/43)) ([9472a7f](https://github.com/mikejhill/codapact/commit/9472a7f1ba351ad06e2b65b038b4b0fa8e45b9f3))
+* **cli:** cli.env_prefix names environment variables independently of the program ([#42](https://github.com/mikejhill/codapact/issues/42)) ([f7b5041](https://github.com/mikejhill/codapact/commit/f7b504196c478d266ab0f8a3bd2ee8aea9661991))
+* codapact sync and generation metadata in manifests ([#41](https://github.com/mikejhill/codapact/issues/41)) ([fc2a27c](https://github.com/mikejhill/codapact/commit/fc2a27c518790cde6f06cf95a95dd582622a6ffd))
+
 ## [0.5.2](https://github.com/mikejhill/codapact/compare/v0.5.1...v0.5.2) (2026-11-14)
 
 

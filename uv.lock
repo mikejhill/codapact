@@ -247,7 +247,7 @@ wheels = [
 
 [[package]]
 name = "codapact"
-version = "0.5.2"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "graphql-core" },
