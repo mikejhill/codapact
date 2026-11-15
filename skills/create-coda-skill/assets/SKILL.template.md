@@ -14,7 +14,7 @@ ready; take every usage detail from the CLI, which always matches the installed 
 1. Install or update it: `uv tool install --upgrade {{DISTRIBUTION}}`. Then call
    `{{PROGRAM}}` directly. Without uv: `pipx install {{DISTRIBUTION}}` then
    `pipx upgrade {{DISTRIBUTION}}`, or `python -m pip install --upgrade {{DISTRIBUTION}}`.
-   If `{{PROGRAM}}` is still not on PATH, prefix every call with `uvx --from {{DISTRIBUTION}}`.
+   If `{{PROGRAM}}` is still not on PATH, run `{{UVX}}` in its place.
 2. Run `{{PROGRAM}} describe --brief` and read its `start`, `auth`, `exit_codes`, and `notes`.
    They explain readiness, credentials, and how to find commands.
 3. Follow `start`: it begins with `{{PROGRAM}} doctor`, whose exit code says whether the CLI
