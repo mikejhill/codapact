@@ -66,6 +66,11 @@ def test_previous_programs_are_generated(tmp_path: Path) -> None:
     assert "previous_programs=('pets',)" in cli
 
 
+def test_a_single_previous_program_may_be_a_string(tmp_path: Path) -> None:
+    cli = _cli(tmp_path, {"previous_programs": "pets"}, distribution="acme-pets")
+    assert "previous_programs=('pets',)" in cli
+
+
 def test_previous_programs_are_validated(tmp_path: Path) -> None:
     with pytest.raises(PluginError, match="invalid program name"):
         _cli(tmp_path, {"previous_programs": ["Bad Name"]})
@@ -88,9 +93,11 @@ def test_renamed_store_save_and_delete() -> None:
     assert new.items == {"k": {"v": 1}} and old.items == {}
     old.save("k", {"v": 0})
     assert store.load("k") == {"v": 1}  # the current name wins
-    assert store.delete("k") is True
+    removed = store.delete("k")
+    assert removed is True
     assert new.items == {} and old.items == {}
-    assert store.delete("k") is False
+    removed = store.delete("k")
+    assert removed is False
 
 
 def test_default_store_reads_files_saved_under_a_previous_name(tmp_path: Path) -> None:
