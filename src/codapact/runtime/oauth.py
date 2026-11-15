@@ -316,20 +316,77 @@ def store_location(store: TokenStore, key: str | None = None) -> str:
     return str(getattr(store, "location", type(store).__name__))
 
 
-def default_store(program: str, env: Mapping[str, str], prefix: str) -> TokenStore:
+@dataclass(frozen=True, slots=True)
+class RenamedStore:
+    """A store that takes over secrets saved under the program's previous names.
+
+    A key missing from ``current`` is looked up in each of ``previous`` in order; the
+    first hit is saved to ``current`` and removed from where it was. ``delete`` clears
+    every copy, so ``auth logout`` after a rename leaves nothing behind.
+    """
+
+    current: TokenStore
+    previous: tuple[TokenStore, ...]
+
+    @property
+    def location(self) -> str:
+        """Describe where secrets live."""
+        return store_location(self.current)
+
+    def where(self, key: str) -> str:
+        """Describe where ``key`` lives."""
+        return store_location(self.current, key)
+
+    def load(self, key: str) -> dict[str, Any] | None:
+        """Return ``key``, moving it from a previous name when only that has it."""
+        data = self.current.load(key)
+        if data is not None:
+            return data
+        for old in self.previous:
+            data = old.load(key)
+            if data is not None:
+                self.current.save(key, data)
+                old.delete(key)
+                return data
+        return None
+
+    def save(self, key: str, data: dict[str, Any]) -> None:
+        """Store ``data`` under ``key``."""
+        self.current.save(key, data)
+
+    def delete(self, key: str) -> bool:
+        """Remove ``key`` under the current and every previous name."""
+        removed = self.current.delete(key)
+        for old in self.previous:
+            removed = old.delete(key) or removed
+        return removed
+
+
+def default_store(
+    program: str, env: Mapping[str, str], prefix: str, previous: Sequence[str] = ()
+) -> TokenStore:
     """Pick the credential store for a CLI.
 
     ``<PREFIX>_CREDENTIAL_STORE`` chooses ``keyring``, ``file``, or ``memory``;
     by default the keyring is used when the ``keyring`` package is installed and
     has a usable backend, and a 0600 file in the config directory otherwise.
+    ``previous`` lists names the program had before: logins saved under them move
+    to the current name the first time they are read.
     """
     choice = env.get(f"{prefix}_CREDENTIAL_STORE", "").lower()
+    if choice == "memory":
+        return MemoryTokenStore()
+    current = _named_store(program, env, choice)
+    if not previous:
+        return current
+    return RenamedStore(current, tuple(_named_store(name, env, choice) for name in previous))
+
+
+def _named_store(program: str, env: Mapping[str, str], choice: str) -> TokenStore:
     root = env.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
     file_store = FileTokenStore(Path(root) / program / "credentials.json")
     if choice == "file":
         return file_store
-    if choice == "memory":
-        return MemoryTokenStore()
     keyring = _usable_keyring()
     if keyring is not None:
         return KeyringTokenStore(keyring_service(program), keyring, legacy_service=program)
@@ -904,6 +961,7 @@ __all__ = [
     "Grant",
     "KeyringTokenStore",
     "keyring_service",
+    "RenamedStore",
     "store_location",
     "MemoryTokenStore",
     "OAuth2",

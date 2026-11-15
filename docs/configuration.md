@@ -24,8 +24,9 @@ shape:                       # ordered transforms; the model is re-validated aft
   - paginate: {operations: [list_pets], next: next_cursor, items: items}
 surface: {flatten_body: true, trim_namespace: true}
 cli:
-  program: petstore
+  program: petstore           # optional; default: the Python distribution that ships the CLI
   env_prefix: PETSTORE        # optional; environment variable prefix (default: program)
+  previous_programs: [pets]   # optional; earlier names whose logins and settings carry over
   auth_plugin: my_auth:provider   # optional; see Authentication
   auth: {sso: {client_id: petstore-cli, scopes: [read]}}
 e2e:                         # optional; tests shipped with the generated CLI
@@ -158,6 +159,18 @@ result is the item list, so `[].name`; a path that matches nothing fails with ex
 `table` renders a list of objects, unwrapping single-list envelopes such as `{"data": {"items": [...]}}`.
 `jsonl` prints one JSON value per line, unwrapping the same envelopes as `table`, and streams
 `--all` results page by page. Output to a pipe or file is UTF-8 on every platform.
+
+### Program name
+
+The command is named after the Python distribution that ships it (`distribution`, else
+`package` with `-` for `_`), so `uvx acme-api --help` runs it with no `--from`. When no
+Python target names one, it is the API's name. `cli.program` overrides both.
+
+Renaming a CLI moves its keyring entries and settings directory to the new name. List
+the old names in `cli.previous_programs`: a saved login found only under an old name
+moves to the new one the first time it is read, `auth logout` removes every copy, and
+the settings file and profiles are read from the old directory until the new one
+exists. Set `cli.env_prefix` too if the environment variables should keep their names.
 
 ### Conventions every generated CLI follows
 

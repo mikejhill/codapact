@@ -46,7 +46,7 @@ from codapact.runtime.errors import (
 )
 from codapact.runtime.middleware import Retry
 from codapact.runtime.oauth import TokenStore, default_store
-from codapact.runtime.profiles import ProfileIndex, ProfileStore, check_profile_name, profiles_path
+from codapact.runtime.profiles import ProfileIndex, ProfileStore, check_profile_name
 
 EXIT_OK = 0
 EXIT_API = 1
@@ -293,6 +293,9 @@ class CliRuntime:
     """Per-scheme OAuth defaults baked in at generation (``cli.auth`` in codapact.yaml)."""
     distribution: str = ""
     """Installed distribution name; its metadata version wins over ``version``."""
+    previous_programs: tuple[str, ...] = ()
+    """Earlier program names (``cli.previous_programs``): their saved logins, settings
+    file, and profiles keep working after a rename."""
 
     @property
     def program_version(self) -> str:
@@ -626,7 +629,7 @@ class CliRuntime:
     def profiles(self) -> ProfileIndex:
         """Return the list of saved-login profiles and the default one."""
         memory = self.env.get(f"{self.env_prefix}_CREDENTIAL_STORE", "").lower() == "memory"
-        return ProfileIndex(None if memory else profiles_path(self.program, self.env))
+        return ProfileIndex(None if memory else self._state_path("profiles.json"))
 
     def profile(self, args: argparse.Namespace, file_settings: dict[str, Any]) -> tuple[str, str]:
         """Return the profile in effect and where it came from.
@@ -648,7 +651,7 @@ class CliRuntime:
         The OS keyring or a 0600 file, with keys scoped to the profile.
         """
         index = self.profiles()
-        inner = default_store(self.program, self.env, self.env_prefix)
+        inner = default_store(self.program, self.env, self.env_prefix, self.previous_programs)
         return ProfileStore(inner, profile or index.default, on_save=index.add)
 
     @staticmethod
@@ -709,8 +712,18 @@ class CliRuntime:
     def _config_path(self, explicit: str | None) -> Path:
         if explicit:
             return Path(explicit)
-        root = self.env.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-        return Path(root) / self.program / "config.json"
+        return self._state_path("config.json")
+
+    def _state_path(self, name: str) -> Path:
+        """``$XDG_CONFIG_HOME/<program>/<name>``, or a previous name's copy when only it exists."""
+        root = Path(self.env.get("XDG_CONFIG_HOME") or str(Path.home() / ".config"))
+        current = root / self.program / name
+        if current.exists():
+            return current
+        for old in self.previous_programs:
+            if (root / old / name).is_file():
+                return root / old / name
+        return current
 
     def _file_settings(self, explicit: str | None) -> dict[str, Any]:
         path = self._config_path(explicit)

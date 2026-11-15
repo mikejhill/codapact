@@ -96,7 +96,7 @@ class Pipeline:
         result.surface = derive_surface(
             api, SurfaceOptions.from_config(config.surface), result.diagnostics
         )
-        program = config.cli.get("program")
+        program = config.cli.get("program") or _distribution_program(config)
         prefix = config.cli.get("env_prefix")
         result.commands = derive_commands(
             api,
@@ -134,7 +134,7 @@ class Pipeline:
                     "env_prefix", result.commands.env_prefix if result.commands else None
                 )
             if target.needs_commands:
-                for key in ("auth_plugin", "auth"):
+                for key in ("auth_plugin", "auth", "previous_programs"):
                     if key in config.cli:
                         options.setdefault(key, config.cli[key])
                 if config.e2e:
@@ -198,6 +198,23 @@ def source_metadata(
 def _selects_first(shape: tuple[Any, ...]) -> bool:
     """Return whether shaping starts with ``select``, which may drop invalid parts."""
     return bool(shape) and isinstance(shape[0], dict) and set(shape[0]) == {"select"}
+
+
+def _distribution_program(config: ProjectConfig) -> str | None:
+    """Default program name: the distribution of the Python package that ships the CLI.
+
+    A CLI installed as ``acme-api`` is then also run as ``acme-api``, so
+    ``uvx acme-api`` works without ``--from``. Falls back to the API name when no
+    Python target names a distribution or package.
+    """
+    outputs = {t.output for t in config.targets if t.name == "python-cli"}
+    shared = _shared_options(config)
+    for output in outputs:
+        options = shared.get(output, {})
+        name = options.get("distribution") or options.get("package")
+        if name:
+            return str(name).replace("_", "-")
+    return None
 
 
 def _shared_options(config: ProjectConfig) -> dict[Path, dict[str, Any]]:
