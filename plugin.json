@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "codapact",
+  "description": "Skills for working with Codapact and the codas it generates.",
+  "homepage": "https://github.com/mikejhill/codapact",
+  "license": "MIT",
+  "keywords": ["codapact", "cli", "skills", "api"]
+}

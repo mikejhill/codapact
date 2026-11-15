@@ -103,6 +103,16 @@ def _argument(action: argparse.Action, positional: argparse.Action | None) -> di
     return entry
 
 
+def plain_usage(parser: argparse.ArgumentParser) -> str:
+    """Return the usage line without ANSI colors (Python 3.14 colors it on a terminal)."""
+    color = getattr(parser, "color", None)
+    setattr(parser, "color", False)  # noqa: B010 - the attribute only exists on 3.14+
+    try:
+        return parser.format_usage().removeprefix("usage: ").strip()
+    finally:
+        setattr(parser, "color", color)  # noqa: B010
+
+
 def describe_command(
     program: str, leaf: Leaf, *, api: Api | None = None, schema: bool = False
 ) -> dict[str, Any]:
@@ -128,7 +138,7 @@ def describe_command(
     entry: dict[str, Any] = {
         "command": " ".join(leaf.words),
         "summary": leaf.help,
-        "usage": leaf.parser.format_usage().removeprefix("usage: ").strip(),
+        "usage": plain_usage(leaf.parser),
         "read_only": bool(meta.get("read_only")),
         "destructive": bool(meta.get("destructive")),
         "paginated": bool(meta.get("paginated")),
@@ -170,7 +180,7 @@ def brief_command(leaf: Leaf) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "command": " ".join(leaf.words),
         "summary": leaf.help,
-        "usage": leaf.parser.format_usage().removeprefix("usage: ").strip(),
+        "usage": plain_usage(leaf.parser),
     }
     traits = [
         name for name in ("read_only", "destructive", "paginated", "deprecated") if meta.get(name)
