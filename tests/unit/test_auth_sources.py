@@ -524,6 +524,48 @@ def test_cli_target_validates_baked_auth_settings() -> None:
         ({"nope": {}}, "unknown scheme"),
         ({"sso": {"client_secret": "s"}}, "allows client_id"),
         ({"sso": "c"}, "allows client_id"),
+        ({"sso": {"docs": 1}}, "docs must be a string"),
     ]:
         with pytest.raises(PluginError, match=message):
             _auth_config(request(bad))
+
+
+def test_describe_auth_summary_says_how_to_get_each_credential() -> None:
+    from codapact.model.api import AuthRequirement, Operation, OperationKind
+    from codapact.runtime import cli_tools
+    from codapact.runtime.cli import CliRuntime
+
+    runtime = CliRuntime(
+        "acme", "ACME", {}, model=lambda: API, auth_config={"token": {"docs": "Get one at x"}}
+    )
+    summary = runtime._auth_summary(API)
+    schemes = {s["scheme"]: s for s in summary["schemes"]}
+    assert schemes["token"] == {
+        "scheme": "token",
+        "kind": "bearer",
+        "docs": "Get one at x",
+        "environment": ["ACME_TOKEN", "ACME_TOKEN_COMMAND"],
+        "login": "acme auth login --scheme token",
+        "login_stdin": "acme auth login --scheme token --with-token",
+    }
+    assert schemes["login"]["login_stdin"].endswith("--username USER --with-token")
+    assert schemes["signed"] == {
+        "scheme": "signed",
+        "kind": "custom",
+        "environment": ["ACME_AUTH_PLUGIN"],
+    }
+    assert schemes["sso"]["flows"] == ["client_credentials", "device_code"]
+    assert "required_for" not in summary  # no operations
+
+    def op(name: str, *alternatives: tuple[str, ...]) -> Operation:
+        return Operation(name, OperationKind.QUERY, (), None, auth=AuthRequirement(alternatives))
+
+    secured = op("a", ("token",))
+    public = op("b", ())
+    assert cli_tools.auth_required(Api("x", "1", (secured,), auth_schemes=(BEARER,))) == (
+        "every command"
+    )
+    mixed = Api("x", "1", (secured, public), auth_schemes=(BEARER,))
+    assert cli_tools.auth_required(mixed) == "some commands"
+    assert cli_tools.auth_required(Api("x", "1", (public,), auth_schemes=(BEARER,))) is None
+    assert cli_tools.auth_required(Api("x", "1", (secured,))) is None

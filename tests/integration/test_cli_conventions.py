@@ -111,7 +111,7 @@ def test_doctor(cli, monkeypatch, server, tmp_path: Path) -> None:
         cli, ["doctor", "--base-url", "http://127.0.0.1:1/v1"], monkeypatch, PETSTORE_TOKEN=""
     )
     checks = {c["check"]: c for c in json.loads(out)}
-    assert code == 1 and checks["connectivity"]["status"] == "fail"
+    assert code == 4 and checks["connectivity"]["status"] == "fail"
     assert checks["credentials: token"]["status"] == "warn"
     monkeypatch.delenv("PETSTORE_ALLOW_PRIVATE")
     code, out, _ = run_cli(cli, ["doctor", "--base-url", "http://x.test"], monkeypatch)

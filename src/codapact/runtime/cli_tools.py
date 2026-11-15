@@ -461,6 +461,26 @@ def _proxy_check(proxy: str) -> Check:
         return Check("proxy", "fail", "proxy address in the environment is malformed")
 
 
+def auth_required(api: Api) -> str | None:
+    """Say which commands need credentials: ``every command``, ``some commands``, or None."""
+    if not api.auth_schemes or not api.operations:
+        return None
+    anonymous = [op.auth.anonymous_allowed for op in api.operations]
+    if not any(anonymous):
+        return "every command"
+    return None if all(anonymous) else "some commands"
+
+
+def doctor_exit_code(checks: Sequence[Check]) -> int:
+    """Map failed checks to the CLI exit codes: 3 credentials, 4 network, 1 anything else."""
+    failed = {c.check.split(":")[0] for c in checks if c.status == "fail"}
+    if not failed:
+        return 0
+    if failed - {"credentials", "connectivity"}:
+        return 1
+    return 3 if "credentials" in failed else 4
+
+
 @dataclass(frozen=True, slots=True)
 class Doctor:
     """Inputs the doctor needs; ``settings`` resolves client options and their sources."""
@@ -539,13 +559,19 @@ class Doctor:
             return [Check("credentials", "info", "the contract declares no credentials")]
         if not isinstance(chain, ChainAuth):
             chain = ChainAuth((EnvAuth(self.env_prefix, self.env),))
+        sources = {scheme.name: describe_source(chain, scheme) for scheme in api.auth_schemes}
+        # Missing credentials only fail when nothing can run without them.
+        blocking = auth_required(api) == "every command" and all(
+            source is None for source in sources.values()
+        )
         found = []
         for scheme in api.auth_schemes:
-            source = describe_source(chain, scheme)
+            source = sources[scheme.name]
             label = f"credentials: {scheme.name}"
             if source is None:
                 hint = chain.hint(scheme) or "not configured"
-                found.append(Check(label, "warn", f"missing ({scheme.kind.value}); {hint}"))
+                status = "fail" if blocking else "warn"
+                found.append(Check(label, status, f"missing ({scheme.kind.value}); {hint}"))
             elif source.startswith("error"):
                 found.append(Check(label, "fail", f"{source} ({scheme.kind.value})"))
             else:

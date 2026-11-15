@@ -1,0 +1,14 @@
+{
+  "name": "codapact",
+  "description": "Codapact skills: create thin agent skills for codas.",
+  "owner": {
+    "name": "Mike Hill"
+  },
+  "plugins": [
+    {
+      "name": "codapact",
+      "source": "./",
+      "description": "Skills for working with Codapact and the codas it generates."
+    }
+  ]
+}

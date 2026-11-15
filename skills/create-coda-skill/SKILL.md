@@ -1,0 +1,94 @@
+---
+name: create-coda-skill
+description: Create a thin agent skill for a coda, a Codapact-generated CLI such as codapact-ynab. Use when asked to write, generate, or update the skill that lets an agent use a coda's CLI.
+---
+
+# Create a coda skill
+
+A coda skill gives an agent one capability: a coda's CLI. It is a pointer, not a manual.
+It says how to install the CLI, how to check that it is ready, and where the CLI documents
+itself. Everything else (commands, flags, credentials, exit codes) comes from the CLI at run
+time, so the agent always reads the instructions for the version it is running.
+
+Every coda skill has the same body. Only four values differ, and only the description takes
+thought. A skill made this way changes only when the coda is renamed or Codapact changes
+the convention below.
+
+## The convention the skill relies on
+
+Every coda CLI built with Codapact 0.9.0 or later carries the agent's whole start-up path:
+
+| Need | Where the agent gets it |
+| --- | --- |
+| Install, update | PyPI distribution; once per skill load, not per call |
+| Start-up steps | `PROGRAM describe --brief`, key `start` |
+| Readiness | `PROGRAM doctor`: exit 0 ready, 3 credentials, 4 network, 1 other; rows say how to fix |
+| Credentials | `describe --brief`, key `auth`: env vars, `auth login` commands, `docs` on how to get one, `required_for` |
+| Accounts | `PROGRAM auth status`, `auth profiles`, `--profile NAME` |
+| Commands | `describe --brief` lists all of them in one call; `describe COMMAND` adds argument and output JSON Schemas |
+| Errors | `exit_codes` in `describe`; `--error-format json`; each error has a hint |
+| Safety | `read_only` / `destructive` traits; `--dry-run` |
+
+`describe --brief` then `describe COMMAND` is the cheapest discovery path: one process and
+typed JSON, against one `--help` call per command and text to parse.
+
+## Steps
+
+1. **Collect the values.** Ask only for what you cannot find.
+   - `DISTRIBUTION`: the PyPI name, `codapact-<api>` (e.g. `codapact-ynab`). It is `[project] name`
+     in the coda repo's root `pyproject.toml`.
+   - `PROGRAM`: the command, `cli.program` in the coda's `codapact.yaml` (e.g. `ynab`).
+   - `API_NAME`: the product name people use (e.g. `YNAB`), not the contract title.
+
+2. **Check the coda carries the convention.** Run
+   `uvx --from DISTRIBUTION PROGRAM describe --brief` and confirm it has `start`, `exit_codes`,
+   and, when the API needs credentials, `auth`.
+   - Keys missing: the coda was generated with Codapact older than 0.9.0. Regenerate and
+     release the coda first. Do not copy the missing content into the skill.
+   - `auth.schemes[].docs` missing: add `cli.auth: {SCHEME: {docs: "how to get the
+     credential"}}` to the coda's `codapact.yaml` and regenerate. Without it the agent cannot
+     tell the user where to get a token.
+
+3. **Write the description.** This is the only content that needs judgement: it decides
+   when an agent loads the skill. One or two sentences that name:
+   - the product, and what the user can do with it, in the user's words;
+   - the main resources, taken from the command groups in `describe --brief`;
+   - `the PROGRAM CLI (DISTRIBUTION)`.
+
+   Example: "Read and change YNAB plans, accounts, categories, payees, and transactions
+   through the `ynab` CLI (codapact-ynab). Use when the user asks about their YNAB budget,
+   balances, or spending, or wants to add or edit transactions."
+
+   No command names, flags, or version numbers.
+
+4. **Fill the template.** Copy [assets/SKILL.template.md](assets/SKILL.template.md) and
+   replace `{{PROGRAM}}`, `{{DISTRIBUTION}}`, `{{API_NAME}}`, and `{{DESCRIPTION}}`. Change
+   nothing else. If the body seems to need more, see "When the CLI lacks something".
+
+5. **Place it.** Commit it in the coda repo as `skills/PROGRAM/SKILL.md`, so it ships with
+   the coda. To use it, copy the `PROGRAM` folder into the agent's skills folder
+   (Claude Code: `~/.claude/skills/`; GitHub Copilot: `~/.copilot/skills/`).
+
+6. **Test it.** In a fresh agent session with the skill installed, ask a read-only question
+   the API can answer. Pass when the agent installs or updates once, runs `doctor`, reads
+   `describe`, and answers without opening any other documentation. Then remove the
+   credentials and check that the agent stops on exit 3 and hands the user the `auth login`
+   command instead of asking for the secret.
+
+## When the CLI lacks something
+
+If the agent needed information that the CLI did not give it, fix the CLI, never the skill:
+
+| Missing | Fix |
+| --- | --- |
+| How to get a credential | `cli.auth.SCHEME.docs` in the coda's `codapact.yaml` |
+| A command's purpose or examples | The contract's summaries and descriptions, or a `shape` override in `codapact.yaml` |
+| Anything that applies to every coda | Codapact's runtime (`src/codapact/runtime/cli.py`, `describe` and `doctor`), then regenerate the codas |
+
+## Checklist
+
+- [ ] Body is the template with four values filled; nothing else added.
+- [ ] No command list, flags, argument names, output fields, or token instructions in the skill.
+- [ ] No version pin: the skill always installs the latest coda.
+- [ ] `name` equals `PROGRAM`; the description names the product, its resources, and the CLI.
+- [ ] `describe --brief` of the released coda has `start`, `exit_codes`, and `auth` with `docs`.

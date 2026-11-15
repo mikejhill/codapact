@@ -1,0 +1,8 @@
+{
+  "name": "codapact",
+  "description": "Skills for working with Codapact and the codas it generates.",
+  "author": {"name": "Mike Hill"},
+  "repository": "https://github.com/mikejhill/codapact",
+  "license": "MIT",
+  "skills": "./skills/"
+}

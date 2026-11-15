@@ -521,7 +521,9 @@ class CliRuntime:
             sub = commands.add_parser(
                 "doctor",
                 help="check version, settings, credentials, and connectivity",
-                description="Diagnose configuration problems. Exits 1 when a check fails.",
+                description="Diagnose configuration problems. Exits 0 when ready, 3 when "
+                "credentials are missing or rejected, 4 when the API is unreachable, and 1 "
+                "when another check fails.",
             )
             sub.add_argument("--offline", action="store_true", help="skip the network check")
             self.add_global_options(sub, hidden=True)
@@ -883,25 +885,31 @@ class CliRuntime:
             if name == "auth":
                 return self._auth(args, load_model(), fmt, out, err)
             if name == "describe":
+                api = load_model()
                 header = {
                     "program": self.program,
                     "version": self.program_version,
                     "api": {"name": self.api_name, "version": self.api_version},
                     "usage": f"{self.program} [global options] COMMAND [arguments]",
                     "global_options": _global_options(parser),
-                    "environment": self._environment(load_model()),
+                    "environment": self._environment(api),
                     "exit_codes": {str(k): v for k, v in EXIT_CODES.items()},
+                    "start": self._start_steps(api),
                     "notes": [
                         f"{self.program} describe COMMAND adds the output JSON Schema.",
+                        "Commands with the read_only trait only read; the others create, "
+                        "change, or delete data.",
                         "Results print to stdout as JSON unless --output says otherwise.",
                         "Errors print to stderr; --error-format json makes them one JSON object.",
                         "JSON arguments accept inline JSON, @file, or @- for stdin.",
                         "--dry-run prints the HTTP request without sending it.",
                     ],
                 }
-                api = load_model()
+                if api.auth_schemes:
+                    header["auth"] = self._auth_summary(api)
                 if getattr(args, "brief", False):
-                    header = {k: header[k] for k in ("program", "version", "api", "usage", "notes")}
+                    keep = ("program", "version", "api", "usage", "start", "auth", "exit_codes")
+                    header = {k: header[k] for k in (*keep, "notes") if k in header}
                 result = cli_tools.describe(
                     parser,
                     args.words,
@@ -924,7 +932,7 @@ class CliRuntime:
             checks = doctor.run(offline=args.offline)
             rows = [c.as_dict() for c in checks]
             render(rows, self.output_format(args, "table" if out.isatty() else "json"), out)
-            return EXIT_API if any(c.status == "fail" for c in checks) else EXIT_OK
+            return cli_tools.doctor_exit_code(checks)
         except CodapactError as error:
             return emit_error(self.program, "usage", str(error), EXIT_USAGE, err)
         finally:
@@ -959,6 +967,72 @@ class CliRuntime:
         else:
             render(result, fmt if fmt != "table" else "json", out)
         return EXIT_OK
+
+    def _start_steps(self, api: Api) -> list[str]:
+        """Return the steps an agent or script follows to start using this CLI."""
+        p = self.program
+        steps = [
+            f"Run {p} doctor once per session. Exit 0 means ready; 3 means credentials are "
+            "missing or rejected; 4 means the API is unreachable; 1 means another check "
+            "failed. Each row's detail says how to fix it.",
+        ]
+        if api.auth_schemes:
+            steps.append(
+                "Credentials come from a person: never invent one. auth lists where each is "
+                f"read from. {p} auth status shows what is configured; "
+                f"{p} auth profiles lists saved accounts (choose one with --profile NAME)."
+            )
+        steps += [
+            f"Find a command with {p} describe --brief, then read its arguments and output "
+            f"JSON Schema with {p} describe COMMAND. {p} COMMAND --help shows the same "
+            "with examples.",
+            "Pass --dry-run to see the HTTP request a command would send without sending it.",
+        ]
+        return steps
+
+    def _auth_summary(self, api: Api) -> dict[str, Any]:
+        """Describe each credential scheme: where it is read from and how to save one."""
+        p = self.program
+        env = EnvAuth(self.env_prefix, {})
+        many = len(api.auth_schemes) > 1
+        schemes = []
+        for scheme in api.auth_schemes:
+            variable = env.variable(scheme)
+            login = f"{p} auth login" + (f" --scheme {scheme.name}" if many else "")
+            fields = field_specs((self.auth_config or {}).get(scheme.name))
+            entry: dict[str, Any] = {"scheme": scheme.name, "kind": scheme.kind.value}
+            docs = (self.auth_config or {}).get(scheme.name, {}).get("docs") or scheme.docs
+            if docs:
+                entry["docs"] = docs
+            if fields:
+                entry["environment"] = [f"{variable}_{name.upper()}" for name in fields]
+                entry["login"] = login
+            elif scheme.kind is AuthKind.CUSTOM:
+                entry["environment"] = [f"{self.env_prefix}_AUTH_PLUGIN"]
+            elif scheme.kind is AuthKind.BASIC:
+                entry["environment"] = [f"{variable}_USERNAME", f"{variable}_PASSWORD"]
+                entry["login"] = login
+                entry["login_stdin"] = f"{login} --username USER --with-token"
+            else:
+                entry["environment"] = [variable, f"{variable}_COMMAND"]
+                entry["login"] = login
+                entry["login_stdin"] = f"{login} --with-token"
+                if scheme.kind is AuthKind.OAUTH2 and (scheme.flows or scheme.discovery_url):
+                    flows = sorted({f.kind.value for f in scheme.flows})
+                    if flows:
+                        entry["flows"] = flows
+            schemes.append(entry)
+        summary: dict[str, Any] = {}
+        required = cli_tools.auth_required(api)
+        if required:
+            summary["required_for"] = required
+        summary["schemes"] = schemes
+        summary["note"] = (
+            f"{p} auth login prompts without echo (or runs an OAuth sign-in) and saves to the "
+            "OS keyring; a person runs it in their own terminal. login_stdin reads the secret "
+            "from stdin. Environment variables take precedence over saved logins."
+        )
+        return summary
 
     def _environment(self, api: Api) -> dict[str, str]:
         e = self.env_prefix

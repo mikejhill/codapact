@@ -108,10 +108,12 @@ def _auth_config(request: GenerationRequest) -> dict[str, dict[str, object]]:
     for name, value in raw.items():
         if name not in known:
             raise PluginError(f"cli.auth: unknown scheme {name!r}")
-        allowed = ("client_id", "scopes", "flow", "audience", "fields")
+        allowed = ("client_id", "scopes", "flow", "audience", "fields", "docs")
         if not isinstance(value, dict) or set(value) - set(allowed):
             # No client_secret: secrets must never be baked into generated code.
             raise PluginError(f"cli.auth.{name} allows {', '.join(allowed)}")
+        if not isinstance(value.get("docs", ""), str):
+            raise PluginError(f"cli.auth.{name}.docs must be a string")
         config[str(name)] = dict(value)
         if "fields" in value:
             config[str(name)]["fields"] = _fields(str(name), value["fields"])
