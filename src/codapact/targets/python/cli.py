@@ -53,6 +53,7 @@ class PythonCliTarget:
                     api_version=request.api.version,
                     auth_plugin=str(request.options.get("auth_plugin") or ""),
                     auth_config=_auth_config(request),
+                    previous_programs=_previous_programs(request),
                 ),
             ),
             *(
@@ -96,6 +97,18 @@ def _auth_help(request: GenerationRequest) -> str:
             extra = f", {base}_CLIENT_ID + _CLIENT_SECRET, or run '{program} auth login'"
         lines.append(f"  {scheme.name}: set {where}{extra}")
     return "\n".join(lines)
+
+
+def _previous_programs(request: GenerationRequest) -> tuple[str, ...]:
+    """``cli.previous_programs``: names whose saved logins and settings carry over."""
+    raw = request.options.get("previous_programs") or ()
+    if isinstance(raw, str):
+        raw = (raw,)
+    names = tuple(str(name) for name in raw)
+    for name in names:
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", name):
+            raise PluginError(f"cli.previous_programs: invalid program name {name!r}")
+    return names
 
 
 def _auth_config(request: GenerationRequest) -> dict[str, dict[str, object]]:
@@ -152,6 +165,7 @@ def render_cli(
     api_version: str = "",
     auth_plugin: str = "",
     auth_config: dict[str, dict[str, object]] | None = None,
+    previous_programs: tuple[str, ...] = (),
 ) -> str:
     """Render the argparse module."""
     handlers: list[str] = []
@@ -163,7 +177,9 @@ def render_cli(
         f"CliRuntime(program={program!r}, env_prefix={tree.env_prefix!r}, "
         f"version={version!r}, distribution={distribution!r}, "
         f"api_name={api_name!r}, api_version={api_version!r}, "
-        f"model=_api_model, auth_plugin={auth_plugin!r}, auth_config={auth_config or {}!r})"
+        f"model=_api_model, auth_plugin={auth_plugin!r}, auth_config={auth_config or {}!r}"
+        + (f", previous_programs={previous_programs!r}" if previous_programs else "")
+        + ")"
     )
     head = [
         '"""Command line interface generated from the command model. Do not edit."""\n',
