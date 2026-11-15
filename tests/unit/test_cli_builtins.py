@@ -541,3 +541,14 @@ def test_source_type_follows_nullable_records() -> None:
     found = cli_tools._source_type(api, "make", "body.inner.items")
     assert isinstance(found, t.ListOf)
     assert cli_tools._source_type(api, "make", "body.missing") is None
+
+
+def test_doctor_exit_codes_name_the_failure() -> None:
+    def checks(*failed: str) -> list[cli_tools.Check]:
+        return [cli_tools.Check("cli", "ok", "")] + [cli_tools.Check(n, "fail", "") for n in failed]
+
+    assert cli_tools.doctor_exit_code(checks()) == 0
+    assert cli_tools.doctor_exit_code(checks("credentials: token")) == 3
+    assert cli_tools.doctor_exit_code(checks("connectivity")) == 4
+    assert cli_tools.doctor_exit_code(checks("credentials: token", "connectivity")) == 3
+    assert cli_tools.doctor_exit_code(checks("base url", "credentials: token")) == 1

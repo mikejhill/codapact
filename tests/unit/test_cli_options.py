@@ -230,7 +230,7 @@ def test_builtin_commands_shape() -> None:
         **hidden(GLOBALS),
     }
     doctor = commands.choices["doctor"]
-    assert doctor.description == "Diagnose configuration problems. Exits 1 when a check fails."
+    assert (doctor.description or "").startswith("Diagnose configuration problems. Exits 0")
     assert shape(doctor) == {
         ("--offline",): (
             "offline",

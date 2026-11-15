@@ -181,6 +181,26 @@ def test_describe_brief_is_smaller(cli: Cli) -> None:
     assert all(set(c) <= {"command", "summary", "usage", "traits"} for c in commands)
 
 
+def test_describe_brief_tells_an_agent_how_to_start(cli: Cli) -> None:
+    """Skills only point at the CLI, so the brief catalog must carry setup and auth."""
+    program = cli.example.program
+    brief = cli.json("describe", "--brief")
+    assert {"start", "exit_codes", "notes"} <= set(brief)
+    start = " ".join(brief["start"])
+    for text in (f"{program} doctor", f"{program} describe COMMAND", "--dry-run"):
+        assert text in start
+    assert set(brief["exit_codes"]) >= {"0", "1", "2", "3", "4"}
+    catalog = cli.json("describe")
+    if "auth" not in catalog:
+        return
+    assert brief["auth"] == catalog["auth"]
+    for scheme in catalog["auth"]["schemes"]:
+        assert scheme["environment"]
+        if "login" in scheme:
+            assert scheme["login"].startswith(f"{program} auth login")
+    assert f"{program} auth status" in start
+
+
 def test_describe_one_command_has_a_valid_output_schema(cli: Cli) -> None:
     commands = cli.json("describe")["commands"]
     with_schema = 0
@@ -200,7 +220,11 @@ def test_describe_one_command_has_a_valid_output_schema(cli: Cli) -> None:
 def test_doctor_offline(cli: Cli) -> None:
     code, out, _ = cli("doctor", "--offline")
     checks = {c["check"]: c for c in json.loads(out)}
-    assert code in (0, 1)
+    assert code in (0, 1, 3)
+    if code == 3:
+        assert any(
+            c.startswith("credentials:") and v["status"] == "fail" for c, v in checks.items()
+        )
     assert checks["cli"]["status"] == "ok" and checks["connectivity"]["status"] == "skip"
     assert "base url" in checks and "settings file" in checks
 

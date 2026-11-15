@@ -165,8 +165,8 @@ result is the item list, so `[].name`; a path that matches nothing fails with ex
 | --- | --- |
 | Help | `-h`/`--help` on every level; bare `<program>` or `<program> GROUP` prints help (exit `0`). Command help has a usage line with positionals and required options, examples, and a global-options reminder. |
 | Version | `-V`/`--version`: `poke 0.1.0 (PokéAPI 2.10.0; codapact 0.4.0)`; the installed distribution's version when it differs from the generated `version` option (so a release tool can bump packaging alone) |
-| Discovery for agents | `<program> describe [COMMAND…]`: JSON with every command's arguments (type, required, positional, choices, repeated), `read_only`/`destructive`/`paginated`, `requires_one_of` option groups, environment variables, exit codes. `describe --brief` keeps only names, summaries, and usage lines. Naming one command (or passing `--schemas`) adds the JSON Schema of its output and of each JSON-valued argument |
-| Diagnosis | `<program> doctor [--offline]`: version, settings file, base URL and its source, credentials (set or missing, never printed), proxy, connectivity. Table on a terminal, JSON otherwise; exit `1` when a check fails |
+| Discovery for agents | `<program> describe [COMMAND…]`: JSON with every command's arguments (type, required, positional, choices, repeated), `read_only`/`destructive`/`paginated`, `requires_one_of` option groups, environment variables, exit codes, `start` (the steps an agent follows: doctor, credentials, describe, dry run) and `auth` (per scheme: environment variables, `auth login` commands, `docs` on how to get the credential, and whether every command or only some need it). `describe --brief` keeps those plus names, summaries, and usage lines, so one call is enough to start; agent skills for a coda point here instead of repeating it (see [Agent skills for codas](../skills/README.md)). Naming one command (or passing `--schemas`) adds the JSON Schema of its output and of each JSON-valued argument |
+| Diagnosis | `<program> doctor [--offline]`: version, settings file, base URL and its source, credentials (set or missing, never printed), proxy, connectivity. Missing credentials fail only when every command needs them. Table on a terminal, JSON otherwise; exit `0` ready, `3` credentials missing or rejected, `4` API unreachable, `1` any other failed check |
 | Completion | `<program> completion bash\|zsh\|fish\|powershell` prints a script that asks the program for candidates |
 | Preview | `--dry-run` prints the HTTP request (method, URL, headers, body) without sending it; credentials appear as `$VARIABLE` placeholders (optional credentials that are not set stay off the request), and destructive commands skip confirmation |
 | Tracing | `-v`/`--verbose` logs each request line and response status, size, and time to stderr, masking credential values |
@@ -246,7 +246,9 @@ The first source that has a credential wins, per scheme:
 5. Saved login from `<program> auth login`.
 
 `cli.auth: {SCHEME: {client_id, scopes, flow, audience}}` bakes public OAuth settings into
-the CLI (no secrets); `fields` declares [credential fields](#credential-fields).
+the CLI (no secrets); `fields` declares [credential fields](#credential-fields); `docs` tells a
+person how to get the credential (shown in `describe` under `auth`, e.g. "Create a personal
+access token under Account Settings > Developer Settings").
 `auth login` picks a flow in this order: `--flow`, then client credentials when a secret is
 set, then device code, then authorization code with PKCE.
 `--with-token` reads a static token from stdin; `--username` saves basic credentials.
