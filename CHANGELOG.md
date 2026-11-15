@@ -2,6 +2,14 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.9.0](https://github.com/mikejhill/codapact/compare/v0.8.0...v0.9.0) (2026-11-15)
+
+
+### Features
+
+* **cli:** agent start-up path in describe; create-coda-skill skill ([#51](https://github.com/mikejhill/codapact/issues/51)) ([aecf023](https://github.com/mikejhill/codapact/commit/aecf02313d171ce644619ea6fa3a6b45cc38b040))
+* **cli:** name the command after its distribution; carry logins across renames ([#52](https://github.com/mikejhill/codapact/issues/52)) ([019c6d8](https://github.com/mikejhill/codapact/commit/019c6d8b395032d7a0b3946df790d1253cbade61))
+
 ## [0.8.0](https://github.com/mikejhill/codapact/compare/v0.7.0...v0.8.0) (2026-11-14)
 
 
