@@ -536,7 +536,14 @@ def test_describe_auth_summary_says_how_to_get_each_credential() -> None:
     from codapact.runtime.cli import CliRuntime
 
     runtime = CliRuntime(
-        "acme", "ACME", {}, model=lambda: API, auth_config={"token": {"docs": "Get one at x"}}
+        "acme",
+        "ACME",
+        {},
+        model=lambda: API,
+        auth_config={
+            "token": {"docs": "Get one at x"},
+            "signed": {"fields": {"key_id": {}, "secret": {"secret": True}}},
+        },
     )
     summary = runtime._auth_summary(API)
     schemes = {s["scheme"]: s for s in summary["schemes"]}
@@ -552,8 +559,14 @@ def test_describe_auth_summary_says_how_to_get_each_credential() -> None:
     assert schemes["signed"] == {
         "scheme": "signed",
         "kind": "custom",
-        "environment": ["ACME_AUTH_PLUGIN"],
+        "environment": ["ACME_SIGNED_KEY_ID", "ACME_SIGNED_SECRET"],
+        "login": "acme auth login --scheme signed",
     }
+    assert schemes["key"]["environment"] == ["ACME_KEY", "ACME_KEY_COMMAND"]
+    plain = CliRuntime("acme", "ACME", {}, model=lambda: API)._auth_summary(API)
+    assert {s["scheme"]: s for s in plain["schemes"]}["signed"]["environment"] == [
+        "ACME_AUTH_PLUGIN"
+    ]
     assert schemes["sso"]["flows"] == ["client_credentials", "device_code"]
     assert "required_for" not in summary  # no operations
 

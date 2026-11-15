@@ -897,8 +897,7 @@ class CliRuntime:
                     "start": self._start_steps(api),
                     "notes": [
                         f"{self.program} describe COMMAND adds the output JSON Schema.",
-                        "Commands with the read_only trait only read; the others create, "
-                        "change, or delete data.",
+                        "Commands with the read_only trait only read; others change data.",
                         "Results print to stdout as JSON unless --output says otherwise.",
                         "Errors print to stderr; --error-format json makes them one JSON object.",
                         "JSON arguments accept inline JSON, @file, or @- for stdin.",
