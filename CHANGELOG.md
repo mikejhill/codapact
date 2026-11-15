@@ -2,6 +2,13 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.9.1](https://github.com/mikejhill/codapact/compare/v0.9.0...v0.9.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* **cli:** plain usage lines in describe; uvx-only coda skills; Agent Plugins manifest ([#54](https://github.com/mikejhill/codapact/issues/54)) ([3fea349](https://github.com/mikejhill/codapact/commit/3fea3493542eff6860cf2db049bd8cecce67d52b))
+
 ## [0.9.0](https://github.com/mikejhill/codapact/compare/v0.8.0...v0.9.0) (2026-11-15)
 
 
