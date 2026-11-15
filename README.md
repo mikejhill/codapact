@@ -70,6 +70,6 @@ pagination live in one tested place and improve without regenerating.
 - [Configuration](docs/configuration.md): `codapact.yaml`, shaping transforms, target
   options, and generated CLI settings.
 - [Agent skills](skills/README.md): `create-coda-skill` writes the thin skill that lets an
-  agent use a coda's CLI. Install in Claude Code with
-  `/plugin marketplace add mikejhill/codapact`, then `/plugin install codapact@codapact`.
+  agent use a coda's CLI. The repository is a plugin marketplace for Claude Code, GitHub
+  Copilot, and Codex: `<agent> plugin marketplace add mikejhill/codapact`.
 - [Contributing](CONTRIBUTING.md)

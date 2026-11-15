@@ -552,3 +552,13 @@ def test_doctor_exit_codes_name_the_failure() -> None:
     assert cli_tools.doctor_exit_code(checks("connectivity")) == 4
     assert cli_tools.doctor_exit_code(checks("credentials: token", "connectivity")) == 3
     assert cli_tools.doctor_exit_code(checks("base url", "credentials: token")) == 1
+
+
+def test_describe_usage_has_no_color_codes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    parser = argparse.ArgumentParser(prog="acme things get")
+    parser.add_argument("thing_id")
+    usage = cli_tools.plain_usage(parser)
+    assert usage == "acme things get [-h] thing_id"
+    assert getattr(parser, "color", None) is not False  # restored
