@@ -107,6 +107,7 @@ def render_types(api: Api) -> str:
         '"""Types generated from the semantic model. Do not edit."""\n',
         "# ruff: noqa: E501, F401, UP013",
         "from __future__ import annotations\n",
+        "from os import PathLike",
         "from typing import Any, Literal, NotRequired, TypedDict\n",
         "__all__ = [" + ", ".join(repr(type_name(d.name)) for d in api.types) + "]\n",
     ]
@@ -151,6 +152,7 @@ def render_client(api: Api, root: Namespace) -> str:
         "from collections.abc import Iterator, Sequence",
         "from functools import cache",
         "from importlib.resources import files",
+        "from os import PathLike  # noqa: F401",
         "from typing import Any, Literal, cast  # noqa: F401\n",
         "from codapact.runtime import (",
         "    AuthProvider,",

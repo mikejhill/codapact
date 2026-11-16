@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import importlib.metadata
+import io
 import json
 import os
 import re
@@ -33,7 +34,7 @@ from codapact.model.api import Api, AuthKind, AuthScheme
 from codapact.runtime import cli_auth, cli_tools
 from codapact.runtime.abstractions import CallContext, Credential, Next, Secret
 from codapact.runtime.auth import ChainAuth, EnvAuth, FunctionAuthenticator
-from codapact.runtime.client import DEFAULT_MAX_RESPONSE_BYTES
+from codapact.runtime.client import DEFAULT_MAX_RESPONSE_BYTES, RuntimeClient
 from codapact.runtime.credentials import cli_auth as build_cli_auth
 from codapact.runtime.credentials import field_specs
 from codapact.runtime.errors import (
@@ -105,6 +106,21 @@ def json_value(text: str) -> Any:
         return json.loads(text)
     except ValueError:
         raise argparse.ArgumentTypeError("expected JSON or @file") from None
+
+
+def binary_value(text: str) -> Any:
+    """Parse a binary argument: ``@path`` is a file (sent with its name), ``@-`` reads stdin.
+
+    Anything else is sent as UTF-8 text.
+    """
+    if text == "@-":
+        return sys.stdin.buffer.read()
+    if text.startswith("@"):
+        path = Path(text[1:])
+        if not path.is_file():
+            raise argparse.ArgumentTypeError(f"cannot read {text[1:]}: no such file")
+        return path
+    return text
 
 
 def _utf8(stream: TextIO) -> TextIO:
@@ -940,6 +956,12 @@ class CliRuntime:
                 load_model=load_model,
                 settings=lambda: self.resolve(args),
                 config_status=lambda: self._config_check(getattr(args, "config", None)),
+                sessions={
+                    name: str(spec["check"])
+                    for name, spec in (self.auth_config or {}).items()
+                    if spec.get("check")
+                },
+                call=lambda operation: self._probe(args, load_model(), operation),
             )
             checks = doctor.run(offline=args.offline)
             rows = [c.as_dict() for c in checks]
@@ -1082,6 +1104,12 @@ class CliRuntime:
                 )
                 found[f"{variable}_SCOPES"] = f"OAuth scopes for {scheme.name}"
         return found
+
+    def _probe(self, args: argparse.Namespace, api: Api, operation: str) -> Any:
+        """Call ``operation`` without arguments, as a command would, ignoring the result."""
+        options = self._client_options(args, io.StringIO())
+        options["response_validation"] = "off"
+        return RuntimeClient(api, **options).call(operation, {})
 
     def _client_options(self, args: argparse.Namespace, err: TextIO) -> dict[str, Any]:
         options = self.settings(args)

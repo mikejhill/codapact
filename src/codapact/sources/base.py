@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
 
 from codapact.core.diagnostics import Diagnostics
-from codapact.model.api import Api
+from codapact.model.api import Api, Operation
 from codapact.sources.loader import SourceDocument
 
 
@@ -19,6 +19,12 @@ class SourceInput:
     document: SourceDocument
     companions: tuple[SourceDocument, ...] = ()
     options: Mapping[str, object] = field(default_factory=dict)
+    keep: Callable[[Operation], bool] | None = None
+    """Operations to translate, from a leading ``select``; others are skipped unread.
+
+    Sources that honour it also stop reporting problems in definitions only skipped
+    operations use. Sources may ignore it: the ``select`` step still runs afterwards.
+    """
 
 
 @dataclass(frozen=True, slots=True)

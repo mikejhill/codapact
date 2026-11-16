@@ -2,8 +2,13 @@
 
 Guarantees: DNS is resolved once and the checked address is the one connected
 to; private and reserved destinations and plaintext HTTP require explicit
-opt-in; redirects are never followed; response bodies are size-bounded; TLS
-verifies the original hostname.
+opt-in; redirects are never followed (3xx responses are returned as they are);
+response bodies are size-bounded; TLS verifies the original hostname.
+
+Trust: certificates are verified against the operating system's trust store
+(Windows certificate store, macOS keychain, the system bundle elsewhere) through
+``truststore``, so TLS-inspecting corporate proxies whose root is installed there
+work. ``SSL_CERT_FILE`` names a PEM bundle to use instead.
 
 Proxies: ``HTTPS_PROXY``/``HTTP_PROXY``/``NO_PROXY`` (any case) are honoured
 unless ``trust_env`` is false or ``proxy`` is set explicitly. HTTPS goes through
@@ -14,8 +19,10 @@ proxy the proxy resolves DNS; destinations that are IP literals or
 
 from __future__ import annotations
 
+import functools
 import http.client
 import ipaddress
+import os
 import socket
 import ssl
 import urllib.request
@@ -139,9 +146,9 @@ class SafeHttpClient:
                 # Plain HTTP through a proxy uses the absolute URI as the request target.
                 target = request.url
             if parts.scheme == "https":
-                context = ssl.create_default_context()
-                context.minimum_version = ssl.TLSVersion.TLSv1_2
-                sock = context.wrap_socket(sock, server_hostname=host)
+                sock = tls_context(os.environ.get("SSL_CERT_FILE") or None).wrap_socket(
+                    sock, server_hostname=host
+                )
             connection.sock = sock
             connection.request(request.method, target, request.body, request.headers)
             response = connection.getresponse()
@@ -154,8 +161,6 @@ class SafeHttpClient:
             connection.close()
         if len(body) > self.max_bytes:
             raise ResponseTooLargeError(self.max_bytes)
-        if 300 <= response.status < 400:
-            raise TransportError("redirects are not followed")
         return HttpResponse(response.status, dict(response.getheaders()), body)
 
     def _resolve(self, host: str, port: int, *, check: bool) -> list[str]:
@@ -182,6 +187,25 @@ class SafeHttpClient:
             return
         if not _is_global(host):
             raise TransportError(_PRIVATE_MESSAGE)
+
+
+@functools.cache
+def tls_context(cafile: str | None = None) -> ssl.SSLContext:
+    """Return the client TLS context: ``cafile`` if given, else the OS trust store."""
+    if cafile:
+        try:
+            context = ssl.create_default_context(cafile=cafile)
+        except OSError:
+            raise ConfigError(f"SSL_CERT_FILE {cafile!r} is not a readable PEM bundle") from None
+    else:
+        try:
+            import truststore  # noqa: PLC0415 - optional at import time
+
+            context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        except ImportError:  # pragma: no cover - truststore is a dependency
+            context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    return context
 
 
 _PRIVATE_MESSAGE = (

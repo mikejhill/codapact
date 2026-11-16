@@ -745,7 +745,7 @@ def test_https_proxies_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_yaml_duplicate_keys_compare_constructed_values() -> None:
-    for text in (b"1: x\n01: y\n", b"true: x\nyes: y\n", b"a: 1\n'a': 2\n"):
+    for text in (b"1: x\n01: y\n", b"true: x\nTrue: y\n", b"a: 1\n'a': 2\n"):
         with pytest.raises(ContractError, match="duplicate mapping keys"):
             parse_structured(SourceDocument("d.yaml", text))
     with pytest.raises(ContractError, match="keys must be scalars"):

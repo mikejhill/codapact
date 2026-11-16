@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast, override
@@ -81,11 +82,26 @@ _BaseLoader: Any = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
 
 class _UniqueKeyLoader(_BaseLoader):
-    """Data-only YAML: no aliases, no custom tags, no duplicate keys.
+    """Data-only YAML 1.2: no aliases, no custom tags, no duplicate keys.
 
     Uses libyaml when available (about 20x faster on large contracts). Aliases are
     detected at construction: an alias is the same node reached twice.
+
+    Plain scalars resolve by the YAML 1.2 core schema, which OpenAPI requires, not
+    PyYAML's YAML 1.1 rules: ``on``, ``off``, ``yes``, ``no``, ``=``, ``12:30`` and
+    ``2024-01-01`` stay strings, as they are in the equivalent JSON.
     """
+
+    yaml_implicit_resolvers: dict[str | None, list[tuple[str, re.Pattern[str]]]] = {}
+
+    def construct_yaml_int(self, node: Node) -> int:
+        """Core-schema integers: decimal (leading zeros allowed), ``0o`` octal, ``0x`` hex."""
+        text = str(self.construct_scalar(node))  # type: ignore[arg-type]
+        sign = -1 if text.startswith("-") else 1
+        digits = text.lstrip("+-")
+        if digits[:2] in {"0o", "0x"}:
+            return sign * int(digits, 0)
+        return sign * int(digits, 10)
 
     @override
     def construct_object(self, node: Node, deep: bool = False) -> Any:
@@ -109,6 +125,24 @@ class _UniqueKeyLoader(_BaseLoader):
                 raise ContractError("mapping keys must be scalars")
             mapping[key] = self.construct_object(value_node, deep=deep)
         return mapping
+
+
+_CORE_SCHEMA: tuple[tuple[str, str, list[str]], ...] = (
+    ("bool", r"^(?:true|True|TRUE|false|False|FALSE)$", list("tTfF")),
+    ("int", r"^(?:[-+]?[0-9]+|0o[0-7]+|0x[0-9a-fA-F]+)$", list("-+0123456789")),
+    (
+        "float",
+        r"^(?:[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?"
+        r"|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$",
+        list("-+.0123456789"),
+    ),
+    ("null", r"^(?:~|null|Null|NULL|)$", [*"~nN", ""]),
+)
+for _kind, _pattern, _first in _CORE_SCHEMA:
+    _UniqueKeyLoader.add_implicit_resolver(
+        f"tag:yaml.org,2002:{_kind}", re.compile(_pattern), _first
+    )
+_UniqueKeyLoader.add_constructor("tag:yaml.org,2002:int", _UniqueKeyLoader.construct_yaml_int)
 
 
 def _normalize(value: Any, depth: int, budget: list[int]) -> Any:
@@ -136,6 +170,11 @@ def parse_structured(document: SourceDocument) -> dict[str, Any]:
             value = yaml.load(content, Loader=_UniqueKeyLoader)  # noqa: S506 - SafeLoader subclass
     except ContractError as error:
         raise ContractError(f"{document.uri}: {error}") from None
+    except yaml.MarkedYAMLError as error:
+        mark = error.problem_mark or error.context_mark
+        where = f" at line {mark.line + 1}, column {mark.column + 1}" if mark else ""
+        problem = error.problem or error.context or "parse error"
+        raise ContractError(f"{document.uri}: invalid JSON or YAML{where}: {problem}") from None
     except (yaml.YAMLError, UnicodeError, ValueError, RecursionError):
         raise ContractError(f"{document.uri}: invalid JSON or YAML") from None
     if not isinstance(value, dict):

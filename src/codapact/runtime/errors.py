@@ -59,13 +59,27 @@ class AuthError(ClientError):
 class ApiError(ClientError):
     """The server answered with a declared or undeclared failure status."""
 
-    def __init__(self, operation: str, status: int, error: str | None, payload: Any) -> None:
-        """Expose the HTTP status, declared error name, and decoded payload."""
+    def __init__(
+        self,
+        operation: str,
+        status: int,
+        error: str | None,
+        payload: Any,
+        *,
+        location: str | None = None,
+    ) -> None:
+        """Expose the HTTP status, declared error name, decoded payload, and redirect target.
+
+        Redirects are never followed; ``location`` is where a 3xx response pointed.
+        """
         self.operation = operation
         self.status = status
         self.error = error
         self.payload = payload
+        self.location = location
         label = f" ({error})" if error else ""
+        if location:
+            label += f"; redirected to {location} (not followed)"
         super().__init__(f"{operation} failed with HTTP {status}{label}")
 
 

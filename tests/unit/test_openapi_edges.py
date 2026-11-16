@@ -165,7 +165,7 @@ def test_unsupported_parameters(parameter: dict[str, Any]) -> None:
 def test_lenient_unsupported_schemas_become_any() -> None:
     schemas = {
         "Weird": {"type": "object", "not": {}},
-        "BadEnum": {"enum": [True]},
+        "BadEnum": {"enum": [{"a": 1}]},
         "BadAll": {"allOf": [{"type": "string"}, {"type": "integer"}]},
     }
     api, _ = ok(spec(get(), schemas), strict=False)

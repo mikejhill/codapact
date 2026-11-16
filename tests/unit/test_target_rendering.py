@@ -106,7 +106,11 @@ STRING = t.Primitive(t.ScalarKind.STRING)
     ("expr", "plain", "qualified"),
     [
         (STRING, "str", "str"),
-        (t.Primitive(t.ScalarKind.BYTES), "str | bytes", "str | bytes"),
+        (
+            t.Primitive(t.ScalarKind.BYTES),
+            "str | bytes | PathLike[str]",
+            "str | bytes | PathLike[str]",
+        ),
         (t.Ref("Pet-Kind"), "Pet_Kind", "_t.Pet_Kind"),
         (t.ListOf(t.Ref("Pet")), "list[Pet]", "builtins.list[_t.Pet]"),
         (

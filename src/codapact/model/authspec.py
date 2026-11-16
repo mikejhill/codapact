@@ -13,6 +13,7 @@ sso:
     authorization_code: {authorization_url: https://idp/authorize, token_url: https://idp/token}
 oidc: {openid: https://idp/.well-known/openid-configuration}
 signed: {custom: HMAC request signing}
+portal: {custom: true, docs: Sign in with your company account}   # every map takes docs
 ```
 """
 
@@ -27,7 +28,7 @@ from codapact.model.api import AuthKind, AuthScheme, OAuthFlow, OAuthFlowKind, P
 _FLOW_FIELDS = {"token_url", "authorization_url", "device_authorization_url", "refresh_url"}
 SPELLINGS = (
     "bearer, basic, oauth2, custom, {api_key: NAME, in: header}, {oauth2: {FLOW: {...}}}, "
-    "{openid: URL}, or {custom: DESCRIPTION}"
+    "{openid: URL}, or {custom: DESCRIPTION}; maps also take docs"
 )
 
 
@@ -38,13 +39,19 @@ def scheme_from_config(name: str, spec: Any) -> AuthScheme:
     if not isinstance(spec, Mapping) or not spec:
         raise ConfigError(f"auth scheme {name!r} must be {SPELLINGS}")
     if "api_key" in spec:
-        _only(name, spec, {"api_key", "in"})
+        _only(name, spec, {"api_key", "in", "docs"})
         if not isinstance(spec["api_key"], str) or not spec["api_key"]:
             raise ConfigError(f"auth scheme {name!r}: api_key must name the header/param")
         where = spec.get("in", "header")
         if where not in ("header", "query", "cookie"):
             raise ConfigError(f"auth scheme {name!r}: 'in' must be header, query, or cookie")
-        return AuthScheme(name, AuthKind.API_KEY, ParamLocation(where), wire_name=spec["api_key"])
+        return AuthScheme(
+            name,
+            AuthKind.API_KEY,
+            ParamLocation(where),
+            wire_name=spec["api_key"],
+            docs=str(spec.get("docs", "")),
+        )
     if "oauth2" in spec:
         _only(name, spec, {"oauth2", "docs"})
         flows = spec["oauth2"]
@@ -64,8 +71,9 @@ def scheme_from_config(name: str, spec: Any) -> AuthScheme:
             name, AuthKind.OAUTH2, discovery_url=spec["openid"], docs=str(spec.get("docs", ""))
         )
     if "custom" in spec:
-        _only(name, spec, {"custom"})
-        return AuthScheme(name, AuthKind.CUSTOM, docs=str(spec["custom"] or ""))
+        _only(name, spec, {"custom", "docs"})
+        description = spec["custom"] if isinstance(spec["custom"], str) else ""
+        return AuthScheme(name, AuthKind.CUSTOM, docs=str(spec.get("docs") or description))
     raise ConfigError(f"auth scheme {name!r} must be {SPELLINGS}")
 
 

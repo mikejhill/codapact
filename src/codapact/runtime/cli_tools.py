@@ -34,6 +34,7 @@ from codapact.model.types import (
 )
 from codapact.runtime.auth import ChainAuth, EnvAuth
 from codapact.runtime.credentials import describe_source
+from codapact.runtime.errors import ApiError, AuthError
 
 SHELLS = ("bash", "zsh", "fish", "powershell")
 TYPE_NAMES = {"integer": "integer", "number": "number", "json_value": "json"}
@@ -486,9 +487,9 @@ def doctor_exit_code(checks: Sequence[Check]) -> int:
     failed = {c.check.split(":")[0] for c in checks if c.status == "fail"}
     if not failed:
         return 0
-    if failed - {"credentials", "connectivity"}:
+    if failed - {"credentials", "session", "connectivity"}:
         return 1
-    return 3 if "credentials" in failed else 4
+    return 3 if failed & {"credentials", "session"} else 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -503,6 +504,10 @@ class Doctor:
     settings: Callable[[], tuple[dict[str, Any], dict[str, str]]]
     config_status: Callable[[], Check]
     send: Callable[[SafeHttpClient, HttpRequest], Any] | None = None
+    sessions: Mapping[str, str] | None = None
+    """Scheme name to the operation that proves its credential works (``cli.auth.*.check``)."""
+    call: Callable[[str], Any] | None = None
+    """Call an operation by name, without arguments, with the resolved settings."""
 
     def run(self, *, offline: bool) -> list[Check]:
         """Run every check; network checks are skipped when ``offline``."""
@@ -527,7 +532,8 @@ class Doctor:
         base_ok = self._base_url(checks, base_url, sources.get("base_url", "contract"), options)
         if api.auth_schemes and sources.get("profile"):
             checks.append(Check("profile", "info", sources["profile"]))
-        checks.extend(self._credentials(api, options.get("auth")))
+        credentials = self._credentials(api, options.get("auth"))
+        checks.extend(credentials)
         scheme = urlsplit(base_url).scheme if base_ok else ""
         proxy = urllib.request.getproxies_environment().get(scheme) if scheme else None
         if proxy:
@@ -543,7 +549,29 @@ class Doctor:
             checks.append(Check("connectivity", "skip", "skipped (--offline)"))
         elif base_ok:
             checks.append(self._connect(base_url, options))
+            usable = {
+                c.check.removeprefix("credentials: ") for c in credentials if c.status == "ok"
+            }
+            for scheme, operation in (self.sessions or {}).items():
+                if scheme in usable and self.call is not None:
+                    checks.append(self._session(scheme, operation, self.call))
         return checks
+
+    @staticmethod
+    def _session(scheme: str, operation: str, call: Callable[[str], Any]) -> Check:
+        """Call the scheme's check operation: proves a saved session is still accepted."""
+        label = f"session: {scheme}"
+        try:
+            call(operation)
+        except AuthError as error:
+            return Check(label, "fail", f"{operation}: {error}")
+        except ApiError as error:
+            if error.status in (401, 403) or 300 <= error.status < 400:
+                return Check(label, "fail", f"rejected: {error}; sign in again")
+            return Check(label, "warn", f"could not verify: {error}")
+        except CodapactError as error:
+            return Check(label, "warn", f"could not verify: {operation}: {error}")
+        return Check(label, "ok", f"accepted by {operation}")
 
     def _base_url(
         self, checks: list[Check], url: str, source: str, options: Mapping[str, Any]
@@ -600,6 +628,9 @@ class Doctor:
         except CodapactError as error:
             return Check("connectivity", "fail", f"{url}: {error}")
         elapsed = (time.monotonic() - started) * 1000
-        return Check(
-            "connectivity", "ok", f"reached {url}: HTTP {response.status} in {elapsed:.0f} ms"
-        )
+        detail = f"reached {url}: HTTP {response.status} in {elapsed:.0f} ms"
+        location = response.header("Location") if 300 <= response.status < 400 else None
+        if location:
+            # A redirect proves the server answers; API calls are not redirected.
+            detail += f", redirects to {location} (not followed)"
+        return Check("connectivity", "ok", detail)

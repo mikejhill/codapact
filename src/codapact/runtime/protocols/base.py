@@ -20,6 +20,7 @@ from codapact.runtime.abstractions import (
 )
 from codapact.runtime.codec import Codec
 from codapact.runtime.errors import (
+    AuthError,
     ClientError,
     ResponseValidationError,
     ResponseValidationWarning,
@@ -51,9 +52,11 @@ class Exchange:
     ) -> HttpResponse:
         """Run the request through middleware, then authenticators, then the transport.
 
-        Authenticators run innermost, so every retry is decorated afresh. On a 401,
-        each authenticator with a ``refresh(scheme)`` method is asked to refresh; if
-        any succeeds the request is sent once more.
+        Authenticators run innermost, so every retry is decorated afresh. On a 401, or
+        a response an authenticator's ``expired(response, scheme)`` flags, each
+        authenticator with a ``refresh(scheme)`` method is asked to refresh; if any
+        succeeds the request is sent once more. A response still flagged as expired
+        raises ``AuthError``.
         """
         headers = {"User-Agent": self.user_agent, **request.headers}
         request = HttpRequest(request.method, request.url, headers, request.body)
@@ -89,16 +92,33 @@ def _authenticated(
             request = authenticator.authenticate(request, scheme)
         return request
 
+    def expired(response: HttpResponse) -> list[str]:
+        """Names of the schemes whose authenticator says the session was rejected."""
+        flagged = []
+        for scheme, authenticator in authenticators:
+            check = getattr(authenticator, "expired", None)
+            if callable(check) and check(response, scheme):
+                flagged.append(scheme.name)
+        return flagged
+
     def send(request: HttpRequest) -> HttpResponse:
         response = transport.send(decorate(request))
-        if response.status != 401:
+        flagged = expired(response)
+        if response.status != 401 and not flagged:
             return response
         refreshed = False
         for scheme, authenticator in authenticators:
             refresh = getattr(authenticator, "refresh", None)
             if callable(refresh) and refresh(scheme):
                 refreshed = True
-        return transport.send(decorate(request)) if refreshed else response
+        if refreshed:
+            response = transport.send(decorate(request))
+            flagged = expired(response)
+        if flagged:
+            raise AuthError(
+                f"the {', '.join(flagged)} session has expired or was rejected; sign in again"
+            )
+        return response
 
     return send
 
