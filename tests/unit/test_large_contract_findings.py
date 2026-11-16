@@ -504,7 +504,7 @@ def test_doctor_counts_a_redirect_as_reachable() -> None:
         version="1",
         env_prefix="ACME",
         env={},
-        load_model=lambda: _me_api(),
+        load_model=_me_api,
         settings=lambda: ({}, {}),
         config_status=lambda: cli_tools.Check("settings file", "info", "none"),
         send=lambda c, r: HttpResponse(302, {"Location": "https://a.test/login"}, b""),
