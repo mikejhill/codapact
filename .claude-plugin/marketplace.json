@@ -7,8 +7,8 @@
   "plugins": [
     {
       "name": "codapact",
-      "source": "./",
-      "description": "Skills for working with Codapact and the codas it generates."
+      "description": "Skills for working with Codapact and the codas it generates.",
+      "source": "./scripts/agent-plugin"
     }
   ]
 }

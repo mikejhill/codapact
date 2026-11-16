@@ -1,5 +1,5 @@
 {
-  "globs": ["*.md", "docs/**/*.md", "skills/**/*.md"],
+  "globs": ["*.md", "docs/**/*.md", "scripts/**/*.md"],
   "ignores": [".tmp/**", ".venv*/**", "dist/**"],
   "config": {
     "MD013": {"line_length": 100, "tables": false, "code_blocks": false}
