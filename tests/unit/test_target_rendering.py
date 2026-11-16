@@ -130,6 +130,7 @@ def test_docstring_renders_nothing_one_line_or_an_indented_block() -> None:
     assert docstring("  \n ", "    ") == ""
     assert docstring(" One line. ", "    ") == '    """One line."""\n'
     assert docstring('Quote """ and \\ slash', "") == '"""Quote \\"\\"\\" and \\\\ slash"""\n'
+    assert docstring('See "docs"', "") == '"""See "docs\\""""\n'
     assert docstring("First.\n\nSecond.", "  ") == '  """\n  First.\n\n  Second.\n  """\n'
 
 

@@ -87,6 +87,8 @@ def docstring(text: str, indent: str) -> str:
     if not text:
         return ""
     text = text.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+    if text.endswith('"'):  # a closing quote would merge into the delimiter: """...""""
+        text = text[:-1] + '\\"'
     lines = text.splitlines()
     if len(lines) == 1:
         return f'{indent}"""{lines[0]}"""\n'
