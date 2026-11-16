@@ -531,8 +531,8 @@ class CliRuntime:
             sub.add_argument(
                 "--schemas",
                 action="store_true",
-                help="include each command's output JSON Schema "
-                "(always included when COMMAND names one command)",
+                help="include JSON argument and output JSON Schemas for every command "
+                "(COMMAND naming one command always has its argument schemas)",
             )
             self.add_global_options(sub, hidden=True)
             sub.set_defaults(builtin="describe")
@@ -915,6 +915,11 @@ class CliRuntime:
                 return self._auth(args, load_model(), fmt, out, err)
             if name == "describe":
                 api = load_model()
+                grouped = (
+                    getattr(args, "brief", False)
+                    and not args.words
+                    and sum(1 for _ in cli_tools.leaves(parser)) > cli_tools.BRIEF_GROUP_LIMIT
+                )
                 header = {
                     "program": self.program,
                     "version": self.program_version,
@@ -923,9 +928,10 @@ class CliRuntime:
                     "global_options": _global_options(parser),
                     "environment": self._environment(api),
                     "exit_codes": {str(k): v for k, v in EXIT_CODES.items()},
-                    "start": self._start_steps(api),
+                    "start": self._start_steps(api, grouped=grouped),
                     "notes": [
-                        f"{self.program} describe COMMAND adds the output JSON Schema.",
+                        f"{self.program} describe COMMAND adds JSON argument schemas; "
+                        "--schemas adds the output JSON Schema.",
                         "Commands with the read_only trait only read; others change data.",
                         "Results print to stdout as JSON unless --output says otherwise.",
                         "Errors print to stderr; --error-format json makes them one JSON object.",
@@ -946,7 +952,11 @@ class CliRuntime:
                     brief=getattr(args, "brief", False),
                     schemas=getattr(args, "schemas", False),
                 )
-                render(result, fmt if fmt != "table" else "json", out)
+                if fmt in ("json", "table") and not out.isatty():
+                    # Agents and scripts read this: compact JSON is about a third smaller.
+                    out.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")) + "\n")
+                else:
+                    render(result, fmt if fmt != "table" else "json", out)
                 return EXIT_OK
             doctor = cli_tools.Doctor(
                 program=self.program,
@@ -1002,7 +1012,7 @@ class CliRuntime:
             render(result, fmt if fmt != "table" else "json", out)
         return EXIT_OK
 
-    def _start_steps(self, api: Api) -> list[str]:
+    def _start_steps(self, api: Api, *, grouped: bool = False) -> list[str]:
         """Return the steps an agent or script follows to start using this CLI."""
         p = self.program
         steps = [
@@ -1017,9 +1027,14 @@ class CliRuntime:
                 f"{p} auth profiles lists saved accounts (choose one with --profile NAME)."
             )
         steps += [
-            f"Find a command with {p} describe --brief, then read its arguments and output "
-            f"JSON Schema with {p} describe COMMAND. {p} COMMAND --help shows the same "
-            "with examples.",
+            (
+                f"{p} describe --brief lists command groups; find a command with "
+                f"{p} describe GROUP --brief"
+                if grouped
+                else f"Find a command with {p} describe --brief"
+            )
+            + f", then read its arguments with {p} describe COMMAND (add --schemas for its "
+            f"output JSON Schema). {p} COMMAND --help shows the arguments with examples.",
             "Pass --dry-run to see the HTTP request a command would send without sending it.",
         ]
         return steps

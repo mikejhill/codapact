@@ -28,13 +28,13 @@
 <text class="title t1" x="20" y="28">YNAB: tokens read before the first correct call</text>
 <text class="t2" x="20" y="47">Median of 6 tasks; 44 commands; every reference call passes --dry-run</text>
 <rect class="s1" x="20" y="63" width="10" height="10" rx="2"/>
-<text class="t2" x="35.0" y="72.0" text-anchor="start" >codapact CLI (today)</text>
-<rect class="s2" x="180.0" y="63" width="10" height="10" rx="2"/>
-<text class="t2" x="195.0" y="72.0" text-anchor="start" >MCP</text>
-<rect class="s3" x="229.5" y="63" width="10" height="10" rx="2"/>
-<text class="t2" x="244.5" y="72.0" text-anchor="start" >Docs and specs</text>
-<rect class="s4" x="350.5" y="63" width="10" height="10" rx="2"/>
-<text class="t2" x="365.5" y="72.0" text-anchor="start" >codapact CLI (proposed)</text>
+<text class="t2" x="35.0" y="72.0" text-anchor="start" >codapact CLI (now)</text>
+<rect class="s2" x="167.0" y="63" width="10" height="10" rx="2"/>
+<text class="t2" x="182.0" y="72.0" text-anchor="start" >MCP</text>
+<rect class="s3" x="216.5" y="63" width="10" height="10" rx="2"/>
+<text class="t2" x="231.5" y="72.0" text-anchor="start" >Docs and specs</text>
+<rect class="s4" x="337.5" y="63" width="10" height="10" rx="2"/>
+<text class="t2" x="352.5" y="72.0" text-anchor="start" >codapact CLI (0.9.1)</text>
 <line class="grid" x1="300.0" y1="88" x2="300.0" y2="400"/>
 <text class="t3 num" x="300.0" y="416.0" text-anchor="middle" >0</text>
 <line class="grid" x1="350.2" y1="88" x2="350.2" y2="400"/>
@@ -61,27 +61,27 @@
 <text class="t1" x="290.0" y="133.0" text-anchor="end" >--help walk</text>
 <path class="s1" d="M300,120 h3.7 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-3.7 z"><title>--help walk: 1,530 tokens; 3 calls, 1/6 tasks needed describe CMD</title></path>
 <text class="t2 num" x="313.7" y="133.0" text-anchor="start" >1.5k  ·  3 calls, 1/6 tasks needed describe CMD</text>
-<text class="t1" x="290.0" y="161.0" text-anchor="end" >Lean describe (proposed)</text>
-<path class="s4" d="M300,148 h9.3 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-9.3 z"><title>Lean describe (proposed): 2,644 tokens; 2 calls</title></path>
-<text class="t2 num" x="319.3" y="161.0" text-anchor="start" >2.6k  ·  2 calls</text>
-<text class="t1" x="290.0" y="189.0" text-anchor="end" >OpenAPI, targeted reads</text>
-<path class="s3" d="M300,176 h9.9 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-9.9 z"><title>OpenAPI, targeted reads: 2,780 tokens; 6.5 calls</title></path>
-<text class="t2 num" x="319.9" y="189.0" text-anchor="start" >2.8k  ·  6.5 calls</text>
-<text class="t1" x="290.0" y="217.0" text-anchor="end" >llms.txt, then one page</text>
-<path class="s3" d="M300,204 h20.0 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-20.0 z"><title>llms.txt, then one page: 4,791 tokens; 2 calls</title></path>
-<text class="t2 num" x="330.0" y="217.0" text-anchor="start" >4.8k  ·  2 calls</text>
-<text class="t1" x="290.0" y="245.0" text-anchor="end" >--help, describe GROUP --brief, describe CMD</text>
-<path class="s1" d="M300,232 h20.5 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-20.5 z"><title>--help, describe GROUP --brief, describe CMD: 4,878 tokens; 3 calls</title></path>
-<text class="t2 num" x="330.5" y="245.0" text-anchor="start" >4.9k  ·  3 calls</text>
-<text class="t1" x="290.0" y="273.0" text-anchor="end" >describe --brief, describe CMD (today)</text>
-<path class="s1" d="M300,260 h29.9 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-29.9 z"><title>describe --brief, describe CMD (today): 6,762 tokens; 2 calls</title></path>
-<text class="t2 num" x="339.9" y="273.0" text-anchor="start" >6.8k  ·  2 calls</text>
-<text class="t1" x="290.0" y="301.0" text-anchor="end" >MCP, every tool loaded</text>
-<path class="s2" d="M300,288 h70.3 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-70.3 z"><title>MCP, every tool loaded: 14,821 tokens; 0 calls, 15k resident every turn</title></path>
-<text class="t2 num" x="380.3" y="301.0" text-anchor="start" >15k  ·  0 calls, 15k resident every turn</text>
-<text class="t1" x="290.0" y="329.0" text-anchor="end" >Full describe</text>
-<path class="s1" d="M300,316 h86.1 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-86.1 z"><title>Full describe: 17,973 tokens; 1 call, 1/6 tasks needed describe CMD</title></path>
-<text class="t2 num" x="396.1" y="329.0" text-anchor="start" >18k  ·  1 call, 1/6 tasks needed describe CMD</text>
+<text class="t1" x="290.0" y="161.0" text-anchor="end" >--help, describe GROUP --brief, describe CMD</text>
+<path class="s1" d="M300,148 h4.5 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-4.5 z"><title>--help, describe GROUP --brief, describe CMD: 1,688 tokens; 3 calls</title></path>
+<text class="t2 num" x="314.5" y="161.0" text-anchor="start" >1.7k  ·  3 calls</text>
+<text class="t1" x="290.0" y="189.0" text-anchor="end" >describe --brief, describe CMD (now)</text>
+<path class="s1" d="M300,176 h9.3 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-9.3 z"><title>describe --brief, describe CMD (now): 2,658 tokens; 2 calls</title></path>
+<text class="t2 num" x="319.3" y="189.0" text-anchor="start" >2.7k  ·  2 calls</text>
+<text class="t1" x="290.0" y="217.0" text-anchor="end" >OpenAPI, targeted reads</text>
+<path class="s3" d="M300,204 h9.9 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-9.9 z"><title>OpenAPI, targeted reads: 2,780 tokens; 6.5 calls</title></path>
+<text class="t2 num" x="319.9" y="217.0" text-anchor="start" >2.8k  ·  6.5 calls</text>
+<text class="t1" x="290.0" y="245.0" text-anchor="end" >llms.txt, then one page</text>
+<path class="s3" d="M300,232 h20.0 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-20.0 z"><title>llms.txt, then one page: 4,791 tokens; 2 calls</title></path>
+<text class="t2 num" x="330.0" y="245.0" text-anchor="start" >4.8k  ·  2 calls</text>
+<text class="t1" x="290.0" y="273.0" text-anchor="end" >Same flow in codapact 0.9.1</text>
+<path class="s4" d="M300,260 h30.0 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-30.0 z"><title>Same flow in codapact 0.9.1: 6,772 tokens; 2 calls</title></path>
+<text class="t2 num" x="340.0" y="273.0" text-anchor="start" >6.8k  ·  2 calls</text>
+<text class="t1" x="290.0" y="301.0" text-anchor="end" >Full describe</text>
+<path class="s1" d="M300,288 h65.4 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-65.4 z"><title>Full describe: 13,836 tokens; 1 call, 1/6 tasks needed describe CMD</title></path>
+<text class="t2 num" x="375.4" y="301.0" text-anchor="start" >14k  ·  1 call, 1/6 tasks needed describe CMD</text>
+<text class="t1" x="290.0" y="329.0" text-anchor="end" >MCP, every tool loaded</text>
+<path class="s2" d="M300,316 h71.4 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-71.4 z"><title>MCP, every tool loaded: 15,034 tokens; 0 calls, 15k resident every turn</title></path>
+<text class="t2 num" x="381.4" y="329.0" text-anchor="start" >15k  ·  0 calls, 15k resident every turn</text>
 <text class="t1" x="290.0" y="357.0" text-anchor="end" >Raw OpenAPI document</text>
 <path class="s3" d="M300,344 h127.8 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-127.8 z"><title>Raw OpenAPI document: 26,273 tokens; 1 call</title></path>
 <text class="t2 num" x="437.8" y="357.0" text-anchor="start" >26k  ·  1 call</text>

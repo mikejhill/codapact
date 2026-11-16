@@ -26,8 +26,9 @@ Do not repeat these steps for every command in the same session.
 
 ## For each task
 
-- Find the command in the `describe --brief` list, then run `uvx {{TOOL}} describe COMMAND`
-  for its arguments and output schema before you first use it.
+- Find the command with `describe --brief` (on large CLIs it lists groups; then
+  `describe GROUP --brief`), then run `uvx {{TOOL}} describe COMMAND` for its arguments
+  before you first use it. Add `--schemas` when you need the output schema.
 - On a non-zero exit, read the error and its hint, and look the code up in `exit_codes`.
 
 ## Rules

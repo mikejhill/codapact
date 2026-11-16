@@ -383,6 +383,33 @@ def test_required_switches_take_no_value_in_usage_and_examples() -> None:
     assert command_examples("acme", ("create",), command)[0] == "acme create --enabled"
 
 
+def test_examples_satisfy_requires_one_of_and_json_help_names_fields() -> None:
+    from codapact.commands.model import Arg, ArgKind, Command
+    from codapact.core.naming import Name
+    from codapact.model import Field, ListOf, Nullable, Record, Ref
+    from codapact.targets.python.cli import _argument, command_examples, json_fields
+
+    item = Record("Item", (Field("name", Ref("Name")), Field("note", Ref("Note"), required=False)))
+    api = Api("acme", "1", (), types=(item,))
+    one = Arg(Name(("item",)), Name(("item",)), ArgKind.JSON, Nullable(Ref("Item")))
+    many = Arg(Name(("items",)), Name(("items",)), ArgKind.JSON, ListOf(Ref("Item")))
+    command = Command(
+        Name(("create",)),
+        (Name(("create",)),),
+        (one, many),
+        requires_one_of=(("--item", "--items"),),
+    )
+    assert command_examples("acme", ("create",), command)[0] == "acme create --item @item.json"
+    assert json_fields(api, one.type) == ("JSON object with name*, note (* required).")
+    assert json_fields(api, many.type).startswith("JSON array of objects with name*, note")
+    assert json_fields(api, Ref("Missing")) == ""
+    wide = Record("Wide", tuple(Field(f"f{i}", Ref("X"), required=False) for i in range(14)))
+    hint = json_fields(Api("acme", "1", (), types=(wide,)), Ref("Wide"))
+    assert hint == f"JSON object with {', '.join(f'f{i}' for i in range(12))}, ..."
+    help_arg = next(p for p in _argument(one, lambda arg: "HINT") if p.startswith("help="))
+    assert help_arg == "help='HINT'"
+
+
 def test_error_mode_sources(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
     (tmp_path / "acme").mkdir()
     (tmp_path / "acme" / "config.json").write_text("{")

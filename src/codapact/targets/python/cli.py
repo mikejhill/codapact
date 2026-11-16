@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import re
 import textwrap
+from collections.abc import Callable
 
 from codapact.commands.model import Arg, ArgKind, Command, CommandTree, Group
 from codapact.core.errors import PluginError, expect
 from codapact.core.naming import Name, env_variable
-from codapact.model.api import AuthKind
-from codapact.model.types import ScalarKind
+from codapact.model.api import Api, AuthKind
+from codapact.model.types import ListOf, Nullable, Record, Ref, ScalarKind, TypeExpr
 from codapact.plugins.protocol import GeneratedFile, GenerationRequest, GenerationResponse
 from codapact.targets.python.e2e import render_suite
 from codapact.targets.python.library import CAPABILITIES, PythonOptions
@@ -48,6 +49,7 @@ class PythonCliTarget:
                     tree,
                     request.api.docs or request.api.name,
                     _auth_help(request),
+                    api=request.api,
                     version=options.version,
                     distribution=options.distribution,
                     api_name=request.api.name,
@@ -185,6 +187,7 @@ def render_cli(
     description: str,
     auth_help: str = "",
     *,
+    api: Api | None = None,
     version: str = "0.1.0",
     distribution: str = "",
     api_name: str = "",
@@ -197,7 +200,8 @@ def render_cli(
     handlers: list[str] = []
     parser_lines: list[str] = []
     program = tree.program.kebab
-    _group(tree.root, "commands", (), handlers, parser_lines, program)
+    hint = (lambda arg: json_fields(api, arg.type)) if api is not None else (lambda arg: "")
+    _group(tree.root, "commands", (), handlers, parser_lines, program, hint)
     credentials = f"credentials:\n{auth_help}" if auth_help else ""
     runtime = (
         f"CliRuntime(program={program!r}, env_prefix={tree.env_prefix!r}, "
@@ -276,6 +280,10 @@ def command_examples(program: str, words: tuple[str, ...], command: Command) -> 
     base = " ".join((program, *words))
     parts = [_metavar(a) for a in _positionals(command)]
     parts += [_required_option(a) for a in command.args if a.required and a.positional is None]
+    by_flag = {"--" + a.flag.kebab: a for a in command.args}
+    for group in command.requires_one_of:  # at least one member is needed; show the first
+        if group and group[0] in by_flag:
+            parts.append(f"{group[0]} {_example_value(by_flag[group[0]])}")
     minimal = " ".join((base, *parts))
     found = [minimal]
     if command.paginated:
@@ -319,11 +327,12 @@ def _group(
     handlers: list[str],
     lines: list[str],
     program: str = "",
+    hint: Callable[[Arg], str] = lambda arg: "",
 ) -> None:
     for command in group.commands:
         handlers.append(_handler(command))
         words = tuple(n.kebab for n in path)
-        lines.extend(_command_parser(command, container, program, words))
+        lines.extend(_command_parser(command, container, program, words, hint))
     for child in group.groups:
         name = expect(child.name, "group name")
         here = path + (name,)
@@ -338,7 +347,7 @@ def _group(
         lines.append(
             f'    {sub} = {var}.add_subparsers(dest="{var}", metavar="COMMAND", required=True)'
         )
-        _group(child, sub, here, handlers, lines, program)
+        _group(child, sub, here, handlers, lines, program, hint)
 
 
 def _title(group: Group) -> str:
@@ -382,7 +391,11 @@ def _handler(command: Command) -> str:
 
 
 def _command_parser(
-    command: Command, container: str, program: str, words: tuple[str, ...]
+    command: Command,
+    container: str,
+    program: str,
+    words: tuple[str, ...],
+    hint: Callable[[Arg], str] = lambda arg: "",
 ) -> list[str]:
     var = "c"
     help_text = command.summary or command.name.kebab
@@ -398,8 +411,14 @@ def _command_parser(
     ]
     for arg in _positionals(command):
         lines.append(f"    {var}.add_argument({', '.join(_positional(arg))})")
+    schema_at = " ".join((program, "describe", *words, command.name.kebab))
+
+    def with_schema(arg: Arg) -> str:
+        fields = hint(arg)
+        return f"{fields} Schema: {schema_at}" if fields else ""
+
     for arg in command.args:
-        lines.append(f"    {var}.add_argument({', '.join(_argument(arg))})")
+        lines.append(f"    {var}.add_argument({', '.join(_argument(arg, with_schema))})")
     if command.paginated:
         lines.append(f"    RUNTIME.add_paging_options({var})")
     if command.destructive:
@@ -455,7 +474,7 @@ def _positional(arg: Arg) -> list[str]:
     return parts
 
 
-def _argument(arg: Arg) -> list[str]:
+def _argument(arg: Arg, hint: Callable[[Arg], str] = lambda arg: "") -> list[str]:
     parts = [repr("--" + arg.flag.kebab), f"dest={_dest(arg)!r}"]
     if arg.positional is not None:
         # Alias of the positional: no default, not required, help points at it.
@@ -487,9 +506,36 @@ def _argument(arg: Arg) -> list[str]:
     help_text = arg.docs.strip().splitlines()[0] if arg.docs.strip() else ""
     if arg.default is not None:
         help_text = f"{help_text} (default: {arg.default})".strip()
+    if arg.kind is ArgKind.JSON:
+        help_text = " ".join(p for p in (help_text, hint(arg)) if p)
     if help_text:
         parts.append(f"help={help_text.replace('%', '%%')!r}")
     return parts
+
+
+def json_fields(api: Api, expr: TypeExpr, limit: int = 12) -> str:
+    """Name the members a JSON argument takes, required ones first and marked ``*``.
+
+    ``--help`` then says enough to build a value; ``describe COMMAND`` has the schema.
+    Empty when the type is not a named record.
+    """
+    many = False
+    while isinstance(expr, Nullable | ListOf):
+        many = many or isinstance(expr, ListOf)
+        expr = expr.inner if isinstance(expr, Nullable) else expr.item
+    found = None
+    if isinstance(expr, Ref):
+        found = next((t for t in api.types if t.name == expr.name), None)
+    if not isinstance(found, Record) or not found.fields:
+        return ""
+    ordered = sorted(found.fields, key=lambda f: not f.required)
+    names = [f.name + ("*" if f.required else "") for f in ordered[:limit]]
+    if len(ordered) > limit:
+        names.append("...")
+    shape = "array of objects" if many else "object"
+    marked = " (* required)" if any(f.required for f in found.fields) else ""
+    text = f"{', '.join(names)}{marked}"
+    return f"JSON {shape} with {text}" + ("" if text.endswith("...") else ".")
 
 
 def _scalar(scalar: ScalarKind | None) -> list[str]:

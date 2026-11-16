@@ -218,8 +218,8 @@ def test_builtin_commands_shape() -> None:
         ),
         ("--schemas",): (
             "schemas",
-            "include each command's output JSON Schema "
-            "(always included when COMMAND names one command)",
+            "include JSON argument and output JSON Schemas for every command "
+            "(COMMAND naming one command always has its argument schemas)",
             None,
             None,
             False,
