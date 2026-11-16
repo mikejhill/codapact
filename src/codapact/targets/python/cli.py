@@ -19,10 +19,11 @@ from codapact.targets.python.e2e import render_suite
 from codapact.targets.python.library import CAPABILITIES, PythonOptions
 from codapact.targets.python.naming import ident, method_ident
 
-METAVARS = {"date": "YYYY-MM-DD", "datetime": "DATETIME"}
+METAVARS = {"date": "YYYY-MM-DD", "datetime": "DATETIME", "binary": "TEXT|@FILE"}
 PARSERS = {
     ScalarKind.INTEGER: "integer",
     ScalarKind.FLOAT: "number",
+    ScalarKind.BYTES: "binary_value",
 }
 
 
@@ -121,7 +122,7 @@ def _auth_config(request: GenerationRequest) -> dict[str, dict[str, object]]:
     for name, value in raw.items():
         if name not in known:
             raise PluginError(f"cli.auth: unknown scheme {name!r}")
-        allowed = ("client_id", "scopes", "flow", "audience", "fields", "docs")
+        allowed = ("client_id", "scopes", "flow", "audience", "fields", "docs", "check")
         if not isinstance(value, dict) or set(value) - set(allowed):
             # No client_secret: secrets must never be baked into generated code.
             raise PluginError(f"cli.auth.{name} allows {', '.join(allowed)}")
@@ -130,7 +131,32 @@ def _auth_config(request: GenerationRequest) -> dict[str, dict[str, object]]:
         config[str(name)] = dict(value)
         if "fields" in value:
             config[str(name)]["fields"] = _fields(str(name), value["fields"])
+        if "check" in value:
+            config[str(name)]["check"] = _check_operation(request, str(name), value["check"])
     return config
+
+
+def _check_operation(request: GenerationRequest, scheme: str, raw: object) -> str:
+    """Resolve ``cli.auth.<scheme>.check``: an operation ``doctor`` calls without arguments."""
+    where = f"cli.auth.{scheme}.check"
+    if not isinstance(raw, str) or not raw:
+        raise PluginError(f"{where} must name an operation")
+    wanted = raw.replace("-", "").replace("_", "").lower()
+    found = [
+        op
+        for op in request.api.operations
+        if op.name == raw or op.name.replace("_", "").lower() == wanted
+    ]
+    if not found:
+        raise PluginError(f"{where}: no operation named {raw!r}")
+    operation = found[0]
+    needed = [p.name for p in operation.params if p.required and p.default is None]
+    if needed:
+        raise PluginError(
+            f"{where}: {operation.name} needs arguments ({', '.join(needed)}); "
+            "choose an operation that runs without any"
+        )
+    return operation.name
 
 
 def _fields(scheme: str, raw: object) -> dict[str, dict[str, object]]:
@@ -190,6 +216,7 @@ def render_cli(
         "from typing import Any\n",
         "from codapact.runtime.cli import (  # noqa: F401",
         "    CliRuntime,",
+        "    binary_value,",
         "    compact,",
         "    integer,",
         "    json_value,",

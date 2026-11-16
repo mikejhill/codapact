@@ -62,7 +62,22 @@ Targets that share an `output` directory share options. When `python-cli` shares
 `source.max_bytes` (next to `type` and `path`, not under `options`) caps each contract
 document; the default is 64 MB. Remote contracts and generated clients honour
 `HTTPS_PROXY`, `HTTP_PROXY`, and `NO_PROXY`. Proxy URLs must use `http://` without
-credentials; HTTPS traffic is tunnelled with `CONNECT`.
+credentials; HTTPS traffic is tunnelled with `CONNECT`. Certificates are verified against
+the operating system's trust store (Windows certificate store, macOS keychain, the system
+bundle on Linux), so TLS-inspecting corporate proxies whose root certificate is installed
+there work without extra settings; `SSL_CERT_FILE` names a PEM bundle to use instead.
+Redirects are never followed: a generated client reports a 3xx as an error that names
+its `Location`.
+
+YAML contracts are read with YAML 1.2 rules, as OpenAPI requires: `on`, `off`, `yes`,
+`no`, `=`, `12:30` and dates stay strings, exactly as in the equivalent JSON.
+
+Request bodies are sent as JSON when the contract offers it, else as
+`multipart/form-data` or `application/x-www-form-urlencoded` (object fields become form
+fields; binary fields become file parts; a bare binary body is one part named `file`),
+else as text or raw bytes. `*/*` sends raw bytes for a binary or schema-less body and JSON
+otherwise. Binary values are `bytes`, a `str`, or a path (`os.PathLike`) in libraries, and
+`TEXT`, `@FILE` or `@-` (stdin) on the command line; a file is sent under its own name.
 
 ### Pinned contracts and `codapact sync`
 
@@ -95,14 +110,17 @@ types. Without documents, it generates one operation per root field. A `#` comme
 directly above a document operation becomes its description; variable defaults
 (`$first: Int = 5`) become parameter defaults.
 
-When the first shaping step is `select`, model errors in operations it removes are reported
-as one warning instead of blocking generation.
+When the first shaping step is `select`, it also filters before translation: operations it
+excludes are never read, so problems in them (unsupported media types, odd enums, invalid
+parameters) cannot block generation, and problems in schemas only those operations use are
+reported as one warning. Model errors in operations it removes are likewise one warning.
+This is the way to generate part of a very large contract in strict mode.
 
 ## Shaping transforms
 
 | Transform | Config |
 | --- | --- |
-| `select` | `include`, `exclude`: lists of globs or `{name, tag, kind, namespace, read_only}` selectors |
+| `select` | `include`, `exclude`: lists of globs or `{name, path, tag, kind, namespace, read_only}` selectors. Names match in any spelling (`getIssue`, `get-issue` and `get_issue` are the same); a glob starting with `/` or a method (`GET /rest/api/3/issue/*`) matches the HTTP path |
 | `rename` | `operations`, `types`, `fields` (`Type.field`), `params` (`op.param`), `patterns` (`[{match: regex, replace: template}]` over operation names; explicit `operations` entries win); wire names are kept |
 | `group` | `by: tag` or `by: path`, and/or `operations: {glob: dotted.namespace}` |
 | `paginate` | `operations`, `style: cursor` (`param`, `next`), `offset` (`param`, `limit_param`), or `page` (`param`, default `page`; `start`, default `1`), and `items` (`$` when the result itself is the list). Operations matched only by a pattern that lack the param or items are skipped with a warning; operations named exactly are errors |
@@ -179,7 +197,7 @@ exists. Set `cli.env_prefix` too if the environment variables should keep their 
 | Help | `-h`/`--help` on every level; bare `<program>` or `<program> GROUP` prints help (exit `0`). Command help has a usage line with positionals and required options, examples, and a global-options reminder. |
 | Version | `-V`/`--version`: `poke 0.1.0 (PokéAPI 2.10.0; codapact 0.4.0)`; the installed distribution's version when it differs from the generated `version` option (so a release tool can bump packaging alone) |
 | Discovery for agents | `<program> describe [COMMAND…]`: JSON with every command's arguments (type, required, positional, choices, repeated), `read_only`/`destructive`/`paginated`, `requires_one_of` option groups, environment variables, exit codes, `start` (the steps an agent follows: doctor, credentials, describe, dry run) and `auth` (per scheme: environment variables, `auth login` commands, `docs` on how to get the credential, and whether every command or only some need it). `describe --brief` keeps those plus names, summaries, and usage lines, so one call is enough to start; agent skills for a coda point here instead of repeating it (see [Agent skills for codas](../scripts/agent-plugin/README.md)). Naming one command (or passing `--schemas`) adds the JSON Schema of its output and of each JSON-valued argument |
-| Diagnosis | `<program> doctor [--offline]`: version, settings file, base URL and its source, credentials (set or missing, never printed), proxy, connectivity. Missing credentials fail only when every command needs them. Table on a terminal, JSON otherwise; exit `0` ready, `3` credentials missing or rejected, `4` API unreachable, `1` any other failed check |
+| Diagnosis | `<program> doctor [--offline]`: version, settings file, base URL and its source, credentials (set or missing, never printed), proxy, connectivity (any HTTP answer counts, a redirect included), and, for schemes with `cli.auth.<scheme>.check`, whether the server still accepts the credential (`session: <scheme>`, see [CLI credential chain](#cli-credential-chain)). Missing credentials fail only when every command needs them. Table on a terminal, JSON otherwise; exit `0` ready, `3` credentials missing or rejected, `4` API unreachable, `1` any other failed check |
 | Completion | `<program> completion bash\|zsh\|fish\|powershell` prints a script that asks the program for candidates |
 | Preview | `--dry-run` prints the HTTP request (method, URL, headers, body) without sending it; credentials appear as `$VARIABLE` placeholders (optional credentials that are not set stay off the request), and destructive commands skip confirmation |
 | Tracing | `-v`/`--verbose` logs each request line and response status, size, and time to stderr, masking credential values |
@@ -221,10 +239,14 @@ Three layers, each usable without the next:
 | --- | --- | --- |
 | Source | `AuthProvider.credential(scheme) -> Credential \| Authenticator \| None` | Where a secret comes from: environment, a command, the OS keyring, a vault |
 | Built-in flow | `OAuth2(grant, store)` with `ClientCredentials`, `PasswordGrant`, `DeviceCode` (RFC 8628), `AuthorizationCodePKCE` (loopback redirect); refresh tokens; OIDC discovery | Standard OAuth 2.0 / OpenID Connect without code |
-| Bespoke | `Authenticator.authenticate(request, scheme) -> request`, optional `refresh(scheme) -> bool` | Request signing (HMAC, AWS SigV4), token exchange, anything else |
+| Bespoke | `Authenticator.authenticate(request, scheme) -> request`, optional `refresh(scheme) -> bool` and `expired(response, scheme) -> bool` | Request signing (HMAC, AWS SigV4), token exchange, browser sign-in sessions, anything else |
 
 An `Authenticator` runs last, after middleware, so a retried request is signed again. On
 HTTP 401 the runtime calls `refresh()` and, if it returns true, sends the request once more.
+Servers that reject a session some other way (a redirect to a sign-in page, an HTML login
+form, a vendor error code) are recognised by `expired()`, which sees every response: when it
+returns true the runtime refreshes and resends the same way, and if the session is still
+rejected the call fails with `AuthError` (CLI exit code 3).
 
 ### Auth specs
 
@@ -239,7 +261,7 @@ Used by the `auth` transform, the GraphQL `auth` option, and `cli.auth`:
 | `{openid: DISCOVERY_URL}` | OAuth 2.0 whose endpoints come from `.well-known/openid-configuration` |
 | `custom` or `{custom: DESCRIPTION}` | needs an `Authenticator` (plugin or library code) |
 
-Any spec map also takes `docs`. OpenAPI `oauth2` (including 3.2 `deviceAuthorization`) and
+Every spec map also takes `docs` (for `custom` it replaces the description). OpenAPI `oauth2` (including 3.2 `deviceAuthorization`) and
 `openIdConnect` map to the same model; other schemes (`mutualTLS`, `http` with an unknown
 scheme) become `custom` with an info diagnostic.
 
@@ -261,7 +283,10 @@ The first source that has a credential wins, per scheme:
 `cli.auth: {SCHEME: {client_id, scopes, flow, audience}}` bakes public OAuth settings into
 the CLI (no secrets); `fields` declares [credential fields](#credential-fields); `docs` tells a
 person how to get the credential (shown in `describe` under `auth`, e.g. "Create a personal
-access token under Account Settings > Developer Settings").
+access token under Account Settings > Developer Settings"); `check` names an operation that
+needs no arguments (any spelling, e.g. `getCurrentUser`) which `doctor` calls to prove the
+saved credential or session still works: a 401, 403, redirect or `expired()` fails the
+`session: <scheme>` check with exit code 3.
 `auth login` picks a flow in this order: `--flow`, then client credentials when a secret is
 set, then device code, then authorization code with PKCE.
 `--with-token` reads a static token from stdin; `--username` saves basic credentials.

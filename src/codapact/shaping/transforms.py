@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from fnmatch import fnmatchcase
 from typing import Any
 
@@ -35,17 +35,41 @@ from codapact.model.types import (
 from codapact.shaping.base import TransformResult
 
 
+def _name_matches(name: str, pattern: str) -> bool:
+    """Match an operation name in any spelling: ``getIssue``, ``get-issue``, ``get_issue``."""
+    return fnmatchcase(name, pattern) or fnmatchcase(_canonical(name), _canonical(pattern))
+
+
+def _canonical(text: str) -> str:
+    return text.replace("_", "").replace("-", "").lower()
+
+
+def _path_matches(operation: Operation, pattern: str) -> bool:
+    """Match ``/pets/*`` or ``GET /pets/*`` against the operation's HTTP binding."""
+    binding = operation.binding(HttpBinding)
+    if binding is None:
+        return False
+    method, _, path = pattern.strip().rpartition(" ")
+    if method and method.upper() != binding.method.upper():
+        return False
+    return fnmatchcase(binding.path, path)
+
+
 def _matches(operation: Operation, selector: Any) -> bool:
     if isinstance(selector, str):
-        return fnmatchcase(operation.name, selector)
+        if selector.startswith("/") or " /" in selector:
+            return _path_matches(operation, selector)
+        return _name_matches(operation.name, selector)
     if not isinstance(selector, dict) or not selector:
         raise ConfigError("selectors must be a glob string or a non-empty mapping")
-    unknown = set(selector) - {"name", "tag", "kind", "namespace", "read_only"}
+    unknown = set(selector) - {"name", "tag", "kind", "namespace", "read_only", "path"}
     if unknown:
         raise ConfigError(f"unknown selector keys {sorted(unknown)}")
     checks = []
     if "name" in selector:
-        checks.append(fnmatchcase(operation.name, str(selector["name"])))
+        checks.append(_name_matches(operation.name, str(selector["name"])))
+    if "path" in selector:
+        checks.append(_path_matches(operation, str(selector["path"])))
     if "tag" in selector:
         checks.append(any(fnmatchcase(tag, str(selector["tag"])) for tag in operation.tags))
     if "kind" in selector:
@@ -55,6 +79,19 @@ def _matches(operation: Operation, selector: Any) -> bool:
     if "read_only" in selector:
         checks.append(operation.read_only is bool(selector["read_only"]))
     return all(checks)
+
+
+def selection(config: Mapping[str, Any]) -> Callable[[Operation], bool]:
+    """Return the predicate a ``select`` step applies, for filtering before translation."""
+    include = _selectors(config, "include")
+    exclude = _selectors(config, "exclude")
+
+    def keep(operation: Operation) -> bool:
+        return (not include or any(_matches(operation, s) for s in include)) and not any(
+            _matches(operation, s) for s in exclude
+        )
+
+    return keep
 
 
 def _selectors(config: Mapping[str, Any], key: str) -> list[Any]:
@@ -89,13 +126,10 @@ class Select:
     ) -> TransformResult:
         """Filter operations, then prune unreachable types."""
         include = _selectors(config, "include")
-        exclude = _selectors(config, "exclude")
+        keep = selection(config)
         kept, removed = [], []
         for operation in api.operations:
-            selected = (not include or any(_matches(operation, s) for s in include)) and not any(
-                _matches(operation, s) for s in exclude
-            )
-            (kept if selected else removed).append(operation)
+            (kept if keep(operation) else removed).append(operation)
         for selector in include:
             if not any(_matches(op, selector) for op in api.operations):
                 diagnostics.warning(

@@ -23,7 +23,7 @@ SCALARS = {
     ScalarKind.INTEGER: "int",
     ScalarKind.FLOAT: "float",
     ScalarKind.BOOLEAN: "bool",
-    ScalarKind.BYTES: "str | bytes",
+    ScalarKind.BYTES: "str | bytes | PathLike[str]",
     ScalarKind.DATE: "str",
     ScalarKind.DATETIME: "str",
     ScalarKind.ANY: "Any",

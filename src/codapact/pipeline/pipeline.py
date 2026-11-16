@@ -26,6 +26,7 @@ from codapact.plugins.external import ExternalTarget
 from codapact.plugins.protocol import GeneratedFile, GenerationRequest, Target
 from codapact.plugins.registry import Registry
 from codapact.shaping.engine import Shaper
+from codapact.shaping.transforms import selection
 from codapact.sources.base import SourceInput
 from codapact.sources.loader import Fetcher
 from codapact.surface.derive import SurfaceOptions, derive_surface
@@ -65,7 +66,10 @@ class Pipeline:
             for d in config.source.documents
         )
         result.source = source_metadata(config, document.content, [c.content for c in companions])
-        translated = source.parse(SourceInput(document, companions, config.source.options))
+        keep = selection(config.shape[0]["select"]) if _selects_first(config.shape) else None
+        translated = source.parse(
+            SourceInput(document, companions, config.source.options, keep=keep)
+        )
         result.diagnostics.extend(translated.diagnostics)
         if translated.api is None:
             return None

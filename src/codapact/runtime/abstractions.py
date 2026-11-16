@@ -77,6 +77,12 @@ class Authenticator(Protocol):
     An authenticator may also define ``refresh(scheme) -> bool``. When the server
     answers 401, the runtime calls it and, if it returns ``True``, sends the
     request once more (OAuth token refresh, re-login, clock-skew resync).
+
+    ``expired(response, scheme) -> bool`` lets it recognise a rejected credential that
+    is not a 401: a redirect to a sign-in page, an HTML login form where JSON was
+    expected, a vendor error code. It sees every response. When it returns ``True`` the
+    runtime treats the response like a 401 (``refresh``, then one resend); if the
+    session is still not accepted the call fails with ``AuthError``.
     """
 
     @abstractmethod

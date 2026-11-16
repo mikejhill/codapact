@@ -87,7 +87,7 @@ Enforced by `tests/unit/test_architecture.py` (AST import scan):
 | HTTP sending | `Transport.send(HttpRequest)` | `RuntimeClient(transport=…)` |
 | Cross-cutting | `Middleware(request, context, next)` | `RuntimeClient(middleware=…)` |
 | Credentials | `AuthProvider.credential(scheme)` | `RuntimeClient(auth=…)` |
-| Bespoke auth | `Authenticator.authenticate(request, scheme)`, optional `refresh` | returned by an `AuthProvider`; CLI `auth_plugin` |
+| Bespoke auth | `Authenticator.authenticate(request, scheme)`, optional `refresh` and `expired` | returned by an `AuthProvider`; CLI `auth_plugin` |
 | Protocol | `ProtocolAdapter.supports/call` | `RuntimeClient(adapters=…)` |
 
 ### Plugin protocol
@@ -110,15 +110,16 @@ that silently mishandles the feature.
 - `RuntimeClient(api, base_url, auth, transport, middleware, adapters, …)`:
   `call(operation, args)` encodes and validates arguments, picks the adapter for the
   operation's binding, and decodes the result. `paginate()` follows cursors or offsets.
-- `SafeHttpClient` (default transport): no redirects, bounded bodies, DNS pinned against
-  rebinding, private and plaintext addresses only with explicit opt-in.
+- `SafeHttpClient` (default transport): redirects returned, never followed; OS trust store
+  (`truststore`); bounded bodies; DNS pinned against rebinding; private and plaintext
+  addresses only with explicit opt-in.
 - `Retry` middleware: idempotent operations only, exponential backoff, honors
   `Retry-After`.
 - Auth: sources (`StaticAuth`, `EnvAuth`, `ChainAuth`, `CommandAuth`, `StoreAuth`) return a
   `Credential` or an `Authenticator`. `OAuth2` (in `runtime.oauth`) is an `Authenticator`
   over a grant (client credentials, password, device code, authorization code + PKCE) and a
-  `TokenStore` (memory, file, keyring). Authenticators run after middleware; a 401 triggers
-  one `refresh()` and resend. `Credential.__repr__` never renders secrets.
+  `TokenStore` (memory, file, keyring). Authenticators run after middleware; a 401 (or a
+  response an authenticator's `expired()` flags) triggers one `refresh()` and resend. `Credential.__repr__` never renders secrets.
 - `runtime.selftest`: the suite generated bundles ship (offline dry runs, live scenarios).
 - Errors: `ValidationError`, `AuthError`, `ApiError` (status, named error case, decoded
   payload), `GraphQLResponseError`, `TransportError`.

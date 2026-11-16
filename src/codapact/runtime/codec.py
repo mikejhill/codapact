@@ -8,6 +8,7 @@ break existing clients.
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
@@ -249,7 +250,7 @@ def _primitive(value: Any, expr: Primitive, path: str) -> Any:
             raise ValidationError(path, "expected a number")
         _check_range(value, expr.constraints, path)
         return value
-    if scalar is ScalarKind.BYTES and isinstance(value, bytes):
+    if scalar is ScalarKind.BYTES and isinstance(value, bytes | bytearray | os.PathLike):
         return value
     if not isinstance(value, str):
         raise ValidationError(path, "expected a string")

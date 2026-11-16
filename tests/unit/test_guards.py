@@ -220,8 +220,9 @@ def test_safe_http_client_limits_and_redirects() -> None:
         return HttpResponse(302, {"Location": "http://elsewhere/"}, b"")
 
     with serve(redirect) as url:
-        with pytest.raises(TransportError, match="redirects are not followed"):
-            SafeHttpClient(allow_private=True).send(HttpRequest("GET", url + "/", {}))
+        # Returned, never followed: callers decide what a redirect means.
+        response = SafeHttpClient(allow_private=True).send(HttpRequest("GET", url + "/", {}))
+        assert response.status == 302 and response.header("location") == "http://elsewhere/"
     with serve(Petstore()) as url:
         client = SafeHttpClient(allow_private=True, max_bytes=8)
         with pytest.raises(TransportError, match="exceeds 8 bytes"):

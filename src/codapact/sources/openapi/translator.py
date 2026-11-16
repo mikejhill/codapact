@@ -8,16 +8,18 @@ definitions derived from their position (``GetPetResponse``, ``PetStatus``).
 from __future__ import annotations
 
 import dataclasses
+import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from http import HTTPStatus
 from typing import Any
 
-from codapact.core.diagnostics import Diagnostics
+from codapact.core.diagnostics import Diagnostic, Diagnostics, Severity
 from codapact.core.errors import ContractError
 from codapact.core.naming import Name
 from codapact.model import api as m
 from codapact.model import types as t
+from codapact.model.rewrite import reachable_types
 from codapact.sources.base import SourceInput, SourceResult, option_bool
 from codapact.sources.loader import parse_structured
 
@@ -71,6 +73,7 @@ SCHEMA_KEYS_SUPPORTED = {
     "$ref",
 }
 MAX_DEFINITIONS = 20_000
+FORM_MEDIA = ("multipart/form-data", "application/x-www-form-urlencoded")
 JSON_MEDIA = re.compile(r"application/(?:[\w.+-]+\+)?json(?:;.*)?\Z", re.IGNORECASE)
 
 
@@ -89,7 +92,9 @@ class OpenApiSource:
         try:
             strict = option_bool(source.options, "strict", True)
             document = parse_structured(source.document)
-            api = _Translator(document, strict=strict, diagnostics=diagnostics).translate()
+            api = _Translator(
+                document, strict=strict, diagnostics=diagnostics, keep=source.keep
+            ).translate()
         except (ContractError, TypeError) as error:
             diagnostics.error("openapi.invalid", str(error))
             return SourceResult(None, diagnostics)
@@ -97,8 +102,16 @@ class OpenApiSource:
 
 
 class _Translator:
-    def __init__(self, doc: dict[str, Any], *, strict: bool, diagnostics: Diagnostics) -> None:
+    def __init__(
+        self,
+        doc: dict[str, Any],
+        *,
+        strict: bool,
+        diagnostics: Diagnostics,
+        keep: Callable[[m.Operation], bool] | None = None,
+    ) -> None:
         self.doc = doc
+        self.keep = keep
         self.strict = strict
         self.diagnostics = diagnostics
         self.definitions: dict[str, t.TypeDef] = {}
@@ -185,17 +198,28 @@ class _Translator:
             self.component_names[raw] = _type_name(raw)
             if _admits_null(schema):
                 self.nullable_components.add(raw)
+        component_errors: dict[str, list[Diagnostic]] = {}
         for raw, schema in schemas.items():
             name = self.component_names[raw]
             if name in self.definitions:
                 continue
+            mark = len(self.diagnostics.items)
             try:
                 self.define(name, schema, f"components.schemas.{raw}")
             except Unsupported:
                 self.add(t.Alias(name, t.Primitive(t.ScalarKind.ANY)))
+            if self.keep is not None:
+                # Held back until we know whether a selected operation uses the schema.
+                added = self.diagnostics.items[mark:]
+                errors = [d for d in added if d.severity is Severity.ERROR]
+                if errors:
+                    component_errors[name] = errors
+                    del self.diagnostics.items[mark:]
+                    self.diagnostics.extend(d for d in added if d.severity is not Severity.ERROR)
         schemes = self.security_schemes(components)
         operations: list[m.Operation] = []
         used: set[str] = set()
+        skipped = 0
         for path, item in paths.items():
             if not isinstance(item, dict):
                 raise ContractError(f"paths.{path} must be an object")
@@ -204,6 +228,11 @@ class _Translator:
                 if method not in item:
                     continue
                 where = f"paths.{path}.{method}"
+                if self.keep is not None and not self.keep(
+                    self.preview(path, method, item[method])
+                ):
+                    skipped += 1
+                    continue
                 try:
                     operation = self.operation(path, method, item, item[method], where)
                 except Unsupported:
@@ -214,7 +243,7 @@ class _Translator:
                 operations.append(operation)
         if not operations:
             self.diagnostics.warning("openapi.empty", "contract declares no supported operations")
-        return m.Api(
+        api = m.Api(
             name=info["title"],
             version=str(info.get("version", "")),
             operations=tuple(operations),
@@ -223,6 +252,54 @@ class _Translator:
             servers=self.servers(),
             docs=str(info.get("description", "")),
             source=f"openapi-{version}",
+        )
+        if self.keep is not None:
+            self.report_selected(api, component_errors, skipped)
+        return api
+
+    def report_selected(
+        self, api: m.Api, component_errors: dict[str, list[Diagnostic]], skipped: int
+    ) -> None:
+        """Report schema problems only for schemas the selected operations reach."""
+        reachable = reachable_types(api)
+        ignored = 0
+        for name, errors in component_errors.items():
+            if name in reachable:
+                self.diagnostics.extend(errors)
+            else:
+                ignored += len(errors)
+        if skipped:
+            self.diagnostics.info(
+                "openapi.select", f"select skipped {skipped} operation(s) before translation"
+            )
+        if ignored:
+            self.diagnostics.warning(
+                "model.outside-selection",
+                f"{ignored} problem(s) in schemas only unselected operations use were ignored",
+            )
+
+    def preview(self, path: str, method: str, op: Any) -> m.Operation:
+        """The parts of an operation a selector can match, without translating it."""
+        op = op if isinstance(op, dict) else {}
+        read_only = method in SAFE_METHODS
+        return m.Operation(
+            name=self.operation_name(op, method, path),
+            kind=m.OperationKind.QUERY if read_only else m.OperationKind.MUTATION,
+            params=(),
+            result=None,
+            bindings=(m.HttpBinding(method.upper(), path, (), ()),),
+            tags=tuple(str(tag) for tag in op.get("tags", []) or []),
+            read_only=read_only,
+            idempotent=method in IDEMPOTENT_METHODS,
+        )
+
+    @staticmethod
+    def operation_name(op: dict[str, Any], method: str, path: str) -> str:
+        raw_id = op.get("operationId")
+        return (
+            Name.parse(raw_id).snake
+            if isinstance(raw_id, str) and raw_id
+            else _derive_operation_name(method, path)
         )
 
     def servers(self) -> tuple[m.Server, ...]:
@@ -296,12 +373,7 @@ class _Translator:
             raise ContractError(f"{where} must be an object")
         if op.get("callbacks"):
             self.diagnostics.info("openapi.ignored", "callbacks are ignored", where)
-        raw_id = op.get("operationId")
-        name = (
-            Name.parse(raw_id).snake
-            if isinstance(raw_id, str) and raw_id
-            else _derive_operation_name(method, path)
-        )
+        name = self.operation_name(op, method, path)
         type_base = Name.parse(name).pascal
         params: list[m.Param] = []
         http_params: list[m.HttpParam] = []
@@ -347,9 +419,16 @@ class _Translator:
         request_media = None
         if "requestBody" in op:
             body = self.deref(op["requestBody"], where)
-            media, schema = self.pick_content(body.get("content", {}), f"{where}.requestBody")
+            media, schema = self.pick_request_content(
+                body.get("content", {}), f"{where}.requestBody"
+            )
             if media is None:
-                self.unsupported("request bodies must be JSON", f"{where}.requestBody")
+                self.unsupported(
+                    "request body media types are not supported "
+                    "(supported: JSON, multipart/form-data, application/x-www-form-urlencoded, "
+                    "text/*, binary)",
+                    f"{where}.requestBody",
+                )
             request_media = media
             body_name = "body" if "body" not in taken else "request_body"
             body_name = self.distinct(body_name, taken, f"{where}.requestBody")
@@ -405,6 +484,44 @@ class _Translator:
                 return media, {"type": "string"}
             if media == "application/octet-stream":
                 return media, {"type": "string", "format": "binary"}
+        return None, None
+
+    def pick_request_content(self, content: Any, where: str) -> tuple[str | None, Any]:
+        """Choose how to send a request body: JSON, then forms, then binary or text.
+
+        ``*/*`` accepts anything: a schema without structure (or a binary string) is sent
+        as raw bytes, anything else as JSON.
+        """
+        if not isinstance(content, dict) or not content:
+            return None, None
+        entries = {str(media).lower(): (entry or {}) for media, entry in content.items()}
+
+        def schema_of(media: str) -> Any:
+            entry = entries[media]
+            return entry.get("schema", {}) if isinstance(entry, dict) else {}
+
+        for media in entries:
+            if JSON_MEDIA.match(media):
+                return media, schema_of(media)
+        for form in FORM_MEDIA:
+            if form in entries:
+                schema = schema_of(form)
+                resolved = self.deref(schema, where) if isinstance(schema, dict) else schema
+                if _is_binary(resolved) or _is_object(resolved):
+                    return form, schema
+        for media in entries:
+            if media.startswith("text/"):
+                return media, {"type": "string"}
+        for media in entries:
+            if media in FORM_MEDIA or media == "*/*":
+                continue
+            if re.fullmatch(r"[\w.+-]+/[\w.+-]+", media):
+                return media, {"type": "string", "format": "binary"}
+        if "*/*" in entries:
+            schema = schema_of("*/*")
+            if schema in ({}, True, None) or _is_binary(schema):
+                return "application/octet-stream", {"type": "string", "format": "binary"}
+            return "application/json", schema
         return None, None
 
     def responses(
@@ -603,6 +720,32 @@ class _Translator:
     def enum(self, schema: dict[str, Any], hint: str, where: str, *, named: bool) -> t.TypeExpr:
         values = [v for v in schema["enum"] if v is not None]
         nullable = len(values) != len(schema["enum"])
+        declared = schema.get("type")
+        if values and all(isinstance(v, bool) for v in values):
+            # ``[true, false]`` is a boolean; ``[true]`` is that one constant.
+            expr: t.TypeExpr = (
+                t.Literal(values[0]) if len(set(values)) == 1 else t.Primitive(t.ScalarKind.BOOLEAN)
+            )
+            return t.Nullable(expr) if nullable else expr
+        if declared == "string" and not all(isinstance(v, str) for v in values):
+            # A string enum with a stray non-string value (often a YAML ``on`` that a
+            # YAML 1.1 tool turned into ``true``) keeps the value's JSON spelling.
+            self.diagnostics.warning(
+                "openapi.enum-coerced", "non-string enum values are treated as strings", where
+            )
+            values = [json.dumps(v) if not isinstance(v, str) else v for v in values]
+        if (
+            values
+            and declared == "number"
+            and all(isinstance(v, int | float) and not isinstance(v, bool) for v in values)
+        ):
+            self.diagnostics.info(
+                "openapi.enum-number",
+                "number enums are plain numbers; values are not checked",
+                where,
+            )
+            number = t.Primitive(t.ScalarKind.FLOAT, schema.get("format"))
+            return t.Nullable(number) if nullable else number
         if not values or not all(
             isinstance(v, str | int) and not isinstance(v, bool) for v in values
         ):
@@ -872,3 +1015,13 @@ def _oauth_flows(raw: Any) -> tuple[m.OAuthFlow, ...]:
             )
         )
     return tuple(flows)
+
+
+def _is_binary(schema: Any) -> bool:
+    return isinstance(schema, dict) and schema.get("format") == "binary"
+
+
+def _is_object(schema: Any) -> bool:
+    return isinstance(schema, dict) and (
+        schema.get("type") == "object" or "properties" in schema or "$ref" in schema
+    )
