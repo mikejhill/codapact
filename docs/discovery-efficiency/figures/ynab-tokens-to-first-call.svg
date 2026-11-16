@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 456" width="900" height="456" role="img" aria-label="YNAB: tokens read before the first correct call">
+<title>YNAB: tokens read before the first correct call</title>
+
+<style>
+  .surface { fill: #fcfcfb; }
+  .t1 { fill: #0b0b0b; } .t2 { fill: #52514e; } .t3 { fill: #898781; }
+  .grid { stroke: #e1e0d9; stroke-width: 1; } .axis { stroke: #c3c2b7; stroke-width: 1; }
+  .s1 { fill: #2a78d6; stroke: #2a78d6; } .s2 { fill: #eb6834; stroke: #eb6834; }
+  .s3 { fill: #1baf7a; stroke: #1baf7a; } .s4 { fill: #eda100; stroke: #eda100; }
+  .s5 { fill: #e87ba4; stroke: #e87ba4; } .s6 { fill: #008300; stroke: #008300; }
+  .s7 { fill: #6250d6; stroke: #6250d6; }
+  .ring { stroke: #fcfcfb; }
+  text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 12px; }
+  .title { font-size: 15px; font-weight: 600; } .num { font-variant-numeric: tabular-nums; }
+  @media (prefers-color-scheme: dark) {
+    .surface { fill: #1a1a19; }
+    .t1 { fill: #f0efec; } .t2 { fill: #c3c2b7; } .t3 { fill: #898781; }
+    .grid { stroke: #2c2c2a; } .axis { stroke: #383835; }
+    .s1 { fill: #3987e5; stroke: #3987e5; } .s2 { fill: #d95926; stroke: #d95926; }
+    .s3 { fill: #199e70; stroke: #199e70; } .s4 { fill: #c98500; stroke: #c98500; }
+    .s5 { fill: #d55181; stroke: #d55181; } .s6 { fill: #0ca30c; stroke: #0ca30c; }
+    .s7 { fill: #9085e9; stroke: #9085e9; }
+    .ring { stroke: #1a1a19; }
+  }
+</style>
+
+<rect class="surface" x="0" y="0" width="900" height="456" rx="8"/>
+<text class="title t1" x="20" y="28">YNAB: tokens read before the first correct call</text>
+<text class="t2" x="20" y="47">Median of 6 tasks; 44 commands; every reference call passes --dry-run</text>
+<rect class="s1" x="20" y="63" width="10" height="10" rx="2"/>
+<text class="t2" x="35.0" y="72.0" text-anchor="start" >codapact CLI (today)</text>
+<rect class="s2" x="180.0" y="63" width="10" height="10" rx="2"/>
+<text class="t2" x="195.0" y="72.0" text-anchor="start" >MCP</text>
+<rect class="s3" x="229.5" y="63" width="10" height="10" rx="2"/>
+<text class="t2" x="244.5" y="72.0" text-anchor="start" >Docs and specs</text>
+<rect class="s4" x="350.5" y="63" width="10" height="10" rx="2"/>
+<text class="t2" x="365.5" y="72.0" text-anchor="start" >codapact CLI (proposed)</text>
+<line class="grid" x1="300.0" y1="88" x2="300.0" y2="400"/>
+<text class="t3 num" x="300.0" y="416.0" text-anchor="middle" >0</text>
+<line class="grid" x1="350.2" y1="88" x2="350.2" y2="400"/>
+<text class="t3 num" x="350.2" y="416.0" text-anchor="middle" >10k</text>
+<line class="grid" x1="400.3" y1="88" x2="400.3" y2="400"/>
+<text class="t3 num" x="400.3" y="416.0" text-anchor="middle" >20k</text>
+<line class="grid" x1="450.5" y1="88" x2="450.5" y2="400"/>
+<text class="t3 num" x="450.5" y="416.0" text-anchor="middle" >30k</text>
+<line class="grid" x1="500.6" y1="88" x2="500.6" y2="400"/>
+<text class="t3 num" x="500.6" y="416.0" text-anchor="middle" >40k</text>
+<line class="grid" x1="550.8" y1="88" x2="550.8" y2="400"/>
+<text class="t3 num" x="550.8" y="416.0" text-anchor="middle" >50k</text>
+<line class="grid" x1="600.9" y1="88" x2="600.9" y2="400"/>
+<text class="t3 num" x="600.9" y="416.0" text-anchor="middle" >60k</text>
+<line class="grid" x1="651.1" y1="88" x2="651.1" y2="400"/>
+<text class="t3 num" x="651.1" y="416.0" text-anchor="middle" >70k</text>
+<line class="grid" x1="701.2" y1="88" x2="701.2" y2="400"/>
+<text class="t3 num" x="701.2" y="416.0" text-anchor="middle" >80k</text>
+<line class="grid" x1="751.4" y1="88" x2="751.4" y2="400"/>
+<text class="t3 num" x="751.4" y="416.0" text-anchor="middle" >90k</text>
+<text class="t1" x="290.0" y="105.0" text-anchor="end" >MCP + tool search</text>
+<path class="s2" d="M300,92 h-1.2 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h1.2 z"><title>MCP + tool search: 558 tokens; 1 call, 256 resident every turn</title></path>
+<text class="t2 num" x="308.8" y="105.0" text-anchor="start" >558  ·  1 call, 256 resident every turn</text>
+<text class="t1" x="290.0" y="133.0" text-anchor="end" >--help walk</text>
+<path class="s1" d="M300,120 h3.7 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-3.7 z"><title>--help walk: 1,530 tokens; 3 calls, 1/6 tasks needed describe CMD</title></path>
+<text class="t2 num" x="313.7" y="133.0" text-anchor="start" >1.5k  ·  3 calls, 1/6 tasks needed describe CMD</text>
+<text class="t1" x="290.0" y="161.0" text-anchor="end" >Lean describe (proposed)</text>
+<path class="s4" d="M300,148 h9.3 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-9.3 z"><title>Lean describe (proposed): 2,644 tokens; 2 calls</title></path>
+<text class="t2 num" x="319.3" y="161.0" text-anchor="start" >2.6k  ·  2 calls</text>
+<text class="t1" x="290.0" y="189.0" text-anchor="end" >OpenAPI, targeted reads</text>
+<path class="s3" d="M300,176 h9.9 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-9.9 z"><title>OpenAPI, targeted reads: 2,780 tokens; 6.5 calls</title></path>
+<text class="t2 num" x="319.9" y="189.0" text-anchor="start" >2.8k  ·  6.5 calls</text>
+<text class="t1" x="290.0" y="217.0" text-anchor="end" >llms.txt, then one page</text>
+<path class="s3" d="M300,204 h20.0 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-20.0 z"><title>llms.txt, then one page: 4,791 tokens; 2 calls</title></path>
+<text class="t2 num" x="330.0" y="217.0" text-anchor="start" >4.8k  ·  2 calls</text>
+<text class="t1" x="290.0" y="245.0" text-anchor="end" >--help, describe GROUP --brief, describe CMD</text>
+<path class="s1" d="M300,232 h20.5 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-20.5 z"><title>--help, describe GROUP --brief, describe CMD: 4,878 tokens; 3 calls</title></path>
+<text class="t2 num" x="330.5" y="245.0" text-anchor="start" >4.9k  ·  3 calls</text>
+<text class="t1" x="290.0" y="273.0" text-anchor="end" >describe --brief, describe CMD (today)</text>
+<path class="s1" d="M300,260 h29.9 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-29.9 z"><title>describe --brief, describe CMD (today): 6,762 tokens; 2 calls</title></path>
+<text class="t2 num" x="339.9" y="273.0" text-anchor="start" >6.8k  ·  2 calls</text>
+<text class="t1" x="290.0" y="301.0" text-anchor="end" >MCP, every tool loaded</text>
+<path class="s2" d="M300,288 h70.3 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-70.3 z"><title>MCP, every tool loaded: 14,821 tokens; 0 calls, 15k resident every turn</title></path>
+<text class="t2 num" x="380.3" y="301.0" text-anchor="start" >15k  ·  0 calls, 15k resident every turn</text>
+<text class="t1" x="290.0" y="329.0" text-anchor="end" >Full describe</text>
+<path class="s1" d="M300,316 h86.1 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-86.1 z"><title>Full describe: 17,973 tokens; 1 call, 1/6 tasks needed describe CMD</title></path>
+<text class="t2 num" x="396.1" y="329.0" text-anchor="start" >18k  ·  1 call, 1/6 tasks needed describe CMD</text>
+<text class="t1" x="290.0" y="357.0" text-anchor="end" >Raw OpenAPI document</text>
+<path class="s3" d="M300,344 h127.8 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-127.8 z"><title>Raw OpenAPI document: 26,273 tokens; 1 call</title></path>
+<text class="t2 num" x="437.8" y="357.0" text-anchor="start" >26k  ·  1 call</text>
+<text class="t1" x="290.0" y="385.0" text-anchor="end" >llms-full.txt</text>
+<path class="s3" d="M300,372 h466.0 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-466.0 z"><title>llms-full.txt: 93,710 tokens; 1 call</title></path>
+<text class="t2 num" x="776.0" y="385.0" text-anchor="start" >94k  ·  1 call</text>
+<line class="axis" x1="300" y1="88" x2="300" y2="400"/>
+<text class="t3" x="20.0" y="442.0" text-anchor="start" >Tokens: anthropic 0.34.2 Claude tokenizer (approximate). Calls: tool calls the agent makes; MCP schemas arrive with the prompt instead.</text>
+</svg>

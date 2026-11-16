@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 270" width="900" height="270" role="img" aria-label="Today's flow: where the tokens go">
+<title>Today's flow: where the tokens go</title>
+
+<style>
+  .surface { fill: #fcfcfb; }
+  .t1 { fill: #0b0b0b; } .t2 { fill: #52514e; } .t3 { fill: #898781; }
+  .grid { stroke: #e1e0d9; stroke-width: 1; } .axis { stroke: #c3c2b7; stroke-width: 1; }
+  .s1 { fill: #2a78d6; stroke: #2a78d6; } .s2 { fill: #eb6834; stroke: #eb6834; }
+  .s3 { fill: #1baf7a; stroke: #1baf7a; } .s4 { fill: #eda100; stroke: #eda100; }
+  .s5 { fill: #e87ba4; stroke: #e87ba4; } .s6 { fill: #008300; stroke: #008300; }
+  .s7 { fill: #6250d6; stroke: #6250d6; }
+  .ring { stroke: #fcfcfb; }
+  text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 12px; }
+  .title { font-size: 15px; font-weight: 600; } .num { font-variant-numeric: tabular-nums; }
+  @media (prefers-color-scheme: dark) {
+    .surface { fill: #1a1a19; }
+    .t1 { fill: #f0efec; } .t2 { fill: #c3c2b7; } .t3 { fill: #898781; }
+    .grid { stroke: #2c2c2a; } .axis { stroke: #383835; }
+    .s1 { fill: #3987e5; stroke: #3987e5; } .s2 { fill: #d95926; stroke: #d95926; }
+    .s3 { fill: #199e70; stroke: #199e70; } .s4 { fill: #c98500; stroke: #c98500; }
+    .s5 { fill: #d55181; stroke: #d55181; } .s6 { fill: #0ca30c; stroke: #0ca30c; }
+    .s7 { fill: #9085e9; stroke: #9085e9; }
+    .ring { stroke: #1a1a19; }
+  }
+</style>
+
+<rect class="surface" x="0" y="0" width="900" height="270" rx="8"/>
+<text class="title t1" x="20" y="28">Today's flow: where the tokens go</text>
+<text class="t2" x="20" y="47">describe --brief once, then describe COMMAND (median command)</text>
+<rect class="s1" x="20" y="63" width="10" height="10" rx="2"/>
+<text class="t2" x="35.0" y="72.0" text-anchor="start" >describe --brief catalog</text>
+<rect class="s3" x="206.0" y="63" width="10" height="10" rx="2"/>
+<text class="t2" x="221.0" y="72.0" text-anchor="start" >describe COMMAND: arguments</text>
+<rect class="s2" x="411.5" y="63" width="10" height="10" rx="2"/>
+<text class="t2" x="426.5" y="72.0" text-anchor="start" >describe COMMAND: output JSON Schema</text>
+<text class="t1" x="200.0" y="106.0" text-anchor="end" >Petstore (5)</text>
+<rect class="s1" x="210.0" y="92" width="384.0" height="20" rx="3"><title>Petstore (5): describe --brief catalog 799 tokens (64%)</title></rect>
+<text class="num" x="216.0" y="106.0" text-anchor="start" style="fill:#ffffff">64%</text>
+<rect class="s3" x="596.0" y="92" width="58.9" height="20" rx="3"><title>Petstore (5): describe COMMAND: arguments 126 tokens (10%)</title></rect>
+<text class="num" x="602.0" y="106.0" text-anchor="start" style="fill:#ffffff">10%</text>
+<rect class="s2" x="656.9" y="92" width="151.1" height="20" rx="3"><title>Petstore (5): describe COMMAND: output JSON Schema 317 tokens (26%)</title></rect>
+<text class="num" x="662.9" y="106.0" text-anchor="start" style="fill:#ffffff">26%</text>
+<text class="t2 num" x="818.0" y="106.0" text-anchor="start" >1.2k tok</text>
+<text class="t1" x="200.0" y="138.0" text-anchor="end" >YNAB (44)</text>
+<rect class="s1" x="210.0" y="124" width="363.4" height="20" rx="3"><title>YNAB (44): describe --brief catalog 3,122 tokens (61%)</title></rect>
+<text class="num" x="216.0" y="138.0" text-anchor="start" style="fill:#ffffff">61%</text>
+<rect class="s3" x="575.4" y="124" width="30.1" height="20" rx="3"><title>YNAB (44): describe COMMAND: arguments 274 tokens (5%)</title></rect>
+<rect class="s2" x="607.5" y="124" width="200.5" height="20" rx="3"><title>YNAB (44): describe COMMAND: output JSON Schema 1,730 tokens (34%)</title></rect>
+<text class="num" x="613.5" y="138.0" text-anchor="start" style="fill:#ffffff">34%</text>
+<text class="t2 num" x="818.0" y="138.0" text-anchor="start" >5.1k tok</text>
+<text class="t1" x="200.0" y="170.0" text-anchor="end" >PokéAPI (102)</text>
+<rect class="s1" x="210.0" y="156" width="530.0" height="20" rx="3"><title>PokéAPI (102): describe --brief catalog 5,779 tokens (89%)</title></rect>
+<text class="num" x="216.0" y="170.0" text-anchor="start" style="fill:#ffffff">89%</text>
+<rect class="s3" x="742.0" y="156" width="18.5" height="20" rx="3"><title>PokéAPI (102): describe COMMAND: arguments 223 tokens (3%)</title></rect>
+<rect class="s2" x="762.5" y="156" width="45.5" height="20" rx="3"><title>PokéAPI (102): describe COMMAND: output JSON Schema 516 tokens (8%)</title></rect>
+<text class="num" x="768.5" y="170.0" text-anchor="start" style="fill:#ffffff">8%</text>
+<text class="t2 num" x="818.0" y="170.0" text-anchor="start" >6.5k tok</text>
+<text class="t1" x="200.0" y="202.0" text-anchor="end" >GitHub REST (full) (1279)</text>
+<rect class="s1" x="210.0" y="188" width="591.8" height="20" rx="3"><title>GitHub REST (full) (1279): describe --brief catalog 86,464 tokens (99%)</title></rect>
+<text class="num" x="216.0" y="202.0" text-anchor="start" style="fill:#ffffff">99%</text>
+<rect class="s3" x="803.8" y="188" width="1.0" height="20" rx="3"><title>GitHub REST (full) (1279): describe COMMAND: arguments 386 tokens (0%)</title></rect>
+<rect class="s2" x="806.5" y="188" width="1.5" height="20" rx="3"><title>GitHub REST (full) (1279): describe COMMAND: output JSON Schema 514 tokens (1%)</title></rect>
+<text class="t2 num" x="818.0" y="202.0" text-anchor="start" >87k tok</text>
+<text class="t3" x="20.0" y="256.0" text-anchor="start" >The output schema is read before the first call but only matters after it.</text>
+</svg>
