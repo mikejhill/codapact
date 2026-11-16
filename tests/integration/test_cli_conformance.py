@@ -176,9 +176,36 @@ def test_describe_brief_is_smaller(cli: Cli) -> None:
     code, full, _ = cli("describe")
     code_brief, brief, _ = cli("describe", "--brief")
     assert code == code_brief == 0
-    assert len(brief) < len(full) / 2
+    assert len(brief) < len(full)
     commands = json.loads(brief)["commands"]
     assert all(set(c) <= {"command", "summary", "usage", "traits"} for c in commands)
+
+
+def test_describe_prints_compact_json_to_a_pipe(cli: Cli) -> None:
+    """Agents read describe through a pipe; indentation would cost a third more tokens."""
+    _, out, _ = cli("describe", "--brief")
+    assert out.count("\n") == 1 and json.loads(out)["commands"]
+
+
+def test_describe_brief_lists_groups_on_a_large_cli(
+    cli: Cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Past the limit the catalog would grow with every command; groups keep it small."""
+    from codapact.runtime import cli_tools
+
+    commands = cli.json("describe", "--brief")["commands"]
+    grouped = [c for c in commands if " " in c["command"]]
+    if not grouped:
+        pytest.skip("no command groups")
+    monkeypatch.setattr(cli_tools, "BRIEF_GROUP_LIMIT", 1)
+    brief = cli.json("describe", "--brief")
+    program = cli.example.program
+    assert f"{program} describe GROUP --brief" in " ".join(brief["start"])
+    assert all(" " not in c["command"] for c in brief["commands"])
+    total = sum(g["commands"] for g in brief["groups"]) + len(brief["commands"])
+    assert total == len(commands)
+    first = brief["groups"][0]["group"]
+    assert len(cli.json("describe", first, "--brief")) == brief["groups"][0]["commands"]
 
 
 def test_describe_brief_tells_an_agent_how_to_start(cli: Cli) -> None:
@@ -201,12 +228,15 @@ def test_describe_brief_tells_an_agent_how_to_start(cli: Cli) -> None:
     assert f"{program} auth status" in start
 
 
-def test_describe_one_command_has_a_valid_output_schema(cli: Cli) -> None:
+def test_describe_one_command_with_schemas_has_a_valid_output_schema(cli: Cli) -> None:
     commands = cli.json("describe")["commands"]
     with_schema = 0
     for command in commands:
-        entry = cli.json("describe", *command["command"].split())
+        lean = cli.json("describe", *command["command"].split())
+        assert "output_schema" not in lean  # read before the call; needed only after it
+        entry = cli.json("describe", *command["command"].split(), "--schemas")
         assert entry["command"] == command["command"]
+        assert {k: v for k, v in entry.items() if k not in ("output_schema", "output_note")} == lean
         schema = entry["output_schema"] if "output_schema" in entry else pytest.fail(entry)
         if schema is not None:
             jsonschema.Draft202012Validator.check_schema(schema)

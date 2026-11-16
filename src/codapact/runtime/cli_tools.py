@@ -115,12 +115,17 @@ def plain_usage(parser: argparse.ArgumentParser) -> str:
 
 
 def describe_command(
-    program: str, leaf: Leaf, *, api: Api | None = None, schema: bool = False
+    program: str,
+    leaf: Leaf,
+    *,
+    api: Api | None = None,
+    schema: bool = False,
+    output: bool | None = None,
 ) -> dict[str, Any]:
     """Return the machine-readable description of one command.
 
-    With ``schema`` and the API model, the entry carries a JSON Schema of the
-    command's output.
+    With ``schema`` and the API model, JSON arguments carry their JSON Schema, and
+    so does the command's output unless ``output`` is false (it defaults to ``schema``).
     """
     meta: Mapping[str, Any] = leaf.parser.get_default("meta") or {}
     positionals = {a.dest: a for a in leaf.parser._actions if not a.option_strings}
@@ -165,12 +170,13 @@ def describe_command(
                 found = _source_type(api, str(operation), source)
                 if found is not None:
                     argument["schema"] = json_schema(api, found, inputs=True)
-        result = api.operation(str(operation)).result
-        entry["output_schema"] = json_schema(api, result) if result is not None else None
-        if entry["paginated"]:
-            entry["output_note"] = (
-                "with --all the output is the list of items across pages, not this object"
-            )
+        if output is None or output:
+            result = api.operation(str(operation)).result
+            entry["output_schema"] = json_schema(api, result) if result is not None else None
+            if entry["paginated"]:
+                entry["output_note"] = (
+                    "with --all the output is the list of items across pages, not this object"
+                )
     del program
     return entry
 
@@ -191,6 +197,28 @@ def brief_command(leaf: Leaf) -> dict[str, Any]:
     return entry
 
 
+BRIEF_GROUP_LIMIT = 150
+"""Above this many commands, ``describe --brief`` lists groups instead of every command."""
+
+
+def brief_groups(parser: argparse.ArgumentParser, found: Sequence[Leaf]) -> list[dict[str, Any]]:
+    """Return each top-level group with its summary and command count."""
+    action = subcommands(parser)
+    helps = (
+        {choice.dest: str(choice.help or "") for choice in action._choices_actions}
+        if action is not None
+        else {}
+    )
+    counts: dict[str, int] = {}
+    for leaf in found:
+        if len(leaf.words) > 1:
+            counts[leaf.words[0]] = counts.get(leaf.words[0], 0) + 1
+    return [
+        {"group": name, "summary": helps.get(name, ""), "commands": count}
+        for name, count in counts.items()
+    ]
+
+
 def describe(
     parser: argparse.ArgumentParser,
     words: Sequence[str],
@@ -202,19 +230,26 @@ def describe(
 ) -> dict[str, Any] | list[dict[str, Any]]:
     """Describe every command, or the commands under ``words``.
 
-    ``brief`` keeps only names, summaries, and usage lines. Output schemas are
-    included with ``schemas``, or when ``words`` names exactly one command.
+    ``brief`` keeps only names, summaries, and usage lines; for the whole of a CLI
+    with more than ``BRIEF_GROUP_LIMIT`` commands it lists groups and only the
+    commands outside any group. One named command carries its JSON arguments'
+    schemas. ``schemas`` adds those and the output JSON Schema to every command.
     """
     prefix = tuple(words)
     found = [leaf for leaf in leaves(parser) if leaf.words[: len(prefix)] == prefix]
     if prefix and not found:
         raise CodapactError(f"no command matches {' '.join(prefix)!r}")
     single = bool(prefix) and len(found) == 1 and found[0].words == prefix
+    if brief and not prefix and len(found) > BRIEF_GROUP_LIMIT:
+        top = [brief_command(leaf) for leaf in found if len(leaf.words) == 1]
+        return {**header, "groups": brief_groups(parser, found), "commands": top}
     if brief:
         commands = [brief_command(leaf) for leaf in found]
     else:
-        schema = schemas or single
-        commands = [describe_command(parser.prog, leaf, api=api, schema=schema) for leaf in found]
+        commands = [
+            describe_command(parser.prog, leaf, api=api, schema=schemas or single, output=schemas)
+            for leaf in found
+        ]
     if single:
         return commands[0]
     if prefix:

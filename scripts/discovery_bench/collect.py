@@ -448,8 +448,10 @@ class Plan:
 
 
 TECHNIQUES = {
-    "brief": "codapact: describe --brief, then describe COMMAND",
-    "brief_lean": "proposed: compact brief, then describe COMMAND without output schema",
+    "brief": "codapact: describe --brief (then describe GROUP --brief if it lists groups), "
+    "then describe COMMAND",
+    "brief_v091": "codapact 0.9.1: indented describe --brief listing every command, then "
+    "indented describe COMMAND with its output schema",
     "group_brief": "codapact: --help, describe GROUP --brief, describe COMMAND",
     "full": "codapact: full describe",
     "help": "--help tree walk (root, group, command)",
@@ -470,6 +472,7 @@ class Catalog:
     program: str
     entries: dict[str, dict[str, Any]]
     brief: str
+    brief_v091: str
     full: str
     root_help: str
     mcp_all: str
@@ -484,9 +487,11 @@ class Catalog:
         group = command.split()[0] if " " in command else None
         p = self.program
         entry = self.entries[command]
-        brief_entry = dumps(
-            next(c for c in json.loads(self.brief)["commands"] if c["command"] == command)
-        )
+        catalog = json.loads(self.brief)
+        listed = catalog["commands"] if group is None or "groups" not in catalog else []
+        if group is not None and "groups" in catalog:
+            listed = json.loads(self.cli.text("describe", group, "--brief"))
+        brief_entry = dumps(next((c for c in listed if c["command"] == command), {}))
         full_entry = dumps(
             next(c for c in json.loads(self.full)["commands"] if c["command"] == command)
         )
@@ -508,24 +513,18 @@ class Catalog:
             else Step(f"{p} describe --brief", self.brief, relevant=brief_entry)
         )
         root = Step(f"{p} --help", self.root_help, relevant="")
-        lean_entry = {k: v for k, v in entry.items() if k != "output_schema"}
+        brief_steps = [Step(f"{p} describe --brief", self.brief, relevant=brief_entry)]
+        if "groups" in catalog and group is not None:
+            brief_steps = [
+                Step(f"{p} describe --brief (groups)", self.brief, relevant=""),
+                group_brief,
+            ]
         plans = {
-            "brief": Plan(
-                [Step(f"{p} describe --brief", self.brief, relevant=brief_entry), describe_cmd]
-            ),
-            "brief_lean": Plan(
+            "brief": Plan([*brief_steps, describe_cmd]),
+            "brief_v091": Plan(
                 [
-                    Step(
-                        f"{p} describe --brief (compact)",
-                        json.dumps(
-                            json.loads(self.brief), separators=(",", ":"), ensure_ascii=False
-                        ),
-                        relevant=brief_entry,
-                    ),
-                    Step(
-                        f"{p} describe {command} (no output schema, compact)",
-                        json.dumps(lean_entry, separators=(",", ":"), ensure_ascii=False),
-                    ),
+                    Step(f"{p} describe --brief (0.9.1)", self.brief_v091, relevant=brief_entry),
+                    Step(f"{p} describe {command} (0.9.1)", json.dumps(entry, indent=2)),
                 ]
             ),
             "group_brief": Plan([root, group_brief, describe_cmd]),
@@ -582,6 +581,19 @@ def catalog(api: Api, src: Path, work: Path) -> Catalog:
     # One call returns every entry with argument and output schemas, as describe COMMAND does.
     entries = {c["command"]: c for c in json.loads(cli.text("describe", "--schemas"))["commands"]}
     tools = [mcp_tool(entries[c]) for c in commands]
+    # 0.9.1 printed indented JSON and listed every command in --brief.
+    traits = ("read_only", "destructive", "paginated", "deprecated")
+    old_brief = {k: v for k, v in json.loads(brief).items() if k != "groups"}
+    old_brief["commands"] = [
+        {
+            "command": c,
+            "summary": entries[c]["summary"],
+            "usage": entries[c]["usage"],
+            **({"traits": t} if (t := [n for n in traits if entries[c].get(n)]) else {}),
+        }
+        for c in commands
+    ]
+    brief_v091 = json.dumps(old_brief, indent=2, ensure_ascii=False)
     names = "\n".join(f"{t['name']}" for t in tools)
     spec = spec_text = llms_index = llms_full = None
     op_of: dict[str, tuple[str, str]] = {}
@@ -615,6 +627,7 @@ def catalog(api: Api, src: Path, work: Path) -> Catalog:
         program,
         entries,
         brief,
+        brief_v091,
         full,
         cli.text("--help"),
         dumps({"tools": tools}),
@@ -753,15 +766,18 @@ def main() -> None:
                 k: {f: v for f, v in plan.measure(facts).items() if f != "steps"}
                 for k, plan in cat.plans(command).items()
             }
-        entry_sizes = {
-            c: {
-                "with_output": tokens(json.dumps(e, indent=2)),
-                "without_output": tokens(
-                    json.dumps({k: v for k, v in e.items() if k != "output_schema"}, indent=2)
-                ),
-            }
+        lean = {
+            c: {k: v for k, v in e.items() if k not in ("output_schema", "output_note")}
             for c, e in cat.entries.items()
             if c in sample
+        }
+        entry_sizes = {
+            c: {
+                "v091": tokens(json.dumps(cat.entries[c], indent=2, ensure_ascii=False)),
+                "v091_args": tokens(json.dumps(lean[c], indent=2, ensure_ascii=False)),
+                "now": tokens(json.dumps(lean[c], separators=(",", ":"), ensure_ascii=False)),
+            }
+            for c in lean
         }
         record: dict[str, Any] = {
             "title": api.title,
@@ -770,7 +786,7 @@ def main() -> None:
             "groups": len({c.split()[0] for c in commands if " " in c}),
             "sizes": {
                 "brief": tokens(cat.brief),
-                "brief_compact": tokens(json.dumps(json.loads(cat.brief), separators=(",", ":"))),
+                "brief_v091": tokens(cat.brief_v091),
                 "full": tokens(cat.full),
                 "root_help": tokens(cat.root_help),
                 "mcp_all": tokens(cat.mcp_all),
@@ -779,12 +795,12 @@ def main() -> None:
                 "openapi_bytes": len(cat.spec_text.encode()) if cat.spec_text else None,
                 "llms_index": tokens(cat.llms_index) if cat.llms_index else None,
                 "llms_full": tokens(cat.llms_full) if cat.llms_full else None,
-                "describe_command_median": statistics.median(
-                    v["with_output"] for v in entry_sizes.values()
-                ),
-                "describe_command_no_output_median": statistics.median(
-                    v["without_output"] for v in entry_sizes.values()
-                ),
+                **{
+                    f"describe_command_{key}_median": statistics.median(
+                        v[key] for v in entry_sizes.values()
+                    )
+                    for key in ("now", "v091", "v091_args")
+                },
             },
             "per_command": per_command,
         }

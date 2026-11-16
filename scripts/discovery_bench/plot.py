@@ -21,8 +21,8 @@ DATA = ROOT / "docs/discovery-efficiency/data/results.json"
 FIGS = ROOT / "docs/discovery-efficiency/figures"
 
 LABEL = {
-    "brief": "describe --brief, describe CMD (today)",
-    "brief_lean": "Lean describe (proposed)",
+    "brief": "describe --brief, describe CMD (now)",
+    "brief_v091": "Same flow in codapact 0.9.1",
     "group_brief": "--help, describe GROUP --brief, describe CMD",
     "full": "Full describe",
     "help": "--help walk",
@@ -34,8 +34,8 @@ LABEL = {
     "llms_full": "llms-full.txt",
 }
 SHORT = {
-    "brief": "brief + describe CMD (today)",
-    "brief_lean": "Lean describe (proposed)",
+    "brief": "brief + describe CMD (now)",
+    "brief_v091": "brief + describe CMD (0.9.1)",
     "group_brief": "group brief + describe CMD",
     "full": "Full describe",
     "help": "--help walk",
@@ -47,7 +47,7 @@ FAMILY = {
     "group_brief": 1,
     "full": 1,
     "help": 1,
-    "brief_lean": 4,
+    "brief_v091": 4,
     "mcp": 2,
     "mcp_search": 2,
     "openapi": 3,
@@ -56,10 +56,10 @@ FAMILY = {
     "llms_full": 3,
 }
 FAMILY_NAME = {
-    1: "codapact CLI (today)",
+    1: "codapact CLI (now)",
     2: "MCP",
     3: "Docs and specs",
-    4: "codapact CLI (proposed)",
+    4: "codapact CLI (0.9.1)",
 }
 
 STYLE = """
@@ -244,43 +244,6 @@ def loglog(
     svg.save(name)
 
 
-def stacked(
-    name: str,
-    title: str,
-    subtitle: str,
-    rows: list[tuple[str, list[float]]],
-    parts: list[tuple[int, str]],
-    note: str,
-) -> None:
-    left, right, top, bar, gap, width = 210, 90, 92, 20, 12, 900
-    height = top + len(rows) * (bar + gap) + 50
-    svg = Svg(width, height, title, subtitle)
-    svg.legend(parts, 72)
-    span = width - left - right
-    for i, (label, values) in enumerate(rows):
-        y = top + i * (bar + gap)
-        total = sum(values)
-        x = left
-        svg.text(left - 10, y + bar - 6, label, "t1", "end")
-        for (cls, pname), v in zip(parts, values, strict=True):
-            w = span * v / total
-            if w > 0:
-                svg.add(
-                    f'<rect class="s{cls}" x="{x:.1f}" y="{y}" '
-                    f'width="{max(w - 2, 1):.1f}" height="{bar}" rx="3">'
-                    f"<title>{escape(label)}: {escape(pname)} {v:,.0f} tokens "
-                    f"({v / total:.0%})</title></rect>"
-                )
-                if w > 46:
-                    svg.text(
-                        x + 6, y + bar - 6, f"{v / total:.0%}", "num", extra='style="fill:#ffffff"'
-                    )
-            x += w
-        svg.text(width - right + 8, y + bar - 6, f"{k(total)} tok", "t2 num")
-    svg.text(20, height - 14, note, "t3")
-    svg.save(name)
-
-
 def main() -> None:
     d = json.loads(DATA.read_text("utf-8"))
     ynab = d["apis"]["ynab"]
@@ -327,8 +290,8 @@ def main() -> None:
     for tech, cls in [
         ("mcp", 2),
         ("full", 1),
+        ("brief_v091", 4),
         ("brief", 1),
-        ("group_brief", 7),
         ("help", 3),
         ("mcp_search", 5),
     ]:
@@ -338,7 +301,7 @@ def main() -> None:
             if vals:
                 pts.append((a["commands"], statistics.median(vals)))
         series.append((SHORT[tech], cls, pts))
-    series[1] = (series[1][0], 6, series[1][2])  # full describe: keep yellow for "proposed"
+    series[1] = (series[1][0], 6, series[1][2])  # full describe: yellow is 0.9.1
     loglog(
         "scaling-by-api-size.svg",
         "Discovery cost as the API grows",
@@ -360,16 +323,16 @@ def main() -> None:
     }
     s = ynab["sizes"]
     skill = d["skill_tokens"]
-    desc_cmd = s["describe_command_median"]
-    lean_cmd = statistics.median(c["brief_lean"]["tokens"] for c in per) - s["brief_compact"]
+    desc_cmd = s["describe_command_now_median"]
+    old_cmd = s["describe_command_v091_median"]
     help_cmd = med["help"] - s["root_help"]
     mcp_tool = med["mcp_search"] - s["mcp_names"]
     n = range(0, 11)
     session = [
         (SHORT["mcp"], 2, [(i, s["mcp_all"]) for i in n]),
         (SHORT["full"], 6, [(i, skill + s["full"]) for i in n]),
+        (SHORT["brief_v091"], 4, [(i, skill + s["brief_v091"] + i * old_cmd) for i in n]),
         (SHORT["brief"], 1, [(i, skill + s["brief"] + i * desc_cmd) for i in n]),
-        (SHORT["brief_lean"], 4, [(i, skill + s["brief_compact"] + i * lean_cmd) for i in n]),
         (SHORT["help"], 3, [(i, s["root_help"] + i * help_cmd) for i in n]),
         (SHORT["mcp_search"], 5, [(i, s["mcp_names"] + i * mcp_tool) for i in n]),
     ]
@@ -385,35 +348,6 @@ def main() -> None:
         list(n),
         [100, 1000, 10_000, 100_000],
         xlog=False,
-    )
-
-    # 4. Where describe COMMAND's tokens go.
-    rows4 = []
-    for a in order:
-        sz = a["sizes"]
-        if a["commands"] < 3:
-            continue
-        rows4.append(
-            (
-                f"{a['title']} ({a['commands']})",
-                [
-                    sz["brief"],
-                    sz["describe_command_no_output_median"],
-                    sz["describe_command_median"] - sz["describe_command_no_output_median"],
-                ],
-            )
-        )
-    stacked(
-        "brief-flow-breakdown.svg",
-        "Today's flow: where the tokens go",
-        "describe --brief once, then describe COMMAND (median command)",
-        rows4,
-        [
-            (1, "describe --brief catalog"),
-            (3, "describe COMMAND: arguments"),
-            (2, "describe COMMAND: output JSON Schema"),
-        ],
-        "The output schema is read before the first call but only matters after it.",
     )
 
 
