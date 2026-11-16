@@ -16,11 +16,14 @@ from codapact.model.api import (
     AuthRequirement,
     CursorPagination,
     HttpBinding,
+    HttpParam,
     OffsetPagination,
     Operation,
     OperationKind,
     PagePagination,
     Pagination,
+    Param,
+    ParamLocation,
 )
 from codapact.model.authspec import scheme_from_config
 from codapact.model.rewrite import reachable_types, rename_types, unwrap
@@ -464,6 +467,95 @@ class Defaults:
         return TransformResult(api, [{"transform": self.name, "params": hits}])
 
 
+class Headers:
+    """Send fixed headers with operations (``op_glob: {Header-Name: value}``).
+
+    ```yaml
+    - headers:
+        add_attachment: {X-Atlassian-Token: no-check}
+        "POST /rest/*": {X-Requested-With: codapact}
+    ```
+
+    Keys are selectors as in ``select`` (name globs in any spelling, or path globs). Each
+    header becomes an optional header param whose default is the value, so it is sent
+    unless the caller overrides it; a header the contract already declares gets the
+    default instead.
+    """
+
+    name = "headers"
+
+    def apply(
+        self, api: Api, config: Mapping[str, Any], diagnostics: Diagnostics
+    ) -> TransformResult:
+        """Add (or default) header params on every matching HTTP operation."""
+        if not isinstance(config, Mapping) or not config:
+            raise ConfigError("headers must map operation selectors to {Header: value}")
+        for selector, headers in config.items():
+            if not isinstance(headers, Mapping) or not headers:
+                raise ConfigError(f"headers.{selector} must map header names to values")
+            for header, value in headers.items():
+                if not re.fullmatch(r"[A-Za-z0-9!#$%&'*+.^_`|~-]+", str(header)):
+                    raise ConfigError(f"headers.{selector}: invalid header name {header!r}")
+                if not isinstance(value, str | int | float) or isinstance(value, bool):
+                    raise ConfigError(f"headers.{selector}.{header} must be a string or number")
+        hits: dict[str, list[str]] = {str(key): [] for key in config}
+        operations = []
+        for op in api.operations:
+            for selector, headers in config.items():
+                if op.binding(HttpBinding) is not None and _matches(op, selector):
+                    op = _with_headers(op, headers)
+                    hits[str(selector)].append(op.name)
+            operations.append(op)
+        for key, matched in hits.items():
+            if not matched:
+                diagnostics.warning("shape.headers.unmatched", f"{key!r} matched no operation")
+        api = dataclasses.replace(api, operations=tuple(operations))
+        return TransformResult(api, [{"transform": self.name, "operations": hits}])
+
+
+def _with_headers(op: Operation, headers: Mapping[str, Any]) -> Operation:
+    binding = op.binding(HttpBinding)
+    assert binding is not None  # noqa: S101 - checked by the caller
+    params = list(op.params)
+    placements = list(binding.params)
+    for header, raw in headers.items():
+        wire, value = str(header), str(raw)
+        existing = next(
+            (
+                p
+                for p in placements
+                if p.location is ParamLocation.HEADER and p.wire_name.lower() == wire.lower()
+            ),
+            None,
+        )
+        if existing is not None:
+            params = [
+                dataclasses.replace(p, required=False, default=value)
+                if p.name == existing.param
+                else p
+                for p in params
+            ]
+            continue
+        taken = {p.name for p in params}
+        name = base = Name.parse(wire).snake
+        counter = 2
+        while name in taken:
+            name, counter = f"{base}_{counter}", counter + 1
+        params.append(
+            Param(
+                name,
+                Primitive(ScalarKind.STRING),
+                required=False,
+                docs=f"{wire} header",
+                default=value,
+            )
+        )
+        placements.append(HttpParam(name, ParamLocation.HEADER, wire))
+    new_binding = dataclasses.replace(binding, params=tuple(placements))
+    bindings = tuple(new_binding if b is binding else b for b in op.bindings)
+    return dataclasses.replace(op, params=tuple(params), bindings=bindings)
+
+
 class Auth:
     """Add auth schemes and attach them to operations (for contracts that omit them).
 
@@ -520,7 +612,16 @@ class Auth:
         )
 
 
-BUILTIN_TRANSFORMS = (Select(), Rename(), Group(), Paginate(), Defaults(), Auth(), Prune())
+BUILTIN_TRANSFORMS = (
+    Select(),
+    Rename(),
+    Group(),
+    Paginate(),
+    Defaults(),
+    Headers(),
+    Auth(),
+    Prune(),
+)
 
 
 def _pattern_renames(patterns: Any, names: set[str], diagnostics: Diagnostics) -> dict[str, str]:
