@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 470" width="900" height="470" role="img" aria-label="YNAB: context spent over a session">
+<title>YNAB: context spent over a session</title>
+
+<style>
+  .surface { fill: #fcfcfb; }
+  .t1 { fill: #0b0b0b; } .t2 { fill: #52514e; } .t3 { fill: #898781; }
+  .grid { stroke: #e1e0d9; stroke-width: 1; } .axis { stroke: #c3c2b7; stroke-width: 1; }
+  .s1 { fill: #2a78d6; stroke: #2a78d6; } .s2 { fill: #eb6834; stroke: #eb6834; }
+  .s3 { fill: #1baf7a; stroke: #1baf7a; } .s4 { fill: #eda100; stroke: #eda100; }
+  .s5 { fill: #e87ba4; stroke: #e87ba4; } .s6 { fill: #008300; stroke: #008300; }
+  .s7 { fill: #6250d6; stroke: #6250d6; }
+  .ring { stroke: #fcfcfb; }
+  text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 12px; }
+  .title { font-size: 15px; font-weight: 600; } .num { font-variant-numeric: tabular-nums; }
+  @media (prefers-color-scheme: dark) {
+    .surface { fill: #1a1a19; }
+    .t1 { fill: #f0efec; } .t2 { fill: #c3c2b7; } .t3 { fill: #898781; }
+    .grid { stroke: #2c2c2a; } .axis { stroke: #383835; }
+    .s1 { fill: #3987e5; stroke: #3987e5; } .s2 { fill: #d95926; stroke: #d95926; }
+    .s3 { fill: #199e70; stroke: #199e70; } .s4 { fill: #c98500; stroke: #c98500; }
+    .s5 { fill: #d55181; stroke: #d55181; } .s6 { fill: #0ca30c; stroke: #0ca30c; }
+    .s7 { fill: #9085e9; stroke: #9085e9; }
+    .ring { stroke: #1a1a19; }
+  }
+</style>
+
+<rect class="surface" x="0" y="0" width="900" height="470" rx="8"/>
+<text class="title t1" x="20" y="28">YNAB: context spent over a session</text>
+<text class="t2" x="20" y="47">Tokens in context after using N distinct commands (median per command); CLI rows include the coda skill</text>
+<line class="grid" x1="80" y1="400.0" x2="650" y2="400.0"/>
+<text class="t3 num" x="72.0" y="404.0" text-anchor="end" >100</text>
+<line class="grid" x1="80" y1="293.3" x2="650" y2="293.3"/>
+<text class="t3 num" x="72.0" y="297.3" text-anchor="end" >1.0k</text>
+<line class="grid" x1="80" y1="186.7" x2="650" y2="186.7"/>
+<text class="t3 num" x="72.0" y="190.7" text-anchor="end" >10k</text>
+<line class="grid" x1="80" y1="80.0" x2="650" y2="80.0"/>
+<text class="t3 num" x="72.0" y="84.0" text-anchor="end" >100k</text>
+<text class="t3 num" x="80.0" y="418.0" text-anchor="middle" >0</text>
+<text class="t3 num" x="137.0" y="418.0" text-anchor="middle" >1</text>
+<text class="t3 num" x="194.0" y="418.0" text-anchor="middle" >2</text>
+<text class="t3 num" x="251.0" y="418.0" text-anchor="middle" >3</text>
+<text class="t3 num" x="308.0" y="418.0" text-anchor="middle" >4</text>
+<text class="t3 num" x="365.0" y="418.0" text-anchor="middle" >5</text>
+<text class="t3 num" x="422.0" y="418.0" text-anchor="middle" >6</text>
+<text class="t3 num" x="479.0" y="418.0" text-anchor="middle" >7</text>
+<text class="t3 num" x="536.0" y="418.0" text-anchor="middle" >8</text>
+<text class="t3 num" x="593.0" y="418.0" text-anchor="middle" >9</text>
+<text class="t3 num" x="650.0" y="418.0" text-anchor="middle" >10</text>
+<line class="axis" x1="80" y1="400" x2="650" y2="400"/>
+<text class="t2" x="365.0" y="438.0" text-anchor="middle" >distinct commands used (0 to 10)</text>
+<text class="t2" x="18.0" y="240.0" text-anchor="middle" transform="rotate(-90 18 240)">tokens in context (log)</text>
+<path class="s2" d="M80.0,168.4 L137.0,168.4 L194.0,168.4 L251.0,168.4 L308.0,168.4 L365.0,168.4 L422.0,168.4 L479.0,168.4 L536.0,168.4 L593.0,168.4 L650.0,168.4" fill="none" stroke-width="2" style="fill:none"/>
+<circle class="s2 ring" cx="80.0" cy="168.4" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP, every tool loaded: 14,821</title></circle>
+<circle class="s2 ring" cx="137.0" cy="168.4" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP, every tool loaded: 14,821</title></circle>
+<circle class="s2 ring" cx="194.0" cy="168.4" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP, every tool loaded: 14,821</title></circle>
+<circle class="s2 ring" cx="251.0" cy="168.4" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP, every tool loaded: 14,821</title></circle>
+<circle class="s2 ring" cx="308.0" cy="168.4" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP, every tool loaded: 14,821</title></circle>
+<circle class="s2 ring" cx="365.0" cy="168.4" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP, every tool loaded: 14,821</title></circle>
+<circle class="s2 ring" cx="422.0" cy="168.4" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP, every tool loaded: 14,821</title></circle>
+<circle class="s2 ring" cx="479.0" cy="168.4" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP, every tool loaded: 14,821</title></circle>
+<circle class="s2 ring" cx="536.0" cy="168.4" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP, every tool loaded: 14,821</title></circle>
+<circle class="s2 ring" cx="593.0" cy="168.4" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP, every tool loaded: 14,821</title></circle>
+<circle class="s2 ring" cx="650.0" cy="168.4" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP, every tool loaded: 14,821</title></circle>
+<path class="s6" d="M80.0,158.4 L137.0,158.4 L194.0,158.4 L251.0,158.4 L308.0,158.4 L365.0,158.4 L422.0,158.4 L479.0,158.4 L536.0,158.4 L593.0,158.4 L650.0,158.4" fill="none" stroke-width="2" style="fill:none"/>
+<circle class="s6 ring" cx="80.0" cy="158.4" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 18,408</title></circle>
+<circle class="s6 ring" cx="137.0" cy="158.4" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 18,408</title></circle>
+<circle class="s6 ring" cx="194.0" cy="158.4" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 18,408</title></circle>
+<circle class="s6 ring" cx="251.0" cy="158.4" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 18,408</title></circle>
+<circle class="s6 ring" cx="308.0" cy="158.4" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 18,408</title></circle>
+<circle class="s6 ring" cx="365.0" cy="158.4" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 18,408</title></circle>
+<circle class="s6 ring" cx="422.0" cy="158.4" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 18,408</title></circle>
+<circle class="s6 ring" cx="479.0" cy="158.4" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 18,408</title></circle>
+<circle class="s6 ring" cx="536.0" cy="158.4" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 18,408</title></circle>
+<circle class="s6 ring" cx="593.0" cy="158.4" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 18,408</title></circle>
+<circle class="s6 ring" cx="650.0" cy="158.4" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 18,408</title></circle>
+<path class="s1" d="M80.0,234.6 L137.0,213.8 L194.0,199.6 L251.0,188.7 L308.0,179.9 L365.0,172.5 L422.0,166.1 L479.0,160.5 L536.0,155.5 L593.0,151.0 L650.0,146.9" fill="none" stroke-width="2" style="fill:none"/>
+<circle class="s1 ring" cx="80.0" cy="234.6" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (today): 3,557</title></circle>
+<circle class="s1 ring" cx="137.0" cy="213.8" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (today): 5,562</title></circle>
+<circle class="s1 ring" cx="194.0" cy="199.6" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (today): 7,566</title></circle>
+<circle class="s1 ring" cx="251.0" cy="188.7" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (today): 9,570</title></circle>
+<circle class="s1 ring" cx="308.0" cy="179.9" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (today): 11,575</title></circle>
+<circle class="s1 ring" cx="365.0" cy="172.5" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (today): 13,580</title></circle>
+<circle class="s1 ring" cx="422.0" cy="166.1" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (today): 15,584</title></circle>
+<circle class="s1 ring" cx="479.0" cy="160.5" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (today): 17,588</title></circle>
+<circle class="s1 ring" cx="536.0" cy="155.5" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (today): 19,593</title></circle>
+<circle class="s1 ring" cx="593.0" cy="151.0" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (today): 21,598</title></circle>
+<circle class="s1 ring" cx="650.0" cy="146.9" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (today): 23,602</title></circle>
+<path class="s4" d="M80.0,247.0 L137.0,243.5 L194.0,240.3 L251.0,237.3 L308.0,234.5 L365.0,231.9 L422.0,229.4 L479.0,227.0 L536.0,224.7 L593.0,222.5 L650.0,220.5" fill="none" stroke-width="2" style="fill:none"/>
+<circle class="s4 ring" cx="80.0" cy="247.0" r="4" style="stroke-width:2;paint-order:stroke"><title>Lean describe (proposed): 2,719</title></circle>
+<circle class="s4 ring" cx="137.0" cy="243.5" r="4" style="stroke-width:2;paint-order:stroke"><title>Lean describe (proposed): 2,929</title></circle>
+<circle class="s4 ring" cx="194.0" cy="240.3" r="4" style="stroke-width:2;paint-order:stroke"><title>Lean describe (proposed): 3,139</title></circle>
+<circle class="s4 ring" cx="251.0" cy="237.3" r="4" style="stroke-width:2;paint-order:stroke"><title>Lean describe (proposed): 3,349</title></circle>
+<circle class="s4 ring" cx="308.0" cy="234.5" r="4" style="stroke-width:2;paint-order:stroke"><title>Lean describe (proposed): 3,559</title></circle>
+<circle class="s4 ring" cx="365.0" cy="231.9" r="4" style="stroke-width:2;paint-order:stroke"><title>Lean describe (proposed): 3,769</title></circle>
+<circle class="s4 ring" cx="422.0" cy="229.4" r="4" style="stroke-width:2;paint-order:stroke"><title>Lean describe (proposed): 3,979</title></circle>
+<circle class="s4 ring" cx="479.0" cy="227.0" r="4" style="stroke-width:2;paint-order:stroke"><title>Lean describe (proposed): 4,189</title></circle>
+<circle class="s4 ring" cx="536.0" cy="224.7" r="4" style="stroke-width:2;paint-order:stroke"><title>Lean describe (proposed): 4,399</title></circle>
+<circle class="s4 ring" cx="593.0" cy="222.5" r="4" style="stroke-width:2;paint-order:stroke"><title>Lean describe (proposed): 4,609</title></circle>
+<circle class="s4 ring" cx="650.0" cy="220.5" r="4" style="stroke-width:2;paint-order:stroke"><title>Lean describe (proposed): 4,819</title></circle>
+<path class="s3" d="M80.0,294.9 L137.0,278.3 L194.0,266.1 L251.0,256.5 L308.0,248.5 L365.0,241.7 L422.0,235.8 L479.0,230.5 L536.0,225.8 L593.0,221.5 L650.0,217.6" fill="none" stroke-width="2" style="fill:none"/>
+<circle class="s3 ring" cx="80.0" cy="294.9" r="4" style="stroke-width:2;paint-order:stroke"><title>--help walk: 967</title></circle>
+<circle class="s3 ring" cx="137.0" cy="278.3" r="4" style="stroke-width:2;paint-order:stroke"><title>--help walk: 1,383</title></circle>
+<circle class="s3 ring" cx="194.0" cy="266.1" r="4" style="stroke-width:2;paint-order:stroke"><title>--help walk: 1,799</title></circle>
+<circle class="s3 ring" cx="251.0" cy="256.5" r="4" style="stroke-width:2;paint-order:stroke"><title>--help walk: 2,215</title></circle>
+<circle class="s3 ring" cx="308.0" cy="248.5" r="4" style="stroke-width:2;paint-order:stroke"><title>--help walk: 2,631</title></circle>
+<circle class="s3 ring" cx="365.0" cy="241.7" r="4" style="stroke-width:2;paint-order:stroke"><title>--help walk: 3,047</title></circle>
+<circle class="s3 ring" cx="422.0" cy="235.8" r="4" style="stroke-width:2;paint-order:stroke"><title>--help walk: 3,463</title></circle>
+<circle class="s3 ring" cx="479.0" cy="230.5" r="4" style="stroke-width:2;paint-order:stroke"><title>--help walk: 3,879</title></circle>
+<circle class="s3 ring" cx="536.0" cy="225.8" r="4" style="stroke-width:2;paint-order:stroke"><title>--help walk: 4,295</title></circle>
+<circle class="s3 ring" cx="593.0" cy="221.5" r="4" style="stroke-width:2;paint-order:stroke"><title>--help walk: 4,711</title></circle>
+<circle class="s3 ring" cx="650.0" cy="217.6" r="4" style="stroke-width:2;paint-order:stroke"><title>--help walk: 5,127</title></circle>
+<path class="s5" d="M80.0,356.5 L137.0,331.4 L194.0,315.3 L251.0,303.3 L308.0,293.8 L365.0,285.9 L422.0,279.2 L479.0,273.3 L536.0,268.1 L593.0,263.4 L650.0,259.2" fill="none" stroke-width="2" style="fill:none"/>
+<circle class="s5 ring" cx="80.0" cy="356.5" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP + tool search: 256</title></circle>
+<circle class="s5 ring" cx="137.0" cy="331.4" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP + tool search: 440</title></circle>
+<circle class="s5 ring" cx="194.0" cy="315.3" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP + tool search: 623</title></circle>
+<circle class="s5 ring" cx="251.0" cy="303.3" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP + tool search: 806</title></circle>
+<circle class="s5 ring" cx="308.0" cy="293.8" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP + tool search: 990</title></circle>
+<circle class="s5 ring" cx="365.0" cy="285.9" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP + tool search: 1,174</title></circle>
+<circle class="s5 ring" cx="422.0" cy="279.2" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP + tool search: 1,357</title></circle>
+<circle class="s5 ring" cx="479.0" cy="273.3" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP + tool search: 1,540</title></circle>
+<circle class="s5 ring" cx="536.0" cy="268.1" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP + tool search: 1,724</title></circle>
+<circle class="s5 ring" cx="593.0" cy="263.4" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP + tool search: 1,908</title></circle>
+<circle class="s5 ring" cx="650.0" cy="259.2" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP + tool search: 2,091</title></circle>
+<rect class="s1" x="664" y="138.8854606903693" width="10" height="3" rx="1"/>
+<text class="t1" x="680.0" y="144.9" text-anchor="start" >brief + describe CMD (today)</text>
+<rect class="s6" x="664" y="152.8854606903693" width="10" height="3" rx="1"/>
+<text class="t1" x="680.0" y="158.9" text-anchor="start" >Full describe</text>
+<rect class="s2" x="664" y="166.8854606903693" width="10" height="3" rx="1"/>
+<text class="t1" x="680.0" y="172.9" text-anchor="start" >MCP, every tool loaded</text>
+<rect class="s3" x="664" y="209.61457947302407" width="10" height="3" rx="1"/>
+<text class="t1" x="680.0" y="215.6" text-anchor="start" >--help walk</text>
+<rect class="s4" x="664" y="223.61457947302407" width="10" height="3" rx="1"/>
+<text class="t1" x="680.0" y="229.6" text-anchor="start" >Lean describe (proposed)</text>
+<rect class="s5" x="664" y="251.16223649944834" width="10" height="3" rx="1"/>
+<text class="t1" x="680.0" y="257.2" text-anchor="start" >MCP + tool search</text>
+<text class="t3" x="20.0" y="456.0" text-anchor="start" >MCP schemas are re-sent on every turn (cacheable); CLI output is read once.</text>
+</svg>

@@ -72,4 +72,6 @@ pagination live in one tested place and improve without regenerating.
 - [Agent skills](scripts/agent-plugin/README.md): `create-coda-skill` writes the thin skill
   that lets an agent use a coda's CLI. The repository is a plugin marketplace for Claude Code, GitHub
   Copilot, and Codex: `<agent> plugin marketplace add mikejhill/codapact`.
+- [Discovery efficiency](docs/discovery-efficiency/README.md): how many tokens and calls an
+  agent spends learning a generated CLI, compared with `--help`, MCP, OpenAPI, and llms.txt.
 - [Contributing](CONTRIBUTING.md)
