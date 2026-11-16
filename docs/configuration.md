@@ -74,7 +74,8 @@ YAML contracts are read with YAML 1.2 rules, as OpenAPI requires: `on`, `off`, `
 
 Request bodies are sent as JSON when the contract offers it, else as
 `multipart/form-data` or `application/x-www-form-urlencoded` (object fields become form
-fields; binary fields become file parts; a bare binary body is one part named `file`),
+fields; binary fields become file parts; a bare binary body, or a list of files, is sent as
+parts named `file`),
 else as text or raw bytes. `*/*` sends raw bytes for a binary or schema-less body and JSON
 otherwise. Binary values are `bytes`, a `str`, or a path (`os.PathLike`) in libraries, and
 `TEXT`, `@FILE` or `@-` (stdin) on the command line; a file is sent under its own name.
@@ -125,6 +126,7 @@ This is the way to generate part of a very large contract in strict mode.
 | `group` | `by: tag` or `by: path`, and/or `operations: {glob: dotted.namespace}` |
 | `paginate` | `operations`, `style: cursor` (`param`, `next`), `offset` (`param`, `limit_param`), or `page` (`param`, default `page`; `start`, default `1`), and `items` (`$` when the result itself is the list). Operations matched only by a pattern that lack the param or items are skipped with a warning; operations named exactly are errors |
 | `defaults` | `params: {"op_glob.param": value}`; the param becomes optional and the runtime sends `value` when it is omitted |
+| `headers` | `{SELECTOR: {Header-Name: value}}` (selectors as in `select`, e.g. `addAttachment` or `POST /rest/*`). Each header becomes an optional header param defaulting to the value, so it is always sent unless overridden (`--x-atlassian-token`); a header the contract declares just gets the default. For vendor headers contracts mention only in prose, such as Jira's `X-Atlassian-Token: no-check` |
 | `auth` | `schemes: {name: SPEC}` ([auth specs](#auth-specs)), `operations` (default all), `optional` (send credentials when set, call anonymously otherwise). For contracts that omit or under-declare `securitySchemes`; re-declaring an identical scheme is allowed |
 | `prune` | none; removes unreachable types (also run by `select`) |
 

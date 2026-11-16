@@ -476,7 +476,7 @@ def _argument(arg: Arg) -> list[str]:
             parts.append('action="append"')
             parts.extend(_choices(arg) if arg.choices else _scalar(arg.scalar))
             if not arg.choices:
-                parts.append(f"metavar={arg.flag.screaming!r}")
+                parts.append(f"metavar={_metavar(arg)!r}")
         case ArgKind.JSON:
             parts += ["type=json_value", 'metavar="JSON"']
         case ArgKind.SCALAR:

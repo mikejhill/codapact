@@ -509,6 +509,12 @@ class _Translator:
                 resolved = self.deref(schema, where) if isinstance(schema, dict) else schema
                 if _is_binary(resolved) or _is_object(resolved):
                     return form, schema
+                items = resolved.get("items") if _is_array(resolved) else None
+                items = self.deref(items, where) if isinstance(items, dict) else items
+                if form == "multipart/form-data" and (_is_binary(items) or _is_object(items)):
+                    # A bare list of parts names no field; these are files (servers often
+                    # describe them with their own file type) sent as repeated ``file`` parts.
+                    return form, {"type": "array", "items": {"type": "string", "format": "binary"}}
         for media in entries:
             if media.startswith("text/"):
                 return media, {"type": "string"}
@@ -1019,6 +1025,10 @@ def _oauth_flows(raw: Any) -> tuple[m.OAuthFlow, ...]:
 
 def _is_binary(schema: Any) -> bool:
     return isinstance(schema, dict) and schema.get("format") == "binary"
+
+
+def _is_array(schema: Any) -> bool:
+    return isinstance(schema, dict) and schema.get("type") == "array"
 
 
 def _is_object(schema: Any) -> bool:

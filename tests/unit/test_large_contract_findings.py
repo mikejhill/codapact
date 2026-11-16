@@ -643,3 +643,99 @@ def test_https_requests_use_the_trust_context(monkeypatch: pytest.MonkeyPatch) -
     with pytest.raises(TransportError, match="SSLError"):
         client.send(HttpRequest("GET", "https://api.example.com/", {}))
     assert used == ["corp.pem"]
+
+
+# ---------------------------------------------------------------- official Jira contract
+
+
+def test_multipart_lists_of_files_are_repeated_file_parts() -> None:
+    files = {"type": "array", "items": {"$ref": "#/components/schemas/MultipartFile"}}
+    schemas = {"MultipartFile": {"type": "object", "properties": {"name": {"type": "string"}}}}
+    result = openapi(spec(_body_op({"multipart/form-data": {"schema": files}}), schemas))
+    assert result.api is not None
+    operation = result.api.operations[0]
+    binding = operation.binding(HttpBinding)
+    assert binding is not None and binding.request_media_type == "multipart/form-data"
+    assert operation.params[0].type == t.ListOf(t.Primitive(t.ScalarKind.BYTES, "binary"))
+    body, _ = encode_body([b"a", b"b"], "multipart/form-data", "w")
+    assert body.count(b'name="file"; filename="file"') == 2
+
+
+def _header_api() -> Api:
+    upload = Operation(
+        "add_attachment",
+        OperationKind.MUTATION,
+        (
+            Param("x_atlassian_token", t.Primitive(t.ScalarKind.STRING)),
+            Param("trace", t.Primitive(t.ScalarKind.STRING), required=False),
+        ),
+        None,
+        bindings=(
+            HttpBinding(
+                "POST",
+                "/rest/api/3/issue/{key}/attachments",
+                (HttpParam("trace", ParamLocation.HEADER, "Trace"),),
+                (),
+            ),
+        ),
+    )
+    query = Operation("search", OperationKind.QUERY, (), None)
+    return Api("J", "1", (upload, query), servers=(Server("https://j.test"),))
+
+
+def test_headers_transform_adds_or_defaults_header_params() -> None:
+    from codapact.core.diagnostics import Diagnostics
+    from codapact.shaping.transforms import Headers
+
+    diagnostics = Diagnostics()
+    result = Headers().apply(
+        _header_api(),
+        {
+            "addAttachment": {"X-Atlassian-Token": "no-check", "trace": 7},
+            "POST /rest/*": {"X-Requested-With": "codapact"},
+            "search": {"X-Other": "1"},
+            "nothing": {"X-None": "1"},
+        },
+        diagnostics,
+    )
+    upload = result.api.operations[0]
+    params = {p.name: p for p in upload.params}
+    assert params["x_atlassian_token_2"].default == "no-check"
+    assert not params["x_atlassian_token_2"].required
+    assert params["trace"].default == "7"
+    assert params["x_requested_with"].default == "codapact"
+    binding = upload.binding(HttpBinding)
+    assert binding is not None
+    assert [(p.param, p.wire_name) for p in binding.params] == [
+        ("trace", "Trace"),
+        ("x_atlassian_token_2", "X-Atlassian-Token"),
+        ("x_requested_with", "X-Requested-With"),
+    ]
+    assert result.api.operations[1] == _header_api().operations[1]
+    assert [d.message for d in diagnostics] == [
+        "'search' matched no operation",
+        "'nothing' matched no operation",
+    ]
+    transport = FakeTransport(lambda r: HttpResponse(204, {}, b""))
+    RuntimeClient(result.api, transport=transport).call(
+        "add_attachment", {"x_atlassian_token": "positional"}
+    )
+    sent = transport.requests[0].headers
+    assert sent["X-Atlassian-Token"] == "no-check" and sent["Trace"] == "7"
+
+
+@pytest.mark.parametrize(
+    ("config", "message"),
+    [
+        ({}, "must map operation selectors"),
+        ({"a": []}, r"headers.a must map header names"),
+        ({"a": {"Bad Header": "x"}}, "invalid header name"),
+        ({"a": {"X-A": True}}, "must be a string or number"),
+    ],
+)
+def test_headers_transform_rejects_bad_config(config: dict[str, Any], message: str) -> None:
+    from codapact.core.diagnostics import Diagnostics
+    from codapact.shaping.transforms import Headers
+
+    with pytest.raises(ConfigError, match=message):
+        Headers().apply(_header_api(), config, Diagnostics())
