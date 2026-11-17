@@ -1,6 +1,6 @@
 {
  "codapact": "codapact 0.9.1",
- "commit": "4070dea",
+ "commit": "1b80666",
  "tokenizer": "anthropic==0.34.2 tokenizer.json (legacy Claude BPE)",
  "techniques": {
   "brief": "codapact: describe --brief (then describe GROUP --brief if it lists groups), then describe COMMAND",
@@ -5627,9 +5627,9 @@
     }
    ],
    "latency_uvx": {
-    "describe --brief": 0.25,
+    "describe --brief": 0.26,
     "describe transactions create": 0.25,
-    "transactions create --help": 0.21
+    "transactions create --help": 0.22
    }
   },
   "pokeapi": {
@@ -16327,16 +16327,16 @@
    "compact_bytes": 5951
   },
   "30 pull requests (list)": {
-   "pretty": 202915,
-   "compact": 176542,
-   "pretty_bytes": 613581,
-   "compact_bytes": 512338
+   "pretty": 202996,
+   "compact": 176622,
+   "pretty_bytes": 613942,
+   "compact_bytes": 512699
   },
   "30 commits (list)": {
-   "pretty": 98428,
-   "compact": 92068,
-   "pretty_bytes": 266846,
-   "compact_bytes": 247585
+   "pretty": 96459,
+   "compact": 90099,
+   "pretty_bytes": 259792,
+   "compact_bytes": 240531
   },
   "10 releases (list)": {
    "pretty": 38011,
