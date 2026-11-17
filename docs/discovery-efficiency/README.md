@@ -54,11 +54,11 @@ until the agent has every fact the task needs. Every reference call passes `--dr
 | MCP + tool search | 558 | 1 | plus 256 resident (every tool name), every turn |
 | `--help` walk (root, group, command) | 1,530 | 3 | `transactions create`: the fields are listed but not their units (milliunits), so it falls back to `describe COMMAND` (4.3k, 4 calls) |
 | `--help`, `describe GROUP --brief`, `describe COMMAND` | 1,689 | 3 | group-first; what large CLIs now do |
-| **`describe --brief`, `describe COMMAND`** | **2,659** | **2** | the flow in the coda skill |
+| **`describe --brief`, `describe COMMAND`** | **2,669** | **2** | the flow in the coda skill |
 | OpenAPI, targeted reads | 2,781 | 6.5 | assumes perfect grep; the agent then writes the HTTP call itself |
 | llms.txt, then one page | 4,791 | 2 | same: no execution layer |
-| The same flow in 0.9.1 | 6,772 | 2 | indented, output schema included |
-| Full `describe` | 13,836 | 1 | lacks JSON argument schemas: `transactions create` needs `describe COMMAND` too |
+| The same flow in 0.9.1 | 6,782 | 2 | indented, output schema included |
+| Full `describe` | 13,865 | 1 | lacks JSON argument schemas: `transactions create` needs `describe COMMAND` too |
 | MCP, every tool loaded | 15,034 | 0 | resident on every turn |
 | Raw OpenAPI document | 26,273 | 1 | |
 | llms-full.txt | 93,710 | 1 | |
