@@ -951,11 +951,15 @@ class CliRuntime:
                     "exit_codes": {str(k): v for k, v in EXIT_CODES.items()},
                     "start": self._start_steps(api, grouped=grouped),
                     "notes": [
-                        f"{self.program} describe COMMAND adds JSON argument schemas; "
-                        "--schemas adds the output JSON Schema.",
+                        (
+                            f"{self.program} describe COMMAND adds JSON argument schemas; "
+                            "--schemas adds the output JSON Schema."
+                        ),
                         "Commands with the read_only trait only read; others change data.",
-                        "Results print to stdout as JSON unless --output says otherwise; "
-                        "the JSON is compact unless stdout is a terminal.",
+                        (
+                            "Results print to stdout as JSON unless --output says otherwise; "
+                            "the JSON is compact unless stdout is a terminal."
+                        ),
                         "Errors print to stderr; --error-format json makes them one JSON object.",
                         "JSON arguments accept inline JSON, @file, or @- for stdin.",
                         "--dry-run prints the HTTP request without sending it.",
