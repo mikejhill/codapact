@@ -65,8 +65,8 @@
 <path class="s1" d="M300,148 h4.5 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-4.5 z"><title>--help, describe GROUP --brief, describe CMD: 1,688 tokens; 3 calls</title></path>
 <text class="t2 num" x="314.5" y="161.0" text-anchor="start" >1.7k  ·  3 calls</text>
 <text class="t1" x="290.0" y="189.0" text-anchor="end" >describe --brief, describe CMD (now)</text>
-<path class="s1" d="M300,176 h9.3 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-9.3 z"><title>describe --brief, describe CMD (now): 2,658 tokens; 2 calls</title></path>
-<text class="t2 num" x="319.3" y="189.0" text-anchor="start" >2.7k  ·  2 calls</text>
+<path class="s1" d="M300,176 h9.4 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-9.4 z"><title>describe --brief, describe CMD (now): 2,668 tokens; 2 calls</title></path>
+<text class="t2 num" x="319.4" y="189.0" text-anchor="start" >2.7k  ·  2 calls</text>
 <text class="t1" x="290.0" y="217.0" text-anchor="end" >OpenAPI, targeted reads</text>
 <path class="s3" d="M300,204 h9.9 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-9.9 z"><title>OpenAPI, targeted reads: 2,780 tokens; 6.5 calls</title></path>
 <text class="t2 num" x="319.9" y="217.0" text-anchor="start" >2.8k  ·  6.5 calls</text>
@@ -74,11 +74,11 @@
 <path class="s3" d="M300,232 h20.0 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-20.0 z"><title>llms.txt, then one page: 4,791 tokens; 2 calls</title></path>
 <text class="t2 num" x="330.0" y="245.0" text-anchor="start" >4.8k  ·  2 calls</text>
 <text class="t1" x="290.0" y="273.0" text-anchor="end" >Same flow in codapact 0.9.1</text>
-<path class="s4" d="M300,260 h30.0 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-30.0 z"><title>Same flow in codapact 0.9.1: 6,772 tokens; 2 calls</title></path>
+<path class="s4" d="M300,260 h30.0 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-30.0 z"><title>Same flow in codapact 0.9.1: 6,782 tokens; 2 calls</title></path>
 <text class="t2 num" x="340.0" y="273.0" text-anchor="start" >6.8k  ·  2 calls</text>
 <text class="t1" x="290.0" y="301.0" text-anchor="end" >Full describe</text>
-<path class="s1" d="M300,288 h65.4 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-65.4 z"><title>Full describe: 13,836 tokens; 1 call, 1/6 tasks needed describe CMD</title></path>
-<text class="t2 num" x="375.4" y="301.0" text-anchor="start" >14k  ·  1 call, 1/6 tasks needed describe CMD</text>
+<path class="s1" d="M300,288 h65.5 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-65.5 z"><title>Full describe: 13,865 tokens; 1 call, 1/6 tasks needed describe CMD</title></path>
+<text class="t2 num" x="375.5" y="301.0" text-anchor="start" >14k  ·  1 call, 1/6 tasks needed describe CMD</text>
 <text class="t1" x="290.0" y="329.0" text-anchor="end" >MCP, every tool loaded</text>
 <path class="s2" d="M300,316 h71.4 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-71.4 z"><title>MCP, every tool loaded: 15,034 tokens; 0 calls, 15k resident every turn</title></path>
 <text class="t2 num" x="381.4" y="329.0" text-anchor="start" >15k  ·  0 calls, 15k resident every turn</text>

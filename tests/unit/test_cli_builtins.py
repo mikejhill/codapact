@@ -7,10 +7,11 @@ import importlib.metadata
 import io
 import json
 import warnings
-from typing import Any
+from typing import Any, override
 
 import pytest
 
+from codapact.core.errors import CodapactError
 from codapact.core.net import HttpRequest, HttpResponse
 from codapact.model.api import Api, AuthKind, AuthScheme, Operation, OperationKind, Server
 from codapact.runtime import cli_tools
@@ -27,6 +28,7 @@ from codapact.runtime.cli import (
     _error_format,
     _improve,
     emit_error,
+    render,
     selected,
 )
 from codapact.runtime.errors import (
@@ -589,3 +591,44 @@ def test_describe_usage_has_no_color_codes(monkeypatch: pytest.MonkeyPatch) -> N
     usage = cli_tools.plain_usage(parser)
     assert usage == "acme things get [-h] thing_id"
     assert getattr(parser, "color", None) is not False  # restored
+
+
+class _Terminal(io.StringIO):
+    @override
+    def isatty(self) -> bool:
+        return True
+
+
+def test_json_is_indented_for_a_terminal_and_compact_otherwise(tmp_path) -> None:
+    """Agents and scripts read a pipe, where indentation only costs tokens and bytes."""
+    args = argparse.Namespace(config=str(tmp_path / "none.json"))
+    assert runtime().compact_json(args, io.StringIO()) is True
+    assert runtime().compact_json(args, _Terminal()) is False
+    assert runtime(ACME_JSON_STYLE="pretty").compact_json(args, io.StringIO()) is False
+    assert runtime(ACME_JSON_STYLE="COMPACT").compact_json(args, _Terminal()) is True
+    settings = tmp_path / "c.json"
+    settings.write_text('{"json_style": "pretty"}')
+    assert runtime().compact_json(argparse.Namespace(config=str(settings)), io.StringIO()) is False
+    with pytest.raises(CodapactError, match="json style must be one of auto, pretty, compact"):
+        runtime(ACME_JSON_STYLE="tight").compact_json(args, io.StringIO())
+    out = io.StringIO()
+    render({"a": [1, "é"]}, "json", out, compact=True)
+    assert out.getvalue() == '{"a":[1,"é"]}\n'
+    out = io.StringIO()
+    render({"a": 1}, "json", out)
+    assert out.getvalue() == '{\n  "a": 1\n}\n'
+    out = io.StringIO()
+    render({"a": 1}, "yaml", out, compact=True)  # only JSON changes
+    assert out.getvalue() == "a: 1\n"
+
+
+def test_doctor_json_follows_the_json_style(tmp_path) -> None:
+    out = io.StringIO()
+    argv = ["doctor", "--offline", "-o", "json"]
+    environ = {"XDG_CONFIG_HOME": str(tmp_path)}
+    assert runtime(**environ).main(tree, lambda o: None, lambda: API, argv, stdout=out) == 0
+    assert out.getvalue().count("\n") == 1
+    out = io.StringIO()
+    rt = runtime(ACME_JSON_STYLE="pretty", **environ)
+    assert rt.main(tree, lambda o: None, lambda: API, argv, stdout=out) == 0
+    assert out.getvalue().count("\n") > 1

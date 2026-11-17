@@ -24,7 +24,8 @@ codapact 0.9.1's behavior simulated from the same output as the baseline.
 
 ## What changed
 
-The first version of this report (0.9.1) found three fixes worth making. All three are in
+The first version of this report (0.9.1) found three fixes worth making, and a follow-up
+compacted command output too. All are in
 the runtime and generator now, so every coda gets them when it is regenerated.
 
 | Finding in 0.9.1 | Change | Effect |
@@ -32,6 +33,7 @@ the runtime and generator now, so every coda gets them when it is regenerated.
 | 86% of `describe COMMAND` was the output JSON Schema, which the agent needs only after the call | `describe COMMAND` returns arguments and JSON argument schemas; `--schemas` adds the output schema | YNAB median entry: 2.0k → 0.2k tokens |
 | JSON was indented | `describe` prints compact JSON when stdout is not a terminal | about a third fewer tokens in every `describe` output |
 | `describe --brief` listed every command (87k tokens on GitHub REST) | Past 150 commands it lists groups (name, summary, count); `start` tells the agent to run `describe GROUP --brief` | GitHub REST catalog: 86k → 2.3k tokens, plus one call for a group |
+| Command output was indented JSON everywhere | Every JSON result prints compact when stdout is not a terminal (see [Responses](#responses)); `<PREFIX>_JSON_STYLE=pretty\|compact` overrides | 6% to 15% fewer tokens per response |
 | `--help` gave JSON arguments no hint; the `transactions create` example omitted the required `--transaction`, so copying it failed | `--help` names each JSON argument's fields (required ones marked) and points at `describe`; examples include one option of each `requires_one_of` group | the cheapest flow says enough for most JSON bodies; examples run |
 
 Not changed: there is still no MCP target. MCP only wins with client-side tool search,
@@ -52,11 +54,11 @@ until the agent has every fact the task needs. Every reference call passes `--dr
 | MCP + tool search | 558 | 1 | plus 256 resident (every tool name), every turn |
 | `--help` walk (root, group, command) | 1,530 | 3 | `transactions create`: the fields are listed but not their units (milliunits), so it falls back to `describe COMMAND` (4.3k, 4 calls) |
 | `--help`, `describe GROUP --brief`, `describe COMMAND` | 1,689 | 3 | group-first; what large CLIs now do |
-| **`describe --brief`, `describe COMMAND`** | **2,659** | **2** | the flow in the coda skill |
+| **`describe --brief`, `describe COMMAND`** | **2,669** | **2** | the flow in the coda skill |
 | OpenAPI, targeted reads | 2,781 | 6.5 | assumes perfect grep; the agent then writes the HTTP call itself |
 | llms.txt, then one page | 4,791 | 2 | same: no execution layer |
-| The same flow in 0.9.1 | 6,772 | 2 | indented, output schema included |
-| Full `describe` | 13,836 | 1 | lacks JSON argument schemas: `transactions create` needs `describe COMMAND` too |
+| The same flow in 0.9.1 | 6,782 | 2 | indented, output schema included |
+| Full `describe` | 13,865 | 1 | lacks JSON argument schemas: `transactions create` needs `describe COMMAND` too |
 | MCP, every tool loaded | 15,034 | 0 | resident on every turn |
 | Raw OpenAPI document | 26,273 | 1 | |
 | llms-full.txt | 93,710 | 1 | |
@@ -116,12 +118,34 @@ where errors happen.
 
 Latency is not a factor: a warm `uvx codapact-ynab` call takes about 0.25 s.
 
+### Responses
+
+After discovery, an agent reads what commands return. Real GitHub REST responses for this
+repository, printed indented (as 0.9.1 did everywhere) and compact (as a pipe now gets):
+
+| Response | Indented | Compact | Saved |
+| --- | ---: | ---: | ---: |
+| repository (object) | 2.4k | 2.0k | 15% |
+| 30 pull requests (list) | 203k | 177k | 13% |
+| 30 commits (list) | 98k | 92k | 6% |
+| 10 releases (list) | 38k | 33k | 13% |
+
+Responses save less than `describe` did (11% overall against about a third), because their
+long string values outweigh the indentation. In absolute terms it is still the larger win:
+one list of 30 pull requests saves 26k tokens, more than the whole discovery flow costs.
+The bigger lever for responses remains `--pick` and `--query`, which drop fields the agent
+does not need.
+
+**When output is compact.** JSON is compact exactly when stdout is not a terminal. That is
+the case for agents that capture command output (Claude Code's shell tool, for one, is not
+a terminal), for scripts, for redirects to files, and for pipes into `jq`, which
+pretty-prints anyway. A person at a terminal still sees indented JSON. `<PREFIX>_JSON_STYLE` (or
+`json_style` in the settings file) fixes one style: `pretty` for files people read,
+`compact` for an agent that runs commands in a pseudo-terminal. YAML, table, JSON Lines and
+raw output are unchanged; JSON Lines was already compact.
+
 ## Open questions
 
-- **Response size.** Command output is still indented JSON. Responses usually dwarf
-  discovery in a session, so printing compact JSON to a pipe for every command (as `gh`
-  does) would likely save more than everything above. It changes what scripts and people
-  see in files, so it needs a decision, and this benchmark does not measure responses yet.
 - **Live agent runs.** The steps here are modeled. Running a few real agents through the
   YNAB tasks would show how often they read more than needed or retry.
 
@@ -189,7 +213,8 @@ token-counting API.
 - Agents are modeled, not run. The benchmark assumes the agent picks the right command
   (or group) from the list and reads nothing it does not need. Real agents sometimes read
   more, or guess and retry; this report does not measure retries.
-- Tool-call framing, the agent's own reasoning, and response bodies are not counted.
+- Tool-call framing and the agent's own reasoning are not counted. Response bodies are
+  measured separately under [Responses](#responses).
 - MCP tools are serialized as compact JSON. Clients wrap them in their own format, which
   adds a little per tool.
 - `openapi_slice` assumes perfect search; it is a lower bound.
@@ -207,7 +232,8 @@ uv run python scripts/discovery_bench/plot.py
 
 `collect.py` writes [`data/results.json`](data/results.json): tool versions, every API's
 sizes, per-command results for each technique, the YNAB tasks with their reference calls
-and `--dry-run` exit codes, and warm `uvx codapact-ynab` latency (skip with
-`--no-latency`). `plot.py` redraws the three SVGs in [`figures/`](figures/) from that file
+and `--dry-run` exit codes, warm `uvx codapact-ynab` latency (skip with
+`--no-latency`), and the response sizes above, fetched from the public GitHub API (skip
+with `--no-responses`). `plot.py` redraws the three SVGs in [`figures/`](figures/) from that file
 alone. To add a task, append to `YNAB_TASKS` in `collect.py`; to add an API, add it to
 `apis()`.

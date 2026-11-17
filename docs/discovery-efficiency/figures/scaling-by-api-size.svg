@@ -49,21 +49,21 @@
 <circle class="s2 ring" cx="303.6" cy="223.7" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP, every tool loaded: 15,034</title></circle>
 <circle class="s2 ring" cx="390.0" cy="224.1" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP, every tool loaded: 14,837</title></circle>
 <circle class="s2 ring" cx="650.0" cy="102.8" r="4" style="stroke-width:2;paint-order:stroke"><title>MCP, every tool loaded: 513,590</title></circle>
-<path class="s6" d="M80.0,305.3 L303.6,226.5 L390.0,219.0 L650.0,105.0" fill="none" stroke-width="2" style="fill:none"/>
-<circle class="s6 ring" cx="80.0" cy="305.3" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 1,383</title></circle>
-<circle class="s6 ring" cx="303.6" cy="226.5" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 13,836</title></circle>
-<circle class="s6 ring" cx="390.0" cy="219.0" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 17,241</title></circle>
-<circle class="s6 ring" cx="650.0" cy="105.0" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 481,548</title></circle>
-<path class="s4" d="M80.0,308.7 L303.6,260.4 L390.0,252.2 L650.0,163.4" fill="none" stroke-width="2" style="fill:none"/>
-<circle class="s4 ring" cx="80.0" cy="308.7" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (0.9.1): 1,253</title></circle>
-<circle class="s4 ring" cx="303.6" cy="260.4" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (0.9.1): 5,138</title></circle>
-<circle class="s4 ring" cx="390.0" cy="252.2" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (0.9.1): 6,528</title></circle>
-<circle class="s4 ring" cx="650.0" cy="163.4" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (0.9.1): 87,386</title></circle>
-<path class="s1" d="M80.0,328.6 L303.6,285.0 L390.0,270.4 L650.0,259.9" fill="none" stroke-width="2" style="fill:none"/>
-<circle class="s1 ring" cx="80.0" cy="328.6" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (now): 700</title></circle>
-<circle class="s1 ring" cx="303.6" cy="285.0" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (now): 2,508</title></circle>
-<circle class="s1 ring" cx="390.0" cy="270.4" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (now): 3,834</title></circle>
-<circle class="s1 ring" cx="650.0" cy="259.9" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (now): 5,220</title></circle>
+<path class="s6" d="M80.0,304.6 L303.6,226.4 L390.0,218.9 L650.0,105.0" fill="none" stroke-width="2" style="fill:none"/>
+<circle class="s6 ring" cx="80.0" cy="304.6" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 1,412</title></circle>
+<circle class="s6 ring" cx="303.6" cy="226.4" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 13,865</title></circle>
+<circle class="s6 ring" cx="390.0" cy="218.9" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 17,270</title></circle>
+<circle class="s6 ring" cx="650.0" cy="105.0" r="4" style="stroke-width:2;paint-order:stroke"><title>Full describe: 481,578</title></circle>
+<path class="s4" d="M80.0,308.4 L303.6,260.3 L390.0,252.2 L650.0,163.4" fill="none" stroke-width="2" style="fill:none"/>
+<circle class="s4 ring" cx="80.0" cy="308.4" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (0.9.1): 1,263</title></circle>
+<circle class="s4 ring" cx="303.6" cy="260.3" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (0.9.1): 5,148</title></circle>
+<circle class="s4 ring" cx="390.0" cy="252.2" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (0.9.1): 6,538</title></circle>
+<circle class="s4 ring" cx="650.0" cy="163.4" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (0.9.1): 87,396</title></circle>
+<path class="s1" d="M80.0,328.1 L303.6,284.8 L390.0,270.3 L650.0,259.8" fill="none" stroke-width="2" style="fill:none"/>
+<circle class="s1 ring" cx="80.0" cy="328.1" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (now): 710</title></circle>
+<circle class="s1 ring" cx="303.6" cy="284.8" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (now): 2,518</title></circle>
+<circle class="s1 ring" cx="390.0" cy="270.3" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (now): 3,844</title></circle>
+<circle class="s1 ring" cx="650.0" cy="259.8" r="4" style="stroke-width:2;paint-order:stroke"><title>brief + describe CMD (now): 5,230</title></circle>
 <path class="s3" d="M80.0,316.5 L303.6,305.3 L390.0,303.8 L650.0,273.5" fill="none" stroke-width="2" style="fill:none"/>
 <circle class="s3 ring" cx="80.0" cy="316.5" r="4" style="stroke-width:2;paint-order:stroke"><title>--help walk: 998</title></circle>
 <circle class="s3 ring" cx="303.6" cy="305.3" r="4" style="stroke-width:2;paint-order:stroke"><title>--help walk: 1,383</title></circle>
@@ -78,13 +78,13 @@
 <text class="t1" x="680.0" y="100.8" text-anchor="start" >MCP, every tool loaded</text>
 <rect class="s6" x="664" y="108.80584661095361" width="10" height="3" rx="1"/>
 <text class="t1" x="680.0" y="114.8" text-anchor="start" >Full describe</text>
-<rect class="s4" x="664" y="155.42347148285694" width="10" height="3" rx="1"/>
+<rect class="s4" x="664" y="155.4195550326415" width="10" height="3" rx="1"/>
 <text class="t1" x="680.0" y="161.4" text-anchor="start" >brief + describe CMD (0.9.1)</text>
 <rect class="s5" x="664" y="217.4109398427198" width="10" height="3" rx="1"/>
 <text class="t1" x="680.0" y="223.4" text-anchor="start" >MCP + tool search</text>
-<rect class="s1" x="664" y="251.86346282752493" width="10" height="3" rx="1"/>
-<text class="t1" x="680.0" y="257.9" text-anchor="start" >brief + describe CMD (now)</text>
-<rect class="s3" x="664" y="265.8634628275249" width="10" height="3" rx="1"/>
-<text class="t1" x="680.0" y="271.9" text-anchor="start" >--help walk</text>
+<rect class="s1" x="664" y="251.79796466531502" width="10" height="3" rx="1"/>
+<text class="t1" x="680.0" y="257.8" text-anchor="start" >brief + describe CMD (now)</text>
+<rect class="s3" x="664" y="265.797964665315" width="10" height="3" rx="1"/>
+<text class="t1" x="680.0" y="271.8" text-anchor="start" >--help walk</text>
 <text class="t3" x="20.0" y="456.0" text-anchor="start" >Same measurement as figure 1, over up to 60 evenly spaced commands per API.</text>
 </svg>

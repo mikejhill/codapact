@@ -693,6 +693,45 @@ def command_of(cat: Catalog, argv: list[str]) -> str:
     return best
 
 
+# Public GitHub REST responses (this repository): the shapes an agent typically reads back.
+RESPONSES = {
+    "repository (object)": "https://api.github.com/repos/mikejhill/codapact",
+    "30 pull requests (list)": (
+        "https://api.github.com/repos/mikejhill/codapact/pulls?state=all&per_page=30"
+    ),
+    "30 commits (list)": "https://api.github.com/repos/mikejhill/codapact/commits?per_page=30",
+    "10 releases (list)": "https://api.github.com/repos/mikejhill/codapact/releases?per_page=10",
+}
+
+
+def response_sizes() -> dict[str, dict[str, int]] | None:
+    """Tokens of real responses printed indented (0.9.1) and compact (now, to a pipe)."""
+    out = {}
+    for label, url in RESPONSES.items():
+        request = urllib.request.Request(  # noqa: S310 - fixed https URLs
+            url,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "codapact-discovery-bench",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as reply:  # noqa: S310 - fixed https
+                value = json.loads(reply.read())
+        except OSError as error:
+            print(f"responses: {url}: {error}", file=sys.stderr)
+            return None
+        pretty = json.dumps(value, indent=2, ensure_ascii=False)
+        compact = json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+        out[label] = {
+            "pretty": tokens(pretty),
+            "compact": tokens(compact),
+            "pretty_bytes": len(pretty.encode()),
+            "compact_bytes": len(compact.encode()),
+        }
+    return out
+
+
 def uvx_latency(runs: int = 3) -> dict[str, float] | None:
     """Warm wall-clock seconds per call of the published coda through uvx (optional)."""
     if not shutil.which("uvx"):
@@ -726,6 +765,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--no-latency", action="store_true", help="skip timing the published coda via uvx"
+    )
+    parser.add_argument(
+        "--no-responses", action="store_true", help="skip fetching public GitHub responses"
     )
     args = parser.parse_args()
 
@@ -830,6 +872,7 @@ def main() -> None:
         result["apis"][api.key] = record
         print(f"{api.key}: {len(commands)} commands, {len(sample)} measured", file=sys.stderr)
     OUT.parent.mkdir(parents=True, exist_ok=True)
+    result["responses"] = None if args.no_responses else response_sizes()
     OUT.write_text(json.dumps(result, indent=1, ensure_ascii=False) + "\n", "utf-8")
     shutil.rmtree(work, ignore_errors=True)
     print(f"wrote {OUT.relative_to(ROOT)}", file=sys.stderr)

@@ -214,4 +214,4 @@ def test_cli_query_that_matches_nothing_fails_with_a_usage_error(tmp_path: Path)
     out = io.StringIO()
     args = _parse(runtime, "--query", "data.items[].id", "-o", "json")
     assert runtime.run(args, lambda _o: None, lambda _c, _a: _VALUE, stdout=out, stderr=err) == 0
-    assert out.getvalue().split() == ["[", "1,", "2", "]"]
+    assert out.getvalue() == "[1,2]\n"  # compact: StringIO is not a terminal
