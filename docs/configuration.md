@@ -161,6 +161,7 @@ Precedence: flag, then environment, then settings file.
 | Response validation | `--response-validation strict\|warn\|off` | `<PREFIX>_RESPONSE_VALIDATION` | `response_validation` |
 | Response size limit | none | `<PREFIX>_MAX_RESPONSE_BYTES` | `max_response_bytes` (default 100 MB) |
 | Output format | `-o`/`--output json\|jsonl\|yaml\|table\|raw` | `<PREFIX>_OUTPUT` | `output` |
+| JSON style | none | `<PREFIX>_JSON_STYLE=auto\|pretty\|compact` | `json_style` |
 | Error format | `--error-format text\|json` | `<PREFIX>_ERROR_FORMAT` | `error_format` |
 | Credentials | none | `<PREFIX>_<SCHEME>`; basic uses `_USERNAME`/`_PASSWORD`; full chain under [Authentication](#authentication) | `auth_plugin`; secrets are never read from the file |
 | Option defaults | the option itself | none | `defaults: {plan_id: "…"}` (option names, `_` or `-`) |
@@ -177,6 +178,8 @@ result is the item list, so `[].name`; a path that matches nothing fails with ex
 `--allow-private`, and `--response-validation`. Command help lists them in one line;
 `<program> --help` describes each.
 `table` renders a list of objects, unwrapping single-list envelopes such as `{"data": {"items": [...]}}`.
+JSON is indented on a terminal and compact (no whitespace) when stdout is a pipe or file,
+where an agent or script reads it; `<PREFIX>_JSON_STYLE=pretty` or `compact` fixes one style.
 `jsonl` prints one JSON value per line, unwrapping the same envelopes as `table`, and streams
 `--all` results page by page. Output to a pipe or file is UTF-8 on every platform.
 

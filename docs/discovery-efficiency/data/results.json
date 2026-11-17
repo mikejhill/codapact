@@ -1,6 +1,6 @@
 {
  "codapact": "codapact 0.9.1",
- "commit": "7bbb762",
+ "commit": "4070dea",
  "tokenizer": "anthropic==0.34.2 tokenizer.json (legacy Claude BPE)",
  "techniques": {
   "brief": "codapact: describe --brief (then describe GROUP --brief if it lists groups), then describe COMMAND",
@@ -23,9 +23,9 @@
    "commands": 5,
    "groups": 1,
    "sizes": {
-    "brief": 618,
-    "brief_v091": 810,
-    "full": 1383,
+    "brief": 628,
+    "brief_v091": 820,
+    "full": 1412,
     "root_help": 748,
     "mcp_all": 379,
     "mcp_names": 21,
@@ -41,33 +41,33 @@
     "health": {
      "brief": {
       "calls": 2,
-      "tokens": 657,
+      "tokens": 667,
       "resident_tokens": 0,
-      "bytes": 2789,
+      "bytes": 2838,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 903,
+      "tokens": 913,
       "resident_tokens": 0,
-      "bytes": 3472,
+      "bytes": 3521,
       "fallback": false,
       "missing": []
      },
      "group_brief": {
       "calls": 3,
-      "tokens": 1405,
+      "tokens": 1415,
       "resident_tokens": 0,
-      "bytes": 6071,
+      "bytes": 6120,
       "fallback": false,
       "missing": []
      },
      "full": {
       "calls": 1,
-      "tokens": 1383,
+      "tokens": 1412,
       "resident_tokens": 0,
-      "bytes": 5724,
+      "bytes": 5845,
       "fallback": false,
       "missing": []
      },
@@ -131,17 +131,17 @@
     "pets list": {
      "brief": {
       "calls": 2,
-      "tokens": 740,
+      "tokens": 750,
       "resident_tokens": 0,
-      "bytes": 3121,
+      "bytes": 3170,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 1472,
+      "tokens": 1482,
       "resident_tokens": 0,
-      "bytes": 5869,
+      "bytes": 5918,
       "fallback": false,
       "missing": []
      },
@@ -155,9 +155,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 1383,
+      "tokens": 1412,
       "resident_tokens": 0,
-      "bytes": 5724,
+      "bytes": 5845,
       "fallback": false,
       "missing": []
      },
@@ -221,17 +221,17 @@
     "pets create": {
      "brief": {
       "calls": 2,
-      "tokens": 735,
+      "tokens": 745,
       "resident_tokens": 0,
-      "bytes": 3099,
+      "bytes": 3148,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 1331,
+      "tokens": 1341,
       "resident_tokens": 0,
-      "bytes": 5253,
+      "bytes": 5302,
       "fallback": false,
       "missing": []
      },
@@ -245,9 +245,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 1383,
+      "tokens": 1412,
       "resident_tokens": 0,
-      "bytes": 5724,
+      "bytes": 5845,
       "fallback": false,
       "missing": []
      },
@@ -311,17 +311,17 @@
     "pets get": {
      "brief": {
       "calls": 2,
-      "tokens": 695,
+      "tokens": 705,
       "resident_tokens": 0,
-      "bytes": 2904,
+      "bytes": 2953,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 1253,
+      "tokens": 1263,
       "resident_tokens": 0,
-      "bytes": 4924,
+      "bytes": 4973,
       "fallback": false,
       "missing": []
      },
@@ -335,9 +335,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 1383,
+      "tokens": 1412,
       "resident_tokens": 0,
-      "bytes": 5724,
+      "bytes": 5845,
       "fallback": false,
       "missing": []
      },
@@ -401,17 +401,17 @@
     "pets delete": {
      "brief": {
       "calls": 2,
-      "tokens": 700,
+      "tokens": 710,
       "resident_tokens": 0,
-      "bytes": 2933,
+      "bytes": 2982,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 943,
+      "tokens": 953,
       "resident_tokens": 0,
-      "bytes": 3604,
+      "bytes": 3653,
       "fallback": false,
       "missing": []
      },
@@ -425,9 +425,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 1383,
+      "tokens": 1412,
       "resident_tokens": 0,
-      "bytes": 5724,
+      "bytes": 5845,
       "fallback": false,
       "missing": []
      },
@@ -496,9 +496,9 @@
    "commands": 2,
    "groups": 0,
    "sizes": {
-    "brief": 507,
-    "brief_v091": 647,
-    "full": 1043,
+    "brief": 517,
+    "brief_v091": 657,
+    "full": 1071,
     "root_help": 737,
     "mcp_all": 133,
     "mcp_names": 5,
@@ -514,33 +514,33 @@
     "book-titles": {
      "brief": {
       "calls": 2,
-      "tokens": 587,
+      "tokens": 597,
       "resident_tokens": 0,
-      "bytes": 2559,
+      "bytes": 2608,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 966,
+      "tokens": 976,
       "resident_tokens": 0,
-      "bytes": 3783,
+      "bytes": 3832,
       "fallback": false,
       "missing": []
      },
      "group_brief": {
       "calls": 3,
-      "tokens": 1324,
+      "tokens": 1334,
       "resident_tokens": 0,
-      "bytes": 5770,
+      "bytes": 5819,
       "fallback": false,
       "missing": []
      },
      "full": {
       "calls": 1,
-      "tokens": 1043,
+      "tokens": 1071,
       "resident_tokens": 0,
-      "bytes": 4468,
+      "bytes": 4588,
       "fallback": false,
       "missing": []
      },
@@ -572,33 +572,33 @@
     "dashboard": {
      "brief": {
       "calls": 2,
-      "tokens": 544,
+      "tokens": 554,
       "resident_tokens": 0,
-      "bytes": 2425,
+      "bytes": 2474,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 1251,
+      "tokens": 1261,
       "resident_tokens": 0,
-      "bytes": 5291,
+      "bytes": 5340,
       "fallback": false,
       "missing": []
      },
      "group_brief": {
       "calls": 3,
-      "tokens": 1281,
+      "tokens": 1291,
       "resident_tokens": 0,
-      "bytes": 5636,
+      "bytes": 5685,
       "fallback": false,
       "missing": []
      },
      "full": {
       "calls": 1,
-      "tokens": 1043,
+      "tokens": 1071,
       "resident_tokens": 0,
-      "bytes": 4468,
+      "bytes": 4588,
       "fallback": false,
       "missing": []
      },
@@ -635,9 +635,9 @@
    "commands": 2,
    "groups": 0,
    "sizes": {
-    "brief": 382,
-    "brief_v091": 480,
-    "full": 837,
+    "brief": 392,
+    "brief_v091": 490,
+    "full": 867,
     "root_help": 733,
     "mcp_all": 130,
     "mcp_names": 4,
@@ -653,33 +653,33 @@
     "country": {
      "brief": {
       "calls": 2,
-      "tokens": 462,
+      "tokens": 472,
       "resident_tokens": 0,
-      "bytes": 2006,
+      "bytes": 2055,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 794,
+      "tokens": 804,
       "resident_tokens": 0,
-      "bytes": 3223,
+      "bytes": 3272,
       "fallback": false,
       "missing": []
      },
      "group_brief": {
       "calls": 3,
-      "tokens": 1195,
+      "tokens": 1205,
       "resident_tokens": 0,
-      "bytes": 5293,
+      "bytes": 5342,
       "fallback": false,
       "missing": []
      },
      "full": {
       "calls": 1,
-      "tokens": 837,
+      "tokens": 867,
       "resident_tokens": 0,
-      "bytes": 3538,
+      "bytes": 3660,
       "fallback": false,
       "missing": []
      },
@@ -711,33 +711,33 @@
     "continents": {
      "brief": {
       "calls": 2,
-      "tokens": 422,
+      "tokens": 432,
       "resident_tokens": 0,
-      "bytes": 1860,
+      "bytes": 1909,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 672,
+      "tokens": 682,
       "resident_tokens": 0,
-      "bytes": 2653,
+      "bytes": 2702,
       "fallback": false,
       "missing": []
      },
      "group_brief": {
       "calls": 3,
-      "tokens": 1155,
+      "tokens": 1165,
       "resident_tokens": 0,
-      "bytes": 5147,
+      "bytes": 5196,
       "fallback": false,
       "missing": []
      },
      "full": {
       "calls": 1,
-      "tokens": 837,
+      "tokens": 867,
       "resident_tokens": 0,
-      "bytes": 3538,
+      "bytes": 3660,
       "fallback": false,
       "missing": []
      },
@@ -774,9 +774,9 @@
    "commands": 44,
    "groups": 10,
    "sizes": {
-    "brief": 2297,
-    "brief_v091": 3133,
-    "full": 13836,
+    "brief": 2307,
+    "brief_v091": 3143,
+    "full": 13865,
     "root_help": 967,
     "mcp_all": 15034,
     "mcp_names": 256,
@@ -792,17 +792,17 @@
     "accounts list": {
      "brief": {
       "calls": 2,
-      "tokens": 2499,
+      "tokens": 2509,
       "resident_tokens": 0,
-      "bytes": 9990,
+      "bytes": 10039,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 4844,
+      "tokens": 4854,
       "resident_tokens": 0,
-      "bytes": 19522,
+      "bytes": 19571,
       "fallback": false,
       "missing": []
      },
@@ -816,9 +816,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -882,17 +882,17 @@
     "accounts create": {
      "brief": {
       "calls": 2,
-      "tokens": 2566,
+      "tokens": 2576,
       "resident_tokens": 0,
-      "bytes": 10272,
+      "bytes": 10321,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 4908,
+      "tokens": 4918,
       "resident_tokens": 0,
-      "bytes": 19713,
+      "bytes": 19762,
       "fallback": false,
       "missing": []
      },
@@ -906,9 +906,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -972,17 +972,17 @@
     "accounts get": {
      "brief": {
       "calls": 2,
-      "tokens": 2479,
+      "tokens": 2489,
       "resident_tokens": 0,
-      "bytes": 9891,
+      "bytes": 9940,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 4773,
+      "tokens": 4783,
       "resident_tokens": 0,
-      "bytes": 19163,
+      "bytes": 19212,
       "fallback": false,
       "missing": []
      },
@@ -996,9 +996,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -1062,17 +1062,17 @@
     "categories list": {
      "brief": {
       "calls": 2,
-      "tokens": 2525,
+      "tokens": 2535,
       "resident_tokens": 0,
-      "bytes": 10117,
+      "bytes": 10166,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6612,
+      "tokens": 6622,
       "resident_tokens": 0,
-      "bytes": 28027,
+      "bytes": 28076,
       "fallback": false,
       "missing": []
      },
@@ -1086,9 +1086,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -1152,17 +1152,17 @@
     "categories create": {
      "brief": {
       "calls": 2,
-      "tokens": 2934,
+      "tokens": 2944,
       "resident_tokens": 0,
-      "bytes": 11891,
+      "bytes": 11940,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6867,
+      "tokens": 6877,
       "resident_tokens": 0,
-      "bytes": 28878,
+      "bytes": 28927,
       "fallback": false,
       "missing": []
      },
@@ -1176,9 +1176,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -1242,17 +1242,17 @@
     "categories get": {
      "brief": {
       "calls": 2,
-      "tokens": 2502,
+      "tokens": 2512,
       "resident_tokens": 0,
-      "bytes": 9994,
+      "bytes": 10043,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6281,
+      "tokens": 6291,
       "resident_tokens": 0,
-      "bytes": 26405,
+      "bytes": 26454,
       "fallback": false,
       "missing": []
      },
@@ -1266,9 +1266,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -1332,17 +1332,17 @@
     "categories update": {
      "brief": {
       "calls": 2,
-      "tokens": 2997,
+      "tokens": 3007,
       "resident_tokens": 0,
-      "bytes": 12124,
+      "bytes": 12173,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6968,
+      "tokens": 6978,
       "resident_tokens": 0,
-      "bytes": 29239,
+      "bytes": 29288,
       "fallback": false,
       "missing": []
      },
@@ -1356,9 +1356,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -1422,17 +1422,17 @@
     "categories get-month": {
      "brief": {
       "calls": 2,
-      "tokens": 2588,
+      "tokens": 2598,
       "resident_tokens": 0,
-      "bytes": 10316,
+      "bytes": 10365,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6388,
+      "tokens": 6398,
       "resident_tokens": 0,
-      "bytes": 26793,
+      "bytes": 26842,
       "fallback": false,
       "missing": []
      },
@@ -1446,9 +1446,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -1512,17 +1512,17 @@
     "categories update-month": {
      "brief": {
       "calls": 2,
-      "tokens": 2622,
+      "tokens": 2632,
       "resident_tokens": 0,
-      "bytes": 10440,
+      "bytes": 10489,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6484,
+      "tokens": 6494,
       "resident_tokens": 0,
-      "bytes": 27185,
+      "bytes": 27234,
       "fallback": false,
       "missing": []
      },
@@ -1536,9 +1536,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -1602,17 +1602,17 @@
     "categories create-group": {
      "brief": {
       "calls": 2,
-      "tokens": 2486,
+      "tokens": 2496,
       "resident_tokens": 0,
-      "bytes": 9944,
+      "bytes": 9993,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 3767,
+      "tokens": 3777,
       "resident_tokens": 0,
-      "bytes": 14341,
+      "bytes": 14390,
       "fallback": false,
       "missing": []
      },
@@ -1626,9 +1626,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -1692,17 +1692,17 @@
     "categories update-group": {
      "brief": {
       "calls": 2,
-      "tokens": 2532,
+      "tokens": 2542,
       "resident_tokens": 0,
-      "bytes": 10103,
+      "bytes": 10152,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 3831,
+      "tokens": 3841,
       "resident_tokens": 0,
-      "bytes": 14562,
+      "bytes": 14611,
       "fallback": false,
       "missing": []
      },
@@ -1716,9 +1716,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -1782,17 +1782,17 @@
     "money-movements list": {
      "brief": {
       "calls": 2,
-      "tokens": 2443,
+      "tokens": 2453,
       "resident_tokens": 0,
-      "bytes": 9751,
+      "bytes": 9800,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 4163,
+      "tokens": 4173,
       "resident_tokens": 0,
-      "bytes": 16286,
+      "bytes": 16335,
       "fallback": false,
       "missing": []
      },
@@ -1806,9 +1806,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -1872,17 +1872,17 @@
     "money-movements list-by-month": {
      "brief": {
       "calls": 2,
-      "tokens": 2529,
+      "tokens": 2539,
       "resident_tokens": 0,
-      "bytes": 10061,
+      "bytes": 10110,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 4271,
+      "tokens": 4281,
       "resident_tokens": 0,
-      "bytes": 16662,
+      "bytes": 16711,
       "fallback": false,
       "missing": []
      },
@@ -1896,9 +1896,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -1962,17 +1962,17 @@
     "money-movements list-groups": {
      "brief": {
       "calls": 2,
-      "tokens": 2449,
+      "tokens": 2459,
       "resident_tokens": 0,
-      "bytes": 9777,
+      "bytes": 9826,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 3808,
+      "tokens": 3818,
       "resident_tokens": 0,
-      "bytes": 14536,
+      "bytes": 14585,
       "fallback": false,
       "missing": []
      },
@@ -1986,9 +1986,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -2052,17 +2052,17 @@
     "money-movements list-groups-by-month": {
      "brief": {
       "calls": 2,
-      "tokens": 2535,
+      "tokens": 2545,
       "resident_tokens": 0,
-      "bytes": 10087,
+      "bytes": 10136,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 3916,
+      "tokens": 3926,
       "resident_tokens": 0,
-      "bytes": 14912,
+      "bytes": 14961,
       "fallback": false,
       "missing": []
      },
@@ -2076,9 +2076,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -2142,17 +2142,17 @@
     "months list": {
      "brief": {
       "calls": 2,
-      "tokens": 2501,
+      "tokens": 2511,
       "resident_tokens": 0,
-      "bytes": 9992,
+      "bytes": 10041,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 4309,
+      "tokens": 4319,
       "resident_tokens": 0,
-      "bytes": 16888,
+      "bytes": 16937,
       "fallback": false,
       "missing": []
      },
@@ -2166,9 +2166,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -2232,17 +2232,17 @@
     "months get": {
      "brief": {
       "calls": 2,
-      "tokens": 2509,
+      "tokens": 2519,
       "resident_tokens": 0,
-      "bytes": 9982,
+      "bytes": 10031,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 7060,
+      "tokens": 7070,
       "resident_tokens": 0,
-      "bytes": 30052,
+      "bytes": 30101,
       "fallback": false,
       "missing": []
      },
@@ -2256,9 +2256,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -2322,17 +2322,17 @@
     "payee-locations list": {
      "brief": {
       "calls": 2,
-      "tokens": 2445,
+      "tokens": 2455,
       "resident_tokens": 0,
-      "bytes": 9751,
+      "bytes": 9800,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 3672,
+      "tokens": 3682,
       "resident_tokens": 0,
-      "bytes": 13846,
+      "bytes": 13895,
       "fallback": false,
       "missing": []
      },
@@ -2346,9 +2346,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -2412,17 +2412,17 @@
     "payee-locations get": {
      "brief": {
       "calls": 2,
-      "tokens": 2500,
+      "tokens": 2510,
       "resident_tokens": 0,
-      "bytes": 9945,
+      "bytes": 9994,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 3735,
+      "tokens": 3745,
       "resident_tokens": 0,
-      "bytes": 14032,
+      "bytes": 14081,
       "fallback": false,
       "missing": []
      },
@@ -2436,9 +2436,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -2502,17 +2502,17 @@
     "payee-locations list-by-payee": {
      "brief": {
       "calls": 2,
-      "tokens": 2507,
+      "tokens": 2517,
       "resident_tokens": 0,
-      "bytes": 9947,
+      "bytes": 9996,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 3756,
+      "tokens": 3766,
       "resident_tokens": 0,
-      "bytes": 14108,
+      "bytes": 14157,
       "fallback": false,
       "missing": []
      },
@@ -2526,9 +2526,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -2592,17 +2592,17 @@
     "payees list": {
      "brief": {
       "calls": 2,
-      "tokens": 2503,
+      "tokens": 2513,
       "resident_tokens": 0,
-      "bytes": 9982,
+      "bytes": 10031,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 3794,
+      "tokens": 3804,
       "resident_tokens": 0,
-      "bytes": 14344,
+      "bytes": 14393,
       "fallback": false,
       "missing": []
      },
@@ -2616,9 +2616,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -2682,17 +2682,17 @@
     "payees create": {
      "brief": {
       "calls": 2,
-      "tokens": 2474,
+      "tokens": 2484,
       "resident_tokens": 0,
-      "bytes": 9853,
+      "bytes": 9902,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 3755,
+      "tokens": 3765,
       "resident_tokens": 0,
-      "bytes": 14157,
+      "bytes": 14206,
       "fallback": false,
       "missing": []
      },
@@ -2706,9 +2706,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -2772,17 +2772,17 @@
     "payees get": {
      "brief": {
       "calls": 2,
-      "tokens": 2487,
+      "tokens": 2497,
       "resident_tokens": 0,
-      "bytes": 9872,
+      "bytes": 9921,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 3727,
+      "tokens": 3737,
       "resident_tokens": 0,
-      "bytes": 13974,
+      "bytes": 14023,
       "fallback": false,
       "missing": []
      },
@@ -2796,9 +2796,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -2862,17 +2862,17 @@
     "payees update": {
      "brief": {
       "calls": 2,
-      "tokens": 2522,
+      "tokens": 2532,
       "resident_tokens": 0,
-      "bytes": 9995,
+      "bytes": 10044,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 3829,
+      "tokens": 3839,
       "resident_tokens": 0,
-      "bytes": 14385,
+      "bytes": 14434,
       "fallback": false,
       "missing": []
      },
@@ -2886,9 +2886,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -2952,17 +2952,17 @@
     "plans list": {
      "brief": {
       "calls": 2,
-      "tokens": 2388,
+      "tokens": 2398,
       "resident_tokens": 0,
-      "bytes": 9590,
+      "bytes": 9639,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 5372,
+      "tokens": 5382,
       "resident_tokens": 0,
-      "bytes": 22091,
+      "bytes": 22140,
       "fallback": false,
       "missing": []
      },
@@ -2976,9 +2976,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -3042,17 +3042,17 @@
     "plans get": {
      "brief": {
       "calls": 2,
-      "tokens": 2514,
+      "tokens": 2524,
       "resident_tokens": 0,
-      "bytes": 10053,
+      "bytes": 10102,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 11440,
+      "tokens": 11450,
       "resident_tokens": 0,
-      "bytes": 50801,
+      "bytes": 50850,
       "fallback": false,
       "missing": []
      },
@@ -3066,9 +3066,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -3132,17 +3132,17 @@
     "plans get-settings": {
      "brief": {
       "calls": 2,
-      "tokens": 2441,
+      "tokens": 2451,
       "resident_tokens": 0,
-      "bytes": 9741,
+      "bytes": 9790,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 3920,
+      "tokens": 3930,
       "resident_tokens": 0,
-      "bytes": 15055,
+      "bytes": 15104,
       "fallback": false,
       "missing": []
      },
@@ -3156,9 +3156,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -3222,17 +3222,17 @@
     "scheduled-transactions list": {
      "brief": {
       "calls": 2,
-      "tokens": 2505,
+      "tokens": 2515,
       "resident_tokens": 0,
-      "bytes": 10046,
+      "bytes": 10095,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 5161,
+      "tokens": 5171,
       "resident_tokens": 0,
-      "bytes": 21378,
+      "bytes": 21427,
       "fallback": false,
       "missing": []
      },
@@ -3246,9 +3246,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -3312,17 +3312,17 @@
     "scheduled-transactions create": {
      "brief": {
       "calls": 2,
-      "tokens": 2950,
+      "tokens": 2960,
       "resident_tokens": 0,
-      "bytes": 11830,
+      "bytes": 11879,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 5733,
+      "tokens": 5743,
       "resident_tokens": 0,
-      "bytes": 23536,
+      "bytes": 23585,
       "fallback": false,
       "missing": []
      },
@@ -3336,9 +3336,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -3402,17 +3402,17 @@
     "scheduled-transactions get": {
      "brief": {
       "calls": 2,
-      "tokens": 2499,
+      "tokens": 2509,
       "resident_tokens": 0,
-      "bytes": 10016,
+      "bytes": 10065,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 5104,
+      "tokens": 5114,
       "resident_tokens": 0,
-      "bytes": 21088,
+      "bytes": 21137,
       "fallback": false,
       "missing": []
      },
@@ -3426,9 +3426,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -3492,17 +3492,17 @@
     "scheduled-transactions update": {
      "brief": {
       "calls": 2,
-      "tokens": 3000,
+      "tokens": 3010,
       "resident_tokens": 0,
-      "bytes": 12032,
+      "bytes": 12081,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 5804,
+      "tokens": 5814,
       "resident_tokens": 0,
-      "bytes": 23804,
+      "bytes": 23853,
       "fallback": false,
       "missing": []
      },
@@ -3516,9 +3516,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -3582,17 +3582,17 @@
     "scheduled-transactions delete": {
      "brief": {
       "calls": 2,
-      "tokens": 2503,
+      "tokens": 2513,
       "resident_tokens": 0,
-      "bytes": 10038,
+      "bytes": 10087,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 5114,
+      "tokens": 5124,
       "resident_tokens": 0,
-      "bytes": 21122,
+      "bytes": 21171,
       "fallback": false,
       "missing": []
      },
@@ -3606,9 +3606,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -3672,17 +3672,17 @@
     "transactions list": {
      "brief": {
       "calls": 2,
-      "tokens": 2695,
+      "tokens": 2705,
       "resident_tokens": 0,
-      "bytes": 10828,
+      "bytes": 10877,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 5964,
+      "tokens": 5974,
       "resident_tokens": 0,
-      "bytes": 24915,
+      "bytes": 24964,
       "fallback": false,
       "missing": []
      },
@@ -3696,9 +3696,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -3762,17 +3762,17 @@
     "transactions create": {
      "brief": {
       "calls": 2,
-      "tokens": 5106,
+      "tokens": 5116,
       "resident_tokens": 0,
-      "bytes": 20783,
+      "bytes": 20832,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 9332,
+      "tokens": 9342,
       "resident_tokens": 0,
-      "bytes": 42014,
+      "bytes": 42063,
       "fallback": false,
       "missing": []
      },
@@ -3786,9 +3786,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -3852,17 +3852,17 @@
     "transactions update-many": {
      "brief": {
       "calls": 2,
-      "tokens": 3637,
+      "tokens": 3647,
       "resident_tokens": 0,
-      "bytes": 14643,
+      "bytes": 14692,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 7443,
+      "tokens": 7453,
       "resident_tokens": 0,
-      "bytes": 32743,
+      "bytes": 32792,
       "fallback": false,
       "missing": []
      },
@@ -3876,9 +3876,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -3942,17 +3942,17 @@
     "transactions import": {
      "brief": {
       "calls": 2,
-      "tokens": 2483,
+      "tokens": 2493,
       "resident_tokens": 0,
-      "bytes": 10021,
+      "bytes": 10070,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 3543,
+      "tokens": 3553,
       "resident_tokens": 0,
-      "bytes": 13437,
+      "bytes": 13486,
       "fallback": false,
       "missing": []
      },
@@ -3966,9 +3966,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -4000,17 +4000,17 @@
     "transactions get": {
      "brief": {
       "calls": 2,
-      "tokens": 2479,
+      "tokens": 2489,
       "resident_tokens": 0,
-      "bytes": 9926,
+      "bytes": 9975,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 5676,
+      "tokens": 5686,
       "resident_tokens": 0,
-      "bytes": 23740,
+      "bytes": 23789,
       "fallback": false,
       "missing": []
      },
@@ -4024,9 +4024,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -4090,17 +4090,17 @@
     "transactions update": {
      "brief": {
       "calls": 2,
-      "tokens": 3534,
+      "tokens": 3544,
       "resident_tokens": 0,
-      "bytes": 14230,
+      "bytes": 14279,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 7129,
+      "tokens": 7139,
       "resident_tokens": 0,
-      "bytes": 30026,
+      "bytes": 30075,
       "fallback": false,
       "missing": []
      },
@@ -4114,9 +4114,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -4180,17 +4180,17 @@
     "transactions delete": {
      "brief": {
       "calls": 2,
-      "tokens": 2483,
+      "tokens": 2493,
       "resident_tokens": 0,
-      "bytes": 9948,
+      "bytes": 9997,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 5686,
+      "tokens": 5696,
       "resident_tokens": 0,
-      "bytes": 23774,
+      "bytes": 23823,
       "fallback": false,
       "missing": []
      },
@@ -4204,9 +4204,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -4270,17 +4270,17 @@
     "transactions list-by-account": {
      "brief": {
       "calls": 2,
-      "tokens": 2752,
+      "tokens": 2762,
       "resident_tokens": 0,
-      "bytes": 11049,
+      "bytes": 11098,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6042,
+      "tokens": 6052,
       "resident_tokens": 0,
-      "bytes": 25202,
+      "bytes": 25251,
       "fallback": false,
       "missing": []
      },
@@ -4294,9 +4294,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -4360,17 +4360,17 @@
     "transactions list-by-category": {
      "brief": {
       "calls": 2,
-      "tokens": 2753,
+      "tokens": 2763,
       "resident_tokens": 0,
-      "bytes": 11058,
+      "bytes": 11107,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 5539,
+      "tokens": 5549,
       "resident_tokens": 0,
-      "bytes": 22668,
+      "bytes": 22717,
       "fallback": false,
       "missing": []
      },
@@ -4384,9 +4384,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -4450,17 +4450,17 @@
     "transactions list-by-payee": {
      "brief": {
       "calls": 2,
-      "tokens": 2760,
+      "tokens": 2770,
       "resident_tokens": 0,
-      "bytes": 11031,
+      "bytes": 11080,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 5546,
+      "tokens": 5556,
       "resident_tokens": 0,
-      "bytes": 22641,
+      "bytes": 22690,
       "fallback": false,
       "missing": []
      },
@@ -4474,9 +4474,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -4540,17 +4540,17 @@
     "transactions list-by-month": {
      "brief": {
       "calls": 2,
-      "tokens": 2766,
+      "tokens": 2776,
       "resident_tokens": 0,
-      "bytes": 11081,
+      "bytes": 11130,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6055,
+      "tokens": 6065,
       "resident_tokens": 0,
-      "bytes": 25234,
+      "bytes": 25283,
       "fallback": false,
       "missing": []
      },
@@ -4564,9 +4564,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -4630,17 +4630,17 @@
     "user get": {
      "brief": {
       "calls": 2,
-      "tokens": 2349,
+      "tokens": 2359,
       "resident_tokens": 0,
-      "bytes": 9409,
+      "bytes": 9458,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 3409,
+      "tokens": 3419,
       "resident_tokens": 0,
-      "bytes": 12764,
+      "bytes": 12813,
       "fallback": false,
       "missing": []
      },
@@ -4654,9 +4654,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 13836,
+      "tokens": 13865,
       "resident_tokens": 0,
-      "bytes": 55349,
+      "bytes": 55466,
       "fallback": false,
       "missing": []
      },
@@ -4734,9 +4734,9 @@
      "results": {
       "brief": {
        "calls": 2,
-       "tokens": 2695,
+       "tokens": 2705,
        "resident_tokens": 0,
-       "bytes": 10828,
+       "bytes": 10877,
        "steps": [
         "codapact-ynab describe --brief",
         "codapact-ynab describe transactions list"
@@ -4746,9 +4746,9 @@
       },
       "brief_v091": {
        "calls": 2,
-       "tokens": 5964,
+       "tokens": 5974,
        "resident_tokens": 0,
-       "bytes": 24915,
+       "bytes": 24964,
        "steps": [
         "codapact-ynab describe --brief (0.9.1)",
         "codapact-ynab describe transactions list (0.9.1)"
@@ -4771,9 +4771,9 @@
       },
       "full": {
        "calls": 1,
-       "tokens": 13836,
+       "tokens": 13865,
        "resident_tokens": 0,
-       "bytes": 55349,
+       "bytes": 55466,
        "steps": [
         "codapact-ynab describe"
        ],
@@ -4879,9 +4879,9 @@
      "results": {
       "brief": {
        "calls": 2,
-       "tokens": 2503,
+       "tokens": 2513,
        "resident_tokens": 0,
-       "bytes": 9982,
+       "bytes": 10031,
        "steps": [
         "codapact-ynab describe --brief",
         "codapact-ynab describe payees list"
@@ -4891,9 +4891,9 @@
       },
       "brief_v091": {
        "calls": 2,
-       "tokens": 3794,
+       "tokens": 3804,
        "resident_tokens": 0,
-       "bytes": 14344,
+       "bytes": 14393,
        "steps": [
         "codapact-ynab describe --brief (0.9.1)",
         "codapact-ynab describe payees list (0.9.1)"
@@ -4916,9 +4916,9 @@
       },
       "full": {
        "calls": 1,
-       "tokens": 13836,
+       "tokens": 13865,
        "resident_tokens": 0,
-       "bytes": 55349,
+       "bytes": 55466,
        "steps": [
         "codapact-ynab describe"
        ],
@@ -5026,9 +5026,9 @@
      "results": {
       "brief": {
        "calls": 2,
-       "tokens": 2509,
+       "tokens": 2519,
        "resident_tokens": 0,
-       "bytes": 9982,
+       "bytes": 10031,
        "steps": [
         "codapact-ynab describe --brief",
         "codapact-ynab describe months get"
@@ -5038,9 +5038,9 @@
       },
       "brief_v091": {
        "calls": 2,
-       "tokens": 7060,
+       "tokens": 7070,
        "resident_tokens": 0,
-       "bytes": 30052,
+       "bytes": 30101,
        "steps": [
         "codapact-ynab describe --brief (0.9.1)",
         "codapact-ynab describe months get (0.9.1)"
@@ -5063,9 +5063,9 @@
       },
       "full": {
        "calls": 1,
-       "tokens": 13836,
+       "tokens": 13865,
        "resident_tokens": 0,
-       "bytes": 55349,
+       "bytes": 55466,
        "steps": [
         "codapact-ynab describe"
        ],
@@ -5178,9 +5178,9 @@
      "results": {
       "brief": {
        "calls": 2,
-       "tokens": 2622,
+       "tokens": 2632,
        "resident_tokens": 0,
-       "bytes": 10440,
+       "bytes": 10489,
        "steps": [
         "codapact-ynab describe --brief",
         "codapact-ynab describe categories update-month"
@@ -5190,9 +5190,9 @@
       },
       "brief_v091": {
        "calls": 2,
-       "tokens": 6484,
+       "tokens": 6494,
        "resident_tokens": 0,
-       "bytes": 27185,
+       "bytes": 27234,
        "steps": [
         "codapact-ynab describe --brief (0.9.1)",
         "codapact-ynab describe categories update-month (0.9.1)"
@@ -5215,9 +5215,9 @@
       },
       "full": {
        "calls": 1,
-       "tokens": 13836,
+       "tokens": 13865,
        "resident_tokens": 0,
-       "bytes": 55349,
+       "bytes": 55466,
        "steps": [
         "codapact-ynab describe"
        ],
@@ -5335,9 +5335,9 @@
      "results": {
       "brief": {
        "calls": 2,
-       "tokens": 5106,
+       "tokens": 5116,
        "resident_tokens": 0,
-       "bytes": 20783,
+       "bytes": 20832,
        "steps": [
         "codapact-ynab describe --brief",
         "codapact-ynab describe transactions create"
@@ -5347,9 +5347,9 @@
       },
       "brief_v091": {
        "calls": 2,
-       "tokens": 9332,
+       "tokens": 9342,
        "resident_tokens": 0,
-       "bytes": 42014,
+       "bytes": 42063,
        "steps": [
         "codapact-ynab describe --brief (0.9.1)",
         "codapact-ynab describe transactions create (0.9.1)"
@@ -5372,9 +5372,9 @@
       },
       "full": {
        "calls": 2,
-       "tokens": 16645,
+       "tokens": 16674,
        "resident_tokens": 0,
-       "bytes": 66935,
+       "bytes": 67052,
        "steps": [
         "codapact-ynab describe",
         "codapact-ynab describe transactions create"
@@ -5490,9 +5490,9 @@
      "results": {
       "brief": {
        "calls": 2,
-       "tokens": 3534,
+       "tokens": 3544,
        "resident_tokens": 0,
-       "bytes": 14230,
+       "bytes": 14279,
        "steps": [
         "codapact-ynab describe --brief",
         "codapact-ynab describe transactions update"
@@ -5502,9 +5502,9 @@
       },
       "brief_v091": {
        "calls": 2,
-       "tokens": 7129,
+       "tokens": 7139,
        "resident_tokens": 0,
-       "bytes": 30026,
+       "bytes": 30075,
        "steps": [
         "codapact-ynab describe --brief (0.9.1)",
         "codapact-ynab describe transactions update (0.9.1)"
@@ -5527,9 +5527,9 @@
       },
       "full": {
        "calls": 1,
-       "tokens": 13836,
+       "tokens": 13865,
        "resident_tokens": 0,
-       "bytes": 55349,
+       "bytes": 55466,
        "steps": [
         "codapact-ynab describe"
        ],
@@ -5628,7 +5628,7 @@
    ],
    "latency_uvx": {
     "describe --brief": 0.25,
-    "describe transactions create": 0.26,
+    "describe transactions create": 0.25,
     "transactions create --help": 0.21
    }
   },
@@ -5638,9 +5638,9 @@
    "commands": 102,
    "groups": 11,
    "sizes": {
-    "brief": 3690,
-    "brief_v091": 5790,
-    "full": 17241,
+    "brief": 3700,
+    "brief_v091": 5800,
+    "full": 17270,
     "root_help": 1101,
     "mcp_all": 14837,
     "mcp_names": 668,
@@ -5656,17 +5656,17 @@
     "berries list": {
      "brief": {
       "calls": 2,
-      "tokens": 3912,
+      "tokens": 3922,
       "resident_tokens": 0,
-      "bytes": 17106,
+      "bytes": 17155,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6528,
+      "tokens": 6538,
       "resident_tokens": 0,
-      "bytes": 25790,
+      "bytes": 25839,
       "fallback": false,
       "missing": []
      },
@@ -5680,9 +5680,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -5746,17 +5746,17 @@
     "berries retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3828,
+      "tokens": 3838,
       "resident_tokens": 0,
-      "bytes": 16777,
+      "bytes": 16826,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 7380,
+      "tokens": 7390,
       "resident_tokens": 0,
-      "bytes": 29880,
+      "bytes": 29929,
       "fallback": false,
       "missing": []
      },
@@ -5770,9 +5770,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -5836,17 +5836,17 @@
     "berries firmness-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3910,
+      "tokens": 3920,
       "resident_tokens": 0,
-      "bytes": 17038,
+      "bytes": 17087,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6529,
+      "tokens": 6539,
       "resident_tokens": 0,
-      "bytes": 25750,
+      "bytes": 25799,
       "fallback": false,
       "missing": []
      },
@@ -5860,9 +5860,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -5926,17 +5926,17 @@
     "berries firmness-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3826,
+      "tokens": 3836,
       "resident_tokens": 0,
-      "bytes": 16712,
+      "bytes": 16761,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6519,
+      "tokens": 6529,
       "resident_tokens": 0,
-      "bytes": 25795,
+      "bytes": 25844,
       "fallback": false,
       "missing": []
      },
@@ -5950,9 +5950,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -6016,17 +6016,17 @@
     "berries flavor-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3911,
+      "tokens": 3921,
       "resident_tokens": 0,
-      "bytes": 17088,
+      "bytes": 17137,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6531,
+      "tokens": 6541,
       "resident_tokens": 0,
-      "bytes": 25796,
+      "bytes": 25845,
       "fallback": false,
       "missing": []
      },
@@ -6040,9 +6040,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -6106,17 +6106,17 @@
     "berries flavor-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3827,
+      "tokens": 3837,
       "resident_tokens": 0,
-      "bytes": 16763,
+      "bytes": 16812,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6764,
+      "tokens": 6774,
       "resident_tokens": 0,
-      "bytes": 26916,
+      "bytes": 26965,
       "fallback": false,
       "missing": []
      },
@@ -6130,9 +6130,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -6196,17 +6196,17 @@
     "contests type-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3913,
+      "tokens": 3923,
       "resident_tokens": 0,
-      "bytes": 17085,
+      "bytes": 17134,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6542,
+      "tokens": 6552,
       "resident_tokens": 0,
-      "bytes": 25797,
+      "bytes": 25846,
       "fallback": false,
       "missing": []
      },
@@ -6220,9 +6220,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -6286,17 +6286,17 @@
     "contests type-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3828,
+      "tokens": 3838,
       "resident_tokens": 0,
-      "bytes": 16755,
+      "bytes": 16804,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6540,
+      "tokens": 6550,
       "resident_tokens": 0,
-      "bytes": 25876,
+      "bytes": 25925,
       "fallback": false,
       "missing": []
      },
@@ -6310,9 +6310,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -6376,17 +6376,17 @@
     "contests effect-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3828,
+      "tokens": 3838,
       "resident_tokens": 0,
-      "bytes": 16795,
+      "bytes": 16844,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6393,
+      "tokens": 6403,
       "resident_tokens": 0,
-      "bytes": 25272,
+      "bytes": 25321,
       "fallback": false,
       "missing": []
      },
@@ -6400,9 +6400,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -6466,17 +6466,17 @@
     "contests effect-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3792,
+      "tokens": 3802,
       "resident_tokens": 0,
-      "bytes": 16634,
+      "bytes": 16683,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6581,
+      "tokens": 6591,
       "resident_tokens": 0,
-      "bytes": 26133,
+      "bytes": 26182,
       "fallback": false,
       "missing": []
      },
@@ -6490,9 +6490,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -6556,17 +6556,17 @@
     "contests super-effect-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3834,
+      "tokens": 3844,
       "resident_tokens": 0,
-      "bytes": 16825,
+      "bytes": 16874,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6403,
+      "tokens": 6413,
       "resident_tokens": 0,
-      "bytes": 25322,
+      "bytes": 25371,
       "fallback": false,
       "missing": []
      },
@@ -6580,9 +6580,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -6646,17 +6646,17 @@
     "contests super-effect-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3798,
+      "tokens": 3808,
       "resident_tokens": 0,
-      "bytes": 16664,
+      "bytes": 16713,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6537,
+      "tokens": 6547,
       "resident_tokens": 0,
-      "bytes": 25938,
+      "bytes": 25987,
       "fallback": false,
       "missing": []
      },
@@ -6670,9 +6670,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -6736,17 +6736,17 @@
     "encounters method-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3896,
+      "tokens": 3906,
       "resident_tokens": 0,
-      "bytes": 17041,
+      "bytes": 17090,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6520,
+      "tokens": 6530,
       "resident_tokens": 0,
-      "bytes": 25765,
+      "bytes": 25814,
       "fallback": false,
       "missing": []
      },
@@ -6760,9 +6760,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -6826,17 +6826,17 @@
     "encounters method-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3811,
+      "tokens": 3821,
       "resident_tokens": 0,
-      "bytes": 16711,
+      "bytes": 16760,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6423,
+      "tokens": 6433,
       "resident_tokens": 0,
-      "bytes": 25432,
+      "bytes": 25481,
       "fallback": false,
       "missing": []
      },
@@ -6850,9 +6850,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -6916,17 +6916,17 @@
     "encounters condition-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3882,
+      "tokens": 3892,
       "resident_tokens": 0,
-      "bytes": 16993,
+      "bytes": 17042,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6501,
+      "tokens": 6511,
       "resident_tokens": 0,
-      "bytes": 25725,
+      "bytes": 25774,
       "fallback": false,
       "missing": []
      },
@@ -6940,9 +6940,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -7006,17 +7006,17 @@
     "encounters condition-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3797,
+      "tokens": 3807,
       "resident_tokens": 0,
-      "bytes": 16663,
+      "bytes": 16712,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6496,
+      "tokens": 6506,
       "resident_tokens": 0,
-      "bytes": 25814,
+      "bytes": 25863,
       "fallback": false,
       "missing": []
      },
@@ -7030,9 +7030,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -7096,17 +7096,17 @@
     "encounters condition-value-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3897,
+      "tokens": 3907,
       "resident_tokens": 0,
-      "bytes": 17062,
+      "bytes": 17111,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6520,
+      "tokens": 6530,
       "resident_tokens": 0,
-      "bytes": 25814,
+      "bytes": 25863,
       "fallback": false,
       "missing": []
      },
@@ -7120,9 +7120,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -7186,17 +7186,17 @@
     "encounters condition-value-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3812,
+      "tokens": 3822,
       "resident_tokens": 0,
-      "bytes": 16732,
+      "bytes": 16781,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6484,
+      "tokens": 6494,
       "resident_tokens": 0,
-      "bytes": 25745,
+      "bytes": 25794,
       "fallback": false,
       "missing": []
      },
@@ -7210,9 +7210,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -7276,17 +7276,17 @@
     "encounters pokemon-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3800,
+      "tokens": 3810,
       "resident_tokens": 0,
-      "bytes": 16648,
+      "bytes": 16697,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6947,
+      "tokens": 6957,
       "resident_tokens": 0,
-      "bytes": 27760,
+      "bytes": 27809,
       "fallback": false,
       "missing": []
      },
@@ -7300,9 +7300,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -7366,17 +7366,17 @@
     "evolution chain-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3849,
+      "tokens": 3859,
       "resident_tokens": 0,
-      "bytes": 16931,
+      "bytes": 16980,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6415,
+      "tokens": 6425,
       "resident_tokens": 0,
-      "bytes": 25416,
+      "bytes": 25465,
       "fallback": false,
       "missing": []
      },
@@ -7390,9 +7390,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -7456,17 +7456,17 @@
     "evolution chain-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3813,
+      "tokens": 3823,
       "resident_tokens": 0,
-      "bytes": 16770,
+      "bytes": 16819,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 10131,
+      "tokens": 10141,
       "resident_tokens": 0,
-      "bytes": 42706,
+      "bytes": 42755,
       "fallback": false,
       "missing": []
      },
@@ -7480,9 +7480,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -7546,17 +7546,17 @@
     "evolution trigger-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3909,
+      "tokens": 3919,
       "resident_tokens": 0,
-      "bytes": 17088,
+      "bytes": 17137,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6529,
+      "tokens": 6539,
       "resident_tokens": 0,
-      "bytes": 25816,
+      "bytes": 25865,
       "fallback": false,
       "missing": []
      },
@@ -7570,9 +7570,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -7636,17 +7636,17 @@
     "evolution trigger-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3824,
+      "tokens": 3834,
       "resident_tokens": 0,
-      "bytes": 16758,
+      "bytes": 16807,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6528,
+      "tokens": 6538,
       "resident_tokens": 0,
-      "bytes": 25916,
+      "bytes": 25965,
       "fallback": false,
       "missing": []
      },
@@ -7660,9 +7660,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -7726,17 +7726,17 @@
     "evolution variable-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3920,
+      "tokens": 3930,
       "resident_tokens": 0,
-      "bytes": 17159,
+      "bytes": 17208,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6535,
+      "tokens": 6545,
       "resident_tokens": 0,
-      "bytes": 25887,
+      "bytes": 25936,
       "fallback": false,
       "missing": []
      },
@@ -7750,9 +7750,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -7816,17 +7816,17 @@
     "evolution variable-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3835,
+      "tokens": 3845,
       "resident_tokens": 0,
-      "bytes": 16829,
+      "bytes": 16878,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6752,
+      "tokens": 6762,
       "resident_tokens": 0,
-      "bytes": 27075,
+      "bytes": 27124,
       "fallback": false,
       "missing": []
      },
@@ -7840,9 +7840,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -7906,17 +7906,17 @@
     "games generation-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3913,
+      "tokens": 3923,
       "resident_tokens": 0,
-      "bytes": 17127,
+      "bytes": 17176,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6539,
+      "tokens": 6549,
       "resident_tokens": 0,
-      "bytes": 25839,
+      "bytes": 25888,
       "fallback": false,
       "missing": []
      },
@@ -7930,9 +7930,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -7996,17 +7996,17 @@
     "games generation-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3827,
+      "tokens": 3837,
       "resident_tokens": 0,
-      "bytes": 16797,
+      "bytes": 16846,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 7301,
+      "tokens": 7311,
       "resident_tokens": 0,
-      "bytes": 29481,
+      "bytes": 29530,
       "fallback": false,
       "missing": []
      },
@@ -8020,9 +8020,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -8086,17 +8086,17 @@
     "games pokedex-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3943,
+      "tokens": 3953,
       "resident_tokens": 0,
-      "bytes": 17222,
+      "bytes": 17271,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6571,
+      "tokens": 6581,
       "resident_tokens": 0,
-      "bytes": 25918,
+      "bytes": 25967,
       "fallback": false,
       "missing": []
      },
@@ -8110,9 +8110,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -8176,17 +8176,17 @@
     "games pokedex-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3858,
+      "tokens": 3868,
       "resident_tokens": 0,
-      "bytes": 16893,
+      "bytes": 16942,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 7223,
+      "tokens": 7233,
       "resident_tokens": 0,
-      "bytes": 28928,
+      "bytes": 28977,
       "fallback": false,
       "missing": []
      },
@@ -8200,9 +8200,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -8266,17 +8266,17 @@
     "games version-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3876,
+      "tokens": 3886,
       "resident_tokens": 0,
-      "bytes": 16934,
+      "bytes": 16983,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6487,
+      "tokens": 6497,
       "resident_tokens": 0,
-      "bytes": 25622,
+      "bytes": 25671,
       "fallback": false,
       "missing": []
      },
@@ -8290,9 +8290,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -8356,17 +8356,17 @@
     "games version-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3791,
+      "tokens": 3801,
       "resident_tokens": 0,
-      "bytes": 16604,
+      "bytes": 16653,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6496,
+      "tokens": 6506,
       "resident_tokens": 0,
-      "bytes": 25744,
+      "bytes": 25793,
       "fallback": false,
       "missing": []
      },
@@ -8380,9 +8380,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -8446,17 +8446,17 @@
     "games version-group-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3877,
+      "tokens": 3887,
       "resident_tokens": 0,
-      "bytes": 16966,
+      "bytes": 17015,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6492,
+      "tokens": 6502,
       "resident_tokens": 0,
-      "bytes": 25674,
+      "bytes": 25723,
       "fallback": false,
       "missing": []
      },
@@ -8470,9 +8470,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -8536,17 +8536,17 @@
     "games version-group-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3792,
+      "tokens": 3802,
       "resident_tokens": 0,
-      "bytes": 16636,
+      "bytes": 16685,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6936,
+      "tokens": 6946,
       "resident_tokens": 0,
-      "bytes": 27812,
+      "bytes": 27861,
       "fallback": false,
       "missing": []
      },
@@ -8560,9 +8560,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -8626,17 +8626,17 @@
     "items list": {
      "brief": {
       "calls": 2,
-      "tokens": 3907,
+      "tokens": 3917,
       "resident_tokens": 0,
-      "bytes": 17077,
+      "bytes": 17126,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6523,
+      "tokens": 6533,
       "resident_tokens": 0,
-      "bytes": 25757,
+      "bytes": 25806,
       "fallback": false,
       "missing": []
      },
@@ -8650,9 +8650,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -8716,17 +8716,17 @@
     "items retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3822,
+      "tokens": 3832,
       "resident_tokens": 0,
-      "bytes": 16747,
+      "bytes": 16796,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 8978,
+      "tokens": 8988,
       "resident_tokens": 0,
-      "bytes": 37187,
+      "bytes": 37236,
       "fallback": false,
       "missing": []
      },
@@ -8740,9 +8740,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -8806,17 +8806,17 @@
     "items category-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3875,
+      "tokens": 3885,
       "resident_tokens": 0,
-      "bytes": 16966,
+      "bytes": 17015,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6490,
+      "tokens": 6500,
       "resident_tokens": 0,
-      "bytes": 25674,
+      "bytes": 25723,
       "fallback": false,
       "missing": []
      },
@@ -8830,9 +8830,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -8896,17 +8896,17 @@
     "items category-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3790,
+      "tokens": 3800,
       "resident_tokens": 0,
-      "bytes": 16635,
+      "bytes": 16684,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6613,
+      "tokens": 6623,
       "resident_tokens": 0,
-      "bytes": 26303,
+      "bytes": 26352,
       "fallback": false,
       "missing": []
      },
@@ -8920,9 +8920,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -8986,17 +8986,17 @@
     "items attribute-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3884,
+      "tokens": 3894,
       "resident_tokens": 0,
-      "bytes": 16991,
+      "bytes": 17040,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6500,
+      "tokens": 6510,
       "resident_tokens": 0,
-      "bytes": 25703,
+      "bytes": 25752,
       "fallback": false,
       "missing": []
      },
@@ -9010,9 +9010,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -9076,17 +9076,17 @@
     "items attribute-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3800,
+      "tokens": 3810,
       "resident_tokens": 0,
-      "bytes": 16661,
+      "bytes": 16710,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6632,
+      "tokens": 6642,
       "resident_tokens": 0,
-      "bytes": 26475,
+      "bytes": 26524,
       "fallback": false,
       "missing": []
      },
@@ -9100,9 +9100,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -9166,17 +9166,17 @@
     "items fling-effect-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3886,
+      "tokens": 3896,
       "resident_tokens": 0,
-      "bytes": 16977,
+      "bytes": 17026,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6509,
+      "tokens": 6519,
       "resident_tokens": 0,
-      "bytes": 25697,
+      "bytes": 25746,
       "fallback": false,
       "missing": []
      },
@@ -9190,9 +9190,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -9256,17 +9256,17 @@
     "items fling-effect-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3801,
+      "tokens": 3811,
       "resident_tokens": 0,
-      "bytes": 16647,
+      "bytes": 16696,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6508,
+      "tokens": 6518,
       "resident_tokens": 0,
-      "bytes": 25783,
+      "bytes": 25832,
       "fallback": false,
       "missing": []
      },
@@ -9280,9 +9280,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -9346,17 +9346,17 @@
     "items pocket-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3876,
+      "tokens": 3886,
       "resident_tokens": 0,
-      "bytes": 16953,
+      "bytes": 17002,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6495,
+      "tokens": 6505,
       "resident_tokens": 0,
-      "bytes": 25653,
+      "bytes": 25702,
       "fallback": false,
       "missing": []
      },
@@ -9370,9 +9370,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -9436,17 +9436,17 @@
     "items pocket-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3791,
+      "tokens": 3801,
       "resident_tokens": 0,
-      "bytes": 16623,
+      "bytes": 16672,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6489,
+      "tokens": 6499,
       "resident_tokens": 0,
-      "bytes": 25737,
+      "bytes": 25786,
       "fallback": false,
       "missing": []
      },
@@ -9460,9 +9460,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -9526,17 +9526,17 @@
     "items currency-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3868,
+      "tokens": 3878,
       "resident_tokens": 0,
-      "bytes": 16918,
+      "bytes": 16967,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6479,
+      "tokens": 6489,
       "resident_tokens": 0,
-      "bytes": 25610,
+      "bytes": 25659,
       "fallback": false,
       "missing": []
      },
@@ -9550,9 +9550,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -9616,17 +9616,17 @@
     "items currency-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3783,
+      "tokens": 3793,
       "resident_tokens": 0,
-      "bytes": 16587,
+      "bytes": 16636,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6314,
+      "tokens": 6324,
       "resident_tokens": 0,
-      "bytes": 24936,
+      "bytes": 24985,
       "fallback": false,
       "missing": []
      },
@@ -9640,9 +9640,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -9706,17 +9706,17 @@
     "location list": {
      "brief": {
       "calls": 2,
-      "tokens": 3880,
+      "tokens": 3890,
       "resident_tokens": 0,
-      "bytes": 16993,
+      "bytes": 17042,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6491,
+      "tokens": 6501,
       "resident_tokens": 0,
-      "bytes": 25685,
+      "bytes": 25734,
       "fallback": false,
       "missing": []
      },
@@ -9730,9 +9730,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -9796,17 +9796,17 @@
     "location retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3795,
+      "tokens": 3805,
       "resident_tokens": 0,
-      "bytes": 16663,
+      "bytes": 16712,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6918,
+      "tokens": 6928,
       "resident_tokens": 0,
-      "bytes": 27770,
+      "bytes": 27819,
       "fallback": false,
       "missing": []
      },
@@ -9820,9 +9820,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -9886,17 +9886,17 @@
     "location area-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3841,
+      "tokens": 3851,
       "resident_tokens": 0,
-      "bytes": 16856,
+      "bytes": 16905,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6444,
+      "tokens": 6454,
       "resident_tokens": 0,
-      "bytes": 25510,
+      "bytes": 25559,
       "fallback": false,
       "missing": []
      },
@@ -9910,9 +9910,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -9976,17 +9976,17 @@
     "location area-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3804,
+      "tokens": 3814,
       "resident_tokens": 0,
-      "bytes": 16705,
+      "bytes": 16754,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 8124,
+      "tokens": 8134,
       "resident_tokens": 0,
-      "bytes": 33186,
+      "bytes": 33235,
       "fallback": false,
       "missing": []
      },
@@ -10000,9 +10000,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -10066,17 +10066,17 @@
     "location pal-park-area-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3894,
+      "tokens": 3904,
       "resident_tokens": 0,
-      "bytes": 17018,
+      "bytes": 17067,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6518,
+      "tokens": 6528,
       "resident_tokens": 0,
-      "bytes": 25726,
+      "bytes": 25775,
       "fallback": false,
       "missing": []
      },
@@ -10090,9 +10090,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -10156,17 +10156,17 @@
     "location pal-park-area-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3809,
+      "tokens": 3819,
       "resident_tokens": 0,
-      "bytes": 16688,
+      "bytes": 16737,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6739,
+      "tokens": 6749,
       "resident_tokens": 0,
-      "bytes": 26757,
+      "bytes": 26806,
       "fallback": false,
       "missing": []
      },
@@ -10180,9 +10180,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -10246,17 +10246,17 @@
     "location region-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3894,
+      "tokens": 3904,
       "resident_tokens": 0,
-      "bytes": 17052,
+      "bytes": 17101,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6515,
+      "tokens": 6525,
       "resident_tokens": 0,
-      "bytes": 25744,
+      "bytes": 25793,
       "fallback": false,
       "missing": []
      },
@@ -10270,9 +10270,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -10336,17 +10336,17 @@
     "location region-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3809,
+      "tokens": 3819,
       "resident_tokens": 0,
-      "bytes": 16722,
+      "bytes": 16771,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 7010,
+      "tokens": 7020,
       "resident_tokens": 0,
-      "bytes": 28128,
+      "bytes": 28177,
       "fallback": false,
       "missing": []
      },
@@ -10360,9 +10360,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -10426,17 +10426,17 @@
     "machines list": {
      "brief": {
       "calls": 2,
-      "tokens": 3846,
+      "tokens": 3856,
       "resident_tokens": 0,
-      "bytes": 16892,
+      "bytes": 16941,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6408,
+      "tokens": 6418,
       "resident_tokens": 0,
-      "bytes": 25349,
+      "bytes": 25398,
       "fallback": false,
       "missing": []
      },
@@ -10450,9 +10450,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -10516,17 +10516,17 @@
     "machines retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3810,
+      "tokens": 3820,
       "resident_tokens": 0,
-      "bytes": 16731,
+      "bytes": 16780,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6444,
+      "tokens": 6454,
       "resident_tokens": 0,
-      "bytes": 25486,
+      "bytes": 25535,
       "fallback": false,
       "missing": []
      },
@@ -10540,9 +10540,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -10606,17 +10606,17 @@
     "moves list": {
      "brief": {
       "calls": 2,
-      "tokens": 3910,
+      "tokens": 3920,
       "resident_tokens": 0,
-      "bytes": 17120,
+      "bytes": 17169,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6531,
+      "tokens": 6541,
       "resident_tokens": 0,
-      "bytes": 25804,
+      "bytes": 25853,
       "fallback": false,
       "missing": []
      },
@@ -10630,9 +10630,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -10696,17 +10696,17 @@
     "moves retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3825,
+      "tokens": 3835,
       "resident_tokens": 0,
-      "bytes": 16790,
+      "bytes": 16839,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 11230,
+      "tokens": 11240,
       "resident_tokens": 0,
-      "bytes": 48059,
+      "bytes": 48108,
       "fallback": false,
       "missing": []
      },
@@ -10720,9 +10720,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -10786,17 +10786,17 @@
     "moves ailment-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3912,
+      "tokens": 3922,
       "resident_tokens": 0,
-      "bytes": 17061,
+      "bytes": 17110,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6539,
+      "tokens": 6549,
       "resident_tokens": 0,
-      "bytes": 25781,
+      "bytes": 25830,
       "fallback": false,
       "missing": []
      },
@@ -10810,9 +10810,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -10876,17 +10876,17 @@
     "moves ailment-retrieve": {
      "brief": {
       "calls": 2,
-      "tokens": 3827,
+      "tokens": 3837,
       "resident_tokens": 0,
-      "bytes": 16731,
+      "bytes": 16780,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6529,
+      "tokens": 6539,
       "resident_tokens": 0,
-      "bytes": 25815,
+      "bytes": 25864,
       "fallback": false,
       "missing": []
      },
@@ -10900,9 +10900,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -10966,17 +10966,17 @@
     "moves battle-style-list": {
      "brief": {
       "calls": 2,
-      "tokens": 3912,
+      "tokens": 3922,
       "resident_tokens": 0,
-      "bytes": 17063,
+      "bytes": 17112,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 6531,
+      "tokens": 6541,
       "resident_tokens": 0,
-      "bytes": 25783,
+      "bytes": 25832,
       "fallback": false,
       "missing": []
      },
@@ -10990,9 +10990,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 17241,
+      "tokens": 17270,
       "resident_tokens": 0,
-      "bytes": 72017,
+      "bytes": 72134,
       "fallback": false,
       "missing": []
      },
@@ -11061,9 +11061,9 @@
    "commands": 1279,
    "groups": 46,
    "sizes": {
-    "brief": 2251,
-    "brief_v091": 86486,
-    "full": 481548,
+    "brief": 2261,
+    "brief_v091": 86496,
+    "full": 481578,
     "root_help": 2177,
     "mcp_all": 513590,
     "mcp_names": 14024,
@@ -11079,17 +11079,17 @@
     "actions get-actions-cache-retention-limit-for-enterprise": {
      "brief": {
       "calls": 3,
-      "tokens": 13777,
+      "tokens": 13787,
       "resident_tokens": 0,
-      "bytes": 54649,
+      "bytes": 54698,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86895,
+      "tokens": 86905,
       "resident_tokens": 0,
-      "bytes": 328011,
+      "bytes": 328060,
       "fallback": false,
       "missing": []
      },
@@ -11103,9 +11103,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -11169,17 +11169,17 @@
     "actions get-hosted-runners-machine-specs-for-org": {
      "brief": {
       "calls": 3,
-      "tokens": 13692,
+      "tokens": 13702,
       "resident_tokens": 0,
-      "bytes": 54247,
+      "bytes": 54296,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87012,
+      "tokens": 87022,
       "resident_tokens": 0,
-      "bytes": 328486,
+      "bytes": 328535,
       "fallback": false,
       "missing": []
      },
@@ -11193,9 +11193,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -11259,17 +11259,17 @@
     "actions list-selected-repositories-self-hosted-runners-organization": {
      "brief": {
       "calls": 3,
-      "tokens": 13901,
+      "tokens": 13911,
       "resident_tokens": 0,
-      "bytes": 55063,
+      "bytes": 55112,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 91496,
+      "tokens": 91506,
       "resident_tokens": 0,
-      "bytes": 348338,
+      "bytes": 348387,
       "fallback": false,
       "missing": []
      },
@@ -11283,9 +11283,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -11349,17 +11349,17 @@
     "actions list-self-hosted-runners-in-group-for-org": {
      "brief": {
       "calls": 3,
-      "tokens": 13948,
+      "tokens": 13958,
       "resident_tokens": 0,
-      "bytes": 55163,
+      "bytes": 55212,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87616,
+      "tokens": 87626,
       "resident_tokens": 0,
-      "bytes": 330939,
+      "bytes": 330988,
       "fallback": false,
       "missing": []
      },
@@ -11373,9 +11373,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -11439,17 +11439,17 @@
     "actions delete-org-secret": {
      "brief": {
       "calls": 3,
-      "tokens": 13784,
+      "tokens": 13794,
       "resident_tokens": 0,
-      "bytes": 54667,
+      "bytes": 54716,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86790,
+      "tokens": 86800,
       "resident_tokens": 0,
-      "bytes": 327513,
+      "bytes": 327562,
       "fallback": false,
       "missing": []
      },
@@ -11463,9 +11463,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -11497,17 +11497,17 @@
     "actions set-actions-cache-storage-limit-for-repository": {
      "brief": {
       "calls": 3,
-      "tokens": 13841,
+      "tokens": 13851,
       "resident_tokens": 0,
-      "bytes": 54888,
+      "bytes": 54937,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86867,
+      "tokens": 86877,
       "resident_tokens": 0,
-      "bytes": 327804,
+      "bytes": 327853,
       "fallback": false,
       "missing": []
      },
@@ -11521,9 +11521,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -11587,17 +11587,17 @@
     "actions get-fork-pr-contributor-approval-permissions-repository": {
      "brief": {
       "calls": 3,
-      "tokens": 13759,
+      "tokens": 13769,
       "resident_tokens": 0,
-      "bytes": 54589,
+      "bytes": 54638,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86950,
+      "tokens": 86960,
       "resident_tokens": 0,
-      "bytes": 328188,
+      "bytes": 328237,
       "fallback": false,
       "missing": []
      },
@@ -11611,9 +11611,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -11677,17 +11677,17 @@
     "actions list-labels-for-self-hosted-runner-for-repo": {
      "brief": {
       "calls": 3,
-      "tokens": 13833,
+      "tokens": 13843,
       "resident_tokens": 0,
-      "bytes": 54838,
+      "bytes": 54887,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87163,
+      "tokens": 87173,
       "resident_tokens": 0,
-      "bytes": 329058,
+      "bytes": 329107,
       "fallback": false,
       "missing": []
      },
@@ -11701,9 +11701,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -11767,17 +11767,17 @@
     "actions get-pending-deployments-for-run": {
      "brief": {
       "calls": 3,
-      "tokens": 13823,
+      "tokens": 13833,
       "resident_tokens": 0,
-      "bytes": 54825,
+      "bytes": 54874,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 89409,
+      "tokens": 89419,
       "resident_tokens": 0,
-      "bytes": 339502,
+      "bytes": 339551,
       "fallback": false,
       "missing": []
      },
@@ -11791,9 +11791,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -11857,17 +11857,17 @@
     "actions get-workflow-usage": {
      "brief": {
       "calls": 3,
-      "tokens": 14109,
+      "tokens": 14119,
       "resident_tokens": 0,
-      "bytes": 55980,
+      "bytes": 56029,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87477,
+      "tokens": 87487,
       "resident_tokens": 0,
-      "bytes": 330372,
+      "bytes": 330421,
       "fallback": false,
       "missing": []
      },
@@ -11881,9 +11881,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -11947,17 +11947,17 @@
     "activity delete-thread-subscription": {
      "brief": {
       "calls": 3,
-      "tokens": 4082,
+      "tokens": 4092,
       "resident_tokens": 0,
-      "bytes": 15856,
+      "bytes": 15905,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86792,
+      "tokens": 86802,
       "resident_tokens": 0,
-      "bytes": 327581,
+      "bytes": 327630,
       "fallback": false,
       "missing": []
      },
@@ -11971,9 +11971,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -12037,17 +12037,17 @@
     "activity list-received-public-events-for-user": {
      "brief": {
       "calls": 3,
-      "tokens": 4148,
+      "tokens": 4158,
       "resident_tokens": 0,
-      "bytes": 15944,
+      "bytes": 15993,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 110499,
+      "tokens": 110509,
       "resident_tokens": 0,
-      "bytes": 434940,
+      "bytes": 434989,
       "fallback": false,
       "missing": []
      },
@@ -12061,9 +12061,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -12127,17 +12127,17 @@
     "agent-tasks list-tasks": {
      "brief": {
       "calls": 3,
-      "tokens": 3135,
+      "tokens": 3145,
       "resident_tokens": 0,
-      "bytes": 11484,
+      "bytes": 11533,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 89177,
+      "tokens": 89187,
       "resident_tokens": 0,
-      "bytes": 337769,
+      "bytes": 337818,
       "fallback": false,
       "missing": []
      },
@@ -12151,9 +12151,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -12217,17 +12217,17 @@
     "agents list-repo-organization-variables": {
      "brief": {
       "calls": 3,
-      "tokens": 4066,
+      "tokens": 4076,
       "resident_tokens": 0,
-      "bytes": 15622,
+      "bytes": 15671,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87333,
+      "tokens": 87343,
       "resident_tokens": 0,
-      "bytes": 329716,
+      "bytes": 329765,
       "fallback": false,
       "missing": []
      },
@@ -12241,9 +12241,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -12275,17 +12275,17 @@
     "apps delete-installation": {
      "brief": {
       "calls": 3,
-      "tokens": 4144,
+      "tokens": 4154,
       "resident_tokens": 0,
-      "bytes": 16008,
+      "bytes": 16057,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86767,
+      "tokens": 86777,
       "resident_tokens": 0,
-      "bytes": 327392,
+      "bytes": 327441,
       "fallback": false,
       "missing": []
      },
@@ -12299,9 +12299,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -12365,17 +12365,17 @@
     "apps list-installation-repos-for-authenticated-user": {
      "brief": {
       "calls": 3,
-      "tokens": 4290,
+      "tokens": 4300,
       "resident_tokens": 0,
-      "bytes": 16639,
+      "bytes": 16688,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 91623,
+      "tokens": 91633,
       "resident_tokens": 0,
-      "bytes": 349051,
+      "bytes": 349100,
       "fallback": false,
       "missing": []
      },
@@ -12389,9 +12389,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -12455,17 +12455,17 @@
     "campaigns get-campaign-summary": {
      "brief": {
       "calls": 3,
-      "tokens": 2661,
+      "tokens": 2671,
       "resident_tokens": 0,
-      "bytes": 9915,
+      "bytes": 9964,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 89536,
+      "tokens": 89546,
       "resident_tokens": 0,
-      "bytes": 339994,
+      "bytes": 340043,
       "fallback": false,
       "missing": []
      },
@@ -12479,9 +12479,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -12545,17 +12545,17 @@
     "code-quality list-findings-for-repo": {
      "brief": {
       "calls": 3,
-      "tokens": 3075,
+      "tokens": 3085,
       "resident_tokens": 0,
-      "bytes": 11454,
+      "bytes": 11503,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 88259,
+      "tokens": 88269,
       "resident_tokens": 0,
-      "bytes": 333860,
+      "bytes": 333909,
       "fallback": false,
       "missing": []
      },
@@ -12569,9 +12569,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -12635,17 +12635,17 @@
     "code-scanning delete-codeql-database": {
      "brief": {
       "calls": 3,
-      "tokens": 3855,
+      "tokens": 3865,
       "resident_tokens": 0,
-      "bytes": 14345,
+      "bytes": 14394,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86841,
+      "tokens": 86851,
       "resident_tokens": 0,
-      "bytes": 327715,
+      "bytes": 327764,
       "fallback": false,
       "missing": []
      },
@@ -12659,9 +12659,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -12725,17 +12725,17 @@
     "code-security get-configuration": {
      "brief": {
       "calls": 3,
-      "tokens": 3500,
+      "tokens": 3510,
       "resident_tokens": 0,
-      "bytes": 13862,
+      "bytes": 13911,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 89843,
+      "tokens": 89853,
       "resident_tokens": 0,
-      "bytes": 342148,
+      "bytes": 342197,
       "fallback": false,
       "missing": []
      },
@@ -12749,9 +12749,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -12815,17 +12815,17 @@
     "codespaces remove-selected-repo-from-org-secret": {
      "brief": {
       "calls": 3,
-      "tokens": 5160,
+      "tokens": 5170,
       "resident_tokens": 0,
-      "bytes": 20160,
+      "bytes": 20209,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86870,
+      "tokens": 86880,
       "resident_tokens": 0,
-      "bytes": 327816,
+      "bytes": 327865,
       "fallback": false,
       "missing": []
      },
@@ -12839,9 +12839,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -12873,17 +12873,17 @@
     "codespaces create-or-update-secret-for-authenticated-user": {
      "brief": {
       "calls": 3,
-      "tokens": 5535,
+      "tokens": 5545,
       "resident_tokens": 0,
-      "bytes": 21584,
+      "bytes": 21633,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87367,
+      "tokens": 87377,
       "resident_tokens": 0,
-      "bytes": 329781,
+      "bytes": 329830,
       "fallback": false,
       "missing": []
      },
@@ -12897,9 +12897,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -12963,17 +12963,17 @@
     "copilot get-enterprise-code-review-policy": {
      "brief": {
       "calls": 3,
-      "tokens": 5218,
+      "tokens": 5228,
       "resident_tokens": 0,
-      "bytes": 19894,
+      "bytes": 19943,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86989,
+      "tokens": 86999,
       "resident_tokens": 0,
-      "bytes": 328484,
+      "bytes": 328533,
       "fallback": false,
       "missing": []
      },
@@ -12987,9 +12987,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -13053,17 +13053,17 @@
     "copilot copilot-content-exclusion-for-organization": {
      "brief": {
       "calls": 3,
-      "tokens": 5378,
+      "tokens": 5388,
       "resident_tokens": 0,
-      "bytes": 20591,
+      "bytes": 20640,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87016,
+      "tokens": 87026,
       "resident_tokens": 0,
-      "bytes": 328519,
+      "bytes": 328568,
       "fallback": false,
       "missing": []
      },
@@ -13077,9 +13077,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -13143,17 +13143,17 @@
     "copilot-spaces delete-for-org": {
      "brief": {
       "calls": 3,
-      "tokens": 4264,
+      "tokens": 4274,
       "resident_tokens": 0,
-      "bytes": 15963,
+      "bytes": 16012,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86863,
+      "tokens": 86873,
       "resident_tokens": 0,
-      "bytes": 327898,
+      "bytes": 327947,
       "fallback": false,
       "missing": []
      },
@@ -13167,9 +13167,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -13233,17 +13233,17 @@
     "copilot-spaces get-resource-for-user": {
      "brief": {
       "calls": 3,
-      "tokens": 4223,
+      "tokens": 4233,
       "resident_tokens": 0,
-      "bytes": 15703,
+      "bytes": 15752,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87254,
+      "tokens": 87264,
       "resident_tokens": 0,
-      "bytes": 329562,
+      "bytes": 329611,
       "fallback": false,
       "missing": []
      },
@@ -13257,9 +13257,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -13323,17 +13323,17 @@
     "dependabot list-alerts-for-repo": {
      "brief": {
       "calls": 3,
-      "tokens": 4960,
+      "tokens": 4970,
       "resident_tokens": 0,
-      "bytes": 18979,
+      "bytes": 19028,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 94708,
+      "tokens": 94718,
       "resident_tokens": 0,
-      "bytes": 362684,
+      "bytes": 362733,
       "fallback": false,
       "missing": []
      },
@@ -13347,9 +13347,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -13413,17 +13413,17 @@
     "gists delete": {
      "brief": {
       "calls": 3,
-      "tokens": 3114,
+      "tokens": 3124,
       "resident_tokens": 0,
-      "bytes": 11219,
+      "bytes": 11268,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86637,
+      "tokens": 86647,
       "resident_tokens": 0,
-      "bytes": 326818,
+      "bytes": 326867,
       "fallback": false,
       "missing": []
      },
@@ -13437,9 +13437,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -13503,17 +13503,17 @@
     "git create-ref": {
      "brief": {
       "calls": 3,
-      "tokens": 3023,
+      "tokens": 3033,
       "resident_tokens": 0,
-      "bytes": 11228,
+      "bytes": 11277,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87154,
+      "tokens": 87164,
       "resident_tokens": 0,
-      "bytes": 328996,
+      "bytes": 329045,
       "fallback": false,
       "missing": []
      },
@@ -13527,9 +13527,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -13593,17 +13593,17 @@
     "interactions set-restrictions-for-repo": {
      "brief": {
       "calls": 3,
-      "tokens": 3481,
+      "tokens": 3491,
       "resident_tokens": 0,
-      "bytes": 13464,
+      "bytes": 13513,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87156,
+      "tokens": 87166,
       "resident_tokens": 0,
-      "bytes": 329092,
+      "bytes": 329141,
       "fallback": false,
       "missing": []
      },
@@ -13617,9 +13617,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -13683,17 +13683,17 @@
     "issues unpin-comment": {
      "brief": {
       "calls": 3,
-      "tokens": 5322,
+      "tokens": 5332,
       "resident_tokens": 0,
-      "bytes": 20318,
+      "bytes": 20367,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86792,
+      "tokens": 86802,
       "resident_tokens": 0,
-      "bytes": 327471,
+      "bytes": 327520,
       "fallback": false,
       "missing": []
      },
@@ -13707,9 +13707,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -13773,17 +13773,17 @@
     "issues set-issue-field-values": {
      "brief": {
       "calls": 3,
-      "tokens": 5972,
+      "tokens": 5982,
       "resident_tokens": 0,
-      "bytes": 22976,
+      "bytes": 23025,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 88370,
+      "tokens": 88380,
       "resident_tokens": 0,
-      "bytes": 334465,
+      "bytes": 334514,
       "fallback": false,
       "missing": []
      },
@@ -13797,9 +13797,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -13863,17 +13863,17 @@
     "issues list-events-for-timeline": {
      "brief": {
       "calls": 3,
-      "tokens": 5531,
+      "tokens": 5541,
       "resident_tokens": 0,
-      "bytes": 21117,
+      "bytes": 21166,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 120660,
+      "tokens": 120670,
       "resident_tokens": 0,
-      "bytes": 483429,
+      "bytes": 483478,
       "fallback": false,
       "missing": []
      },
@@ -13887,9 +13887,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -13953,17 +13953,17 @@
     "meta get-zen": {
      "brief": {
       "calls": 3,
-      "tokens": 2444,
+      "tokens": 2454,
       "resident_tokens": 0,
-      "bytes": 8932,
+      "bytes": 8981,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86604,
+      "tokens": 86614,
       "resident_tokens": 0,
-      "bytes": 326707,
+      "bytes": 326756,
       "fallback": false,
       "missing": []
      },
@@ -13977,9 +13977,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -14043,17 +14043,17 @@
     "migrations unlock-repo-for-authenticated-user": {
      "brief": {
       "calls": 3,
-      "tokens": 3535,
+      "tokens": 3545,
       "resident_tokens": 0,
-      "bytes": 13556,
+      "bytes": 13605,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86825,
+      "tokens": 86835,
       "resident_tokens": 0,
-      "bytes": 327606,
+      "bytes": 327655,
       "fallback": false,
       "missing": []
      },
@@ -14067,9 +14067,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -14133,17 +14133,17 @@
     "orgs list-attestations-bulk": {
      "brief": {
       "calls": 3,
-      "tokens": 9150,
+      "tokens": 9160,
       "resident_tokens": 0,
-      "bytes": 35528,
+      "bytes": 35577,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87972,
+      "tokens": 87982,
       "resident_tokens": 0,
-      "bytes": 332371,
+      "bytes": 332420,
       "fallback": false,
       "missing": []
      },
@@ -14157,9 +14157,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -14191,17 +14191,17 @@
     "orgs ping-webhook": {
      "brief": {
       "calls": 3,
-      "tokens": 8635,
+      "tokens": 8645,
       "resident_tokens": 0,
-      "bytes": 33485,
+      "bytes": 33534,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86816,
+      "tokens": 86826,
       "resident_tokens": 0,
-      "bytes": 327551,
+      "bytes": 327600,
       "fallback": false,
       "missing": []
      },
@@ -14215,9 +14215,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -14281,17 +14281,17 @@
     "orgs update-issue-type": {
      "brief": {
       "calls": 3,
-      "tokens": 8790,
+      "tokens": 8800,
       "resident_tokens": 0,
-      "bytes": 34149,
+      "bytes": 34198,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87550,
+      "tokens": 87560,
       "resident_tokens": 0,
-      "bytes": 330744,
+      "bytes": 330793,
       "fallback": false,
       "missing": []
      },
@@ -14305,9 +14305,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -14371,17 +14371,17 @@
     "orgs list-pat-grant-requests": {
      "brief": {
       "calls": 3,
-      "tokens": 9090,
+      "tokens": 9100,
       "resident_tokens": 0,
-      "bytes": 35266,
+      "bytes": 35315,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 88934,
+      "tokens": 88944,
       "resident_tokens": 0,
-      "bytes": 336868,
+      "bytes": 336917,
       "fallback": false,
       "missing": []
      },
@@ -14395,9 +14395,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -14461,17 +14461,17 @@
     "orgs list-public-members": {
      "brief": {
       "calls": 3,
-      "tokens": 8658,
+      "tokens": 8668,
       "resident_tokens": 0,
-      "bytes": 33547,
+      "bytes": 33596,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87533,
+      "tokens": 87543,
       "resident_tokens": 0,
-      "bytes": 330581,
+      "bytes": 330630,
       "fallback": false,
       "missing": []
      },
@@ -14485,9 +14485,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -14551,17 +14551,17 @@
     "packages list-docker-migration-conflicting-packages-for-organization": {
      "brief": {
       "calls": 3,
-      "tokens": 4075,
+      "tokens": 4085,
       "resident_tokens": 0,
-      "bytes": 15697,
+      "bytes": 15746,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 92701,
+      "tokens": 92711,
       "resident_tokens": 0,
-      "bytes": 353991,
+      "bytes": 354040,
       "fallback": false,
       "missing": []
      },
@@ -14575,9 +14575,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -14641,17 +14641,17 @@
     "packages delete-package-for-user": {
      "brief": {
       "calls": 3,
-      "tokens": 4402,
+      "tokens": 4412,
       "resident_tokens": 0,
-      "bytes": 17048,
+      "bytes": 17097,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87101,
+      "tokens": 87111,
       "resident_tokens": 0,
-      "bytes": 328808,
+      "bytes": 328857,
       "fallback": false,
       "missing": []
      },
@@ -14665,9 +14665,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -14731,17 +14731,17 @@
     "projects delete-item-for-org": {
      "brief": {
       "calls": 3,
-      "tokens": 3740,
+      "tokens": 3750,
       "resident_tokens": 0,
-      "bytes": 14082,
+      "bytes": 14131,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86787,
+      "tokens": 86797,
       "resident_tokens": 0,
-      "bytes": 327451,
+      "bytes": 327500,
       "fallback": false,
       "missing": []
      },
@@ -14755,9 +14755,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -14821,17 +14821,17 @@
     "pulls delete-review-comment": {
      "brief": {
       "calls": 3,
-      "tokens": 4111,
+      "tokens": 4121,
       "resident_tokens": 0,
-      "bytes": 15488,
+      "bytes": 15537,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86790,
+      "tokens": 86800,
       "resident_tokens": 0,
-      "bytes": 327477,
+      "bytes": 327526,
       "fallback": false,
       "missing": []
      },
@@ -14845,9 +14845,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -14911,17 +14911,17 @@
     "pulls update-review": {
      "brief": {
       "calls": 3,
-      "tokens": 4406,
+      "tokens": 4416,
       "resident_tokens": 0,
-      "bytes": 16656,
+      "bytes": 16705,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 88662,
+      "tokens": 88672,
       "resident_tokens": 0,
-      "bytes": 335594,
+      "bytes": 335643,
       "fallback": false,
       "missing": []
      },
@@ -14935,9 +14935,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -15001,17 +15001,17 @@
     "reactions list-for-pull-request-review-comment": {
      "brief": {
       "calls": 3,
-      "tokens": 3602,
+      "tokens": 3612,
       "resident_tokens": 0,
-      "bytes": 13439,
+      "bytes": 13488,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 88088,
+      "tokens": 88098,
       "resident_tokens": 0,
-      "bytes": 332898,
+      "bytes": 332947,
       "fallback": false,
       "missing": []
      },
@@ -15025,9 +15025,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -15091,17 +15091,17 @@
     "repos list-autolinks": {
      "brief": {
       "calls": 3,
-      "tokens": 11440,
+      "tokens": 11450,
       "resident_tokens": 0,
-      "bytes": 45660,
+      "bytes": 45709,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87028,
+      "tokens": 87038,
       "resident_tokens": 0,
-      "bytes": 328552,
+      "bytes": 328601,
       "fallback": false,
       "missing": []
      },
@@ -15115,9 +15115,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -15181,17 +15181,17 @@
     "repos get-status-checks-protection": {
      "brief": {
       "calls": 3,
-      "tokens": 11556,
+      "tokens": 11566,
       "resident_tokens": 0,
-      "bytes": 46226,
+      "bytes": 46275,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87190,
+      "tokens": 87200,
       "resident_tokens": 0,
-      "bytes": 329315,
+      "bytes": 329364,
       "fallback": false,
       "missing": []
      },
@@ -15205,9 +15205,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -15271,17 +15271,17 @@
     "repos rename-branch": {
      "brief": {
       "calls": 3,
-      "tokens": 11671,
+      "tokens": 11681,
       "resident_tokens": 0,
-      "bytes": 46633,
+      "bytes": 46682,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 95168,
+      "tokens": 95178,
       "resident_tokens": 0,
-      "bytes": 365741,
+      "bytes": 365790,
       "fallback": false,
       "missing": []
      },
@@ -15295,9 +15295,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -15361,17 +15361,17 @@
     "repos get-content": {
      "brief": {
       "calls": 3,
-      "tokens": 12275,
+      "tokens": 12285,
       "resident_tokens": 0,
-      "bytes": 49075,
+      "bytes": 49124,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 89982,
+      "tokens": 89992,
       "resident_tokens": 0,
-      "bytes": 341849,
+      "bytes": 341898,
       "fallback": false,
       "missing": []
      },
@@ -15385,9 +15385,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -15451,17 +15451,17 @@
     "repos get-all-deployment-protection-rules": {
      "brief": {
       "calls": 3,
-      "tokens": 11638,
+      "tokens": 11648,
       "resident_tokens": 0,
-      "bytes": 46553,
+      "bytes": 46602,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87456,
+      "tokens": 87466,
       "resident_tokens": 0,
-      "bytes": 330634,
+      "bytes": 330683,
       "fallback": false,
       "missing": []
      },
@@ -15475,9 +15475,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -15541,17 +15541,17 @@
     "repos enable-immutable-releases": {
      "brief": {
       "calls": 3,
-      "tokens": 11429,
+      "tokens": 11439,
       "resident_tokens": 0,
-      "bytes": 45648,
+      "bytes": 45697,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 86723,
+      "tokens": 86733,
       "resident_tokens": 0,
-      "bytes": 327270,
+      "bytes": 327319,
       "fallback": false,
       "missing": []
      },
@@ -15565,9 +15565,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -15631,17 +15631,17 @@
     "repos create-pages-deployment": {
      "brief": {
       "calls": 3,
-      "tokens": 11732,
+      "tokens": 11742,
       "resident_tokens": 0,
-      "bytes": 46915,
+      "bytes": 46964,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87404,
+      "tokens": 87414,
       "resident_tokens": 0,
-      "bytes": 330075,
+      "bytes": 330124,
       "fallback": false,
       "missing": []
      },
@@ -15655,9 +15655,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -15721,17 +15721,17 @@
     "repos update-release": {
      "brief": {
       "calls": 3,
-      "tokens": 12157,
+      "tokens": 12167,
       "resident_tokens": 0,
-      "bytes": 48869,
+      "bytes": 48918,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 90481,
+      "tokens": 90491,
       "resident_tokens": 0,
-      "bytes": 343885,
+      "bytes": 343934,
       "fallback": false,
       "missing": []
      },
@@ -15745,9 +15745,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -15811,17 +15811,17 @@
     "repos list-teams": {
      "brief": {
       "calls": 3,
-      "tokens": 11665,
+      "tokens": 11675,
       "resident_tokens": 0,
-      "bytes": 46540,
+      "bytes": 46589,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 88331,
+      "tokens": 88341,
       "resident_tokens": 0,
-      "bytes": 334477,
+      "bytes": 334526,
       "fallback": false,
       "missing": []
      },
@@ -15835,9 +15835,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -15901,17 +15901,17 @@
     "search commits": {
      "brief": {
       "calls": 3,
-      "tokens": 3193,
+      "tokens": 3203,
       "resident_tokens": 0,
-      "bytes": 11878,
+      "bytes": 11927,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 94374,
+      "tokens": 94384,
       "resident_tokens": 0,
-      "bytes": 361088,
+      "bytes": 361137,
       "fallback": false,
       "missing": []
      },
@@ -15925,9 +15925,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -15991,17 +15991,17 @@
     "secret-scanning create-push-protection-bypass": {
      "brief": {
       "calls": 3,
-      "tokens": 3478,
+      "tokens": 3488,
       "resident_tokens": 0,
-      "bytes": 13082,
+      "bytes": 13131,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87163,
+      "tokens": 87173,
       "resident_tokens": 0,
-      "bytes": 328996,
+      "bytes": 329045,
       "fallback": false,
       "missing": []
      },
@@ -16015,9 +16015,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -16081,17 +16081,17 @@
     "teams list-pending-invitations-in-org": {
      "brief": {
       "calls": 3,
-      "tokens": 4313,
+      "tokens": 4323,
       "resident_tokens": 0,
-      "bytes": 15918,
+      "bytes": 15967,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 88097,
+      "tokens": 88107,
       "resident_tokens": 0,
-      "bytes": 332991,
+      "bytes": 333040,
       "fallback": false,
       "missing": []
      },
@@ -16105,9 +16105,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -16171,17 +16171,17 @@
     "teams list-repos-legacy": {
      "brief": {
       "calls": 3,
-      "tokens": 4209,
+      "tokens": 4219,
       "resident_tokens": 0,
-      "bytes": 15589,
+      "bytes": 15638,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 91845,
+      "tokens": 91855,
       "resident_tokens": 0,
-      "bytes": 349830,
+      "bytes": 349879,
       "fallback": false,
       "missing": []
      },
@@ -16195,9 +16195,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -16229,17 +16229,17 @@
     "users list-gpg-keys-for-authenticated-user": {
      "brief": {
       "calls": 3,
-      "tokens": 5223,
+      "tokens": 5233,
       "resident_tokens": 0,
-      "bytes": 19933,
+      "bytes": 19982,
       "fallback": false,
       "missing": []
      },
      "brief_v091": {
       "calls": 2,
-      "tokens": 87860,
+      "tokens": 87870,
       "resident_tokens": 0,
-      "bytes": 331966,
+      "bytes": 332015,
       "fallback": false,
       "missing": []
      },
@@ -16253,9 +16253,9 @@
      },
      "full": {
       "calls": 1,
-      "tokens": 481548,
+      "tokens": 481578,
       "resident_tokens": 0,
-      "bytes": 2014184,
+      "bytes": 2014304,
       "fallback": false,
       "missing": []
      },
@@ -16317,6 +16317,32 @@
      }
     }
    }
+  }
+ },
+ "responses": {
+  "repository (object)": {
+   "pretty": 2358,
+   "compact": 2013,
+   "pretty_bytes": 6617,
+   "compact_bytes": 5951
+  },
+  "30 pull requests (list)": {
+   "pretty": 202915,
+   "compact": 176542,
+   "pretty_bytes": 613581,
+   "compact_bytes": 512338
+  },
+  "30 commits (list)": {
+   "pretty": 98428,
+   "compact": 92068,
+   "pretty_bytes": 266846,
+   "compact_bytes": 247585
+  },
+  "10 releases (list)": {
+   "pretty": 38011,
+   "compact": 33221,
+   "pretty_bytes": 107154,
+   "compact_bytes": 88633
   }
  }
 }

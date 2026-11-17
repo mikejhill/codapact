@@ -64,6 +64,7 @@ EXIT_CODES = {
     EXIT_INTERRUPTED: "interrupted (Ctrl-C)",
 }
 OUTPUT_FORMATS = ("json", "jsonl", "yaml", "table", "raw")
+JSON_STYLES = ("auto", "pretty", "compact")
 ERROR_FORMATS = ("text", "json")
 VALIDATION_MODES = ("strict", "warn", "off")
 BUILTINS = ("describe", "doctor", "completion", "auth")
@@ -78,6 +79,7 @@ SETTINGS_KEYS = frozenset(
         "response_validation",
         "output",
         "error_format",
+        "json_style",
         "defaults",
         "auth_plugin",
         "auth",
@@ -725,6 +727,25 @@ class CliRuntime:
             raise CodapactError(f"output format must be one of {', '.join(OUTPUT_FORMATS)}")
         return str(value)
 
+    def compact_json(self, args: argparse.Namespace, out: TextIO) -> bool:
+        """Whether JSON output is compact: ``<PREFIX>_JSON_STYLE``, then the settings file.
+
+        ``auto`` (the default) indents for a terminal and prints compact JSON to a pipe or
+        file, where an agent or script reads it and indentation only adds tokens and bytes.
+        """
+        try:
+            file_settings = self._file_settings(getattr(args, "config", None))
+        except CodapactError:
+            file_settings = {}
+        value, _ = self._setting(args, file_settings, "json_style")
+        style = str(value or "auto").lower()
+        if style not in JSON_STYLES:
+            raise CodapactError(f"json style must be one of {', '.join(JSON_STYLES)}")
+        if style == "auto":
+            isatty = getattr(out, "isatty", None)
+            return not (callable(isatty) and isatty())
+        return style == "compact"
+
     def _config_path(self, explicit: str | None) -> Path:
         if explicit:
             return Path(explicit)
@@ -933,7 +954,8 @@ class CliRuntime:
                         f"{self.program} describe COMMAND adds JSON argument schemas; "
                         "--schemas adds the output JSON Schema.",
                         "Commands with the read_only trait only read; others change data.",
-                        "Results print to stdout as JSON unless --output says otherwise.",
+                        "Results print to stdout as JSON unless --output says otherwise; "
+                        "the JSON is compact unless stdout is a terminal.",
                         "Errors print to stderr; --error-format json makes them one JSON object.",
                         "JSON arguments accept inline JSON, @file, or @- for stdin.",
                         "--dry-run prints the HTTP request without sending it.",
@@ -952,11 +974,12 @@ class CliRuntime:
                     brief=getattr(args, "brief", False),
                     schemas=getattr(args, "schemas", False),
                 )
-                if fmt in ("json", "table") and not out.isatty():
-                    # Agents and scripts read this: compact JSON is about a third smaller.
-                    out.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")) + "\n")
-                else:
-                    render(result, fmt if fmt != "table" else "json", out)
+                render(
+                    result,
+                    fmt if fmt != "table" else "json",
+                    out,
+                    compact=self.compact_json(args, out),
+                )
                 return EXIT_OK
             doctor = cli_tools.Doctor(
                 program=self.program,
@@ -975,7 +998,8 @@ class CliRuntime:
             )
             checks = doctor.run(offline=args.offline)
             rows = [c.as_dict() for c in checks]
-            render(rows, self.output_format(args, "table" if out.isatty() else "json"), out)
+            fmt = self.output_format(args, "table" if out.isatty() else "json")
+            render(rows, fmt, out, compact=self.compact_json(args, out))
             return cli_tools.doctor_exit_code(checks)
         except CodapactError as error:
             return emit_error(self.program, "usage", str(error), EXIT_USAGE, err)
@@ -1006,10 +1030,12 @@ class CliRuntime:
             result = commands.run(args)
         except AuthError as error:
             return emit_error(self.program, "auth", str(error), EXIT_AUTH, err)
+        compact = self.compact_json(args, out)
         if args.auth_action == "status":
-            render(result, self.output_format(args, "table" if out.isatty() else "json"), out)
+            fmt = self.output_format(args, "table" if out.isatty() else "json")
+            render(result, fmt, out, compact=compact)
         else:
-            render(result, fmt if fmt != "table" else "json", out)
+            render(result, fmt if fmt != "table" else "json", out, compact=compact)
         return EXIT_OK
 
     def _start_steps(self, api: Api, *, grouped: bool = False) -> list[str]:
@@ -1091,6 +1117,7 @@ class CliRuntime:
             f"{e}_ALLOW_PRIVATE": "1 allows plain HTTP and private hosts",
             f"{e}_RESPONSE_VALIDATION": "strict, warn, or off",
             f"{e}_OUTPUT": "default output format",
+            f"{e}_JSON_STYLE": "auto (indent on a terminal), pretty, or compact",
             f"{e}_ERROR_FORMAT": "text or json",
         }
         auth = EnvAuth(e, {})
@@ -1237,7 +1264,12 @@ class CliRuntime:
                 result = _pick_target(result, fields)
             result = pick(result, fields)
         except DryRun as dry:
-            render(dry.describe(), fmt if fmt != "table" else "json", out)
+            render(
+                dry.describe(),
+                fmt if fmt != "table" else "json",
+                out,
+                compact=self.compact_json(args, out),
+            )
             return EXIT_OK
         except ResponseValidationError as error:
             hint = "--response-validation warn prints the data anyway"
@@ -1280,7 +1312,7 @@ class CliRuntime:
             return emit_error(p, "api", message, EXIT_API, err, details=error.errors)
         except CodapactError as error:
             return emit_error(p, "usage", str(error), EXIT_USAGE, err)
-        render(result, fmt, out)
+        render(result, fmt, out, compact=self.compact_json(args, out))
         return EXIT_OK
 
 
@@ -1499,8 +1531,8 @@ def _no_match(query: str, path: str, parent: Any) -> str:
     return message
 
 
-def render(value: Any, fmt: str, out: TextIO) -> None:
-    """Print a result in the requested format."""
+def render(value: Any, fmt: str, out: TextIO, *, compact: bool = False) -> None:
+    """Print a result in the requested format; ``compact`` JSON has no whitespace."""
     if value is None:
         return
     if fmt == "raw" and isinstance(value, str | bytes):
@@ -1522,6 +1554,9 @@ def render(value: Any, fmt: str, out: TextIO) -> None:
         return
     if fmt == "table":
         out.write(table(value))
+        return
+    if compact:
+        out.write(json.dumps(value, separators=(",", ":"), ensure_ascii=False, default=str) + "\n")
         return
     out.write(json.dumps(value, indent=2, ensure_ascii=False, default=str) + "\n")
 
