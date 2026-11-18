@@ -1,0 +1,18 @@
+# Confluence Cloud REST API v2. Set CONFLUENCE_BASE_URL to https://SITE.atlassian.net/wiki/api/v2. See examples/README.md.
+# Generate: uvx codapact generate   (writes ./generated)
+# Run:      uvx --from ./generated codapact-confluence doctor
+version: 1
+source:
+  type: openapi
+  path: https://dac-static.atlassian.com/cloud/confluence/openapi-v2.v3.json
+  options: {strict: false}
+shape:
+  - group: {by: tag}
+cli:
+  env_prefix: CONFLUENCE
+  auth:
+    basicAuth:
+      docs: "Username is your Atlassian account email. Password is an API token from https://id.atlassian.com/manage-profile/security/api-tokens"
+targets:
+  - {name: python, output: generated, options: {package: codapact_confluence, distribution: codapact-confluence}}
+  - {name: python-cli, output: generated}

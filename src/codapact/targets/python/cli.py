@@ -138,17 +138,18 @@ def _auth_config(request: GenerationRequest) -> dict[str, dict[str, object]]:
     return config
 
 
+def _spelling(name: str) -> str:
+    """Compare operation names case-blind, ignoring separators (``users/get-authenticated``)."""
+    return re.sub(r"[^0-9a-z]", "", name.lower())
+
+
 def _check_operation(request: GenerationRequest, scheme: str, raw: object) -> str:
     """Resolve ``cli.auth.<scheme>.check``: an operation ``doctor`` calls without arguments."""
     where = f"cli.auth.{scheme}.check"
     if not isinstance(raw, str) or not raw:
         raise PluginError(f"{where} must name an operation")
-    wanted = raw.replace("-", "").replace("_", "").lower()
-    found = [
-        op
-        for op in request.api.operations
-        if op.name == raw or op.name.replace("_", "").lower() == wanted
-    ]
+    wanted = _spelling(raw)
+    found = [op for op in request.api.operations if op.name == raw or _spelling(op.name) == wanted]
     if not found:
         raise PluginError(f"{where}: no operation named {raw!r}")
     operation = found[0]

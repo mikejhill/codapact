@@ -599,9 +599,10 @@ def test_generator_validates_the_session_check_operation() -> None:
             api=api, surface=derive_surface(api), commands=None, options={"auth": auth}
         )
 
-    assert _auth_config(request({"portal": {"check": "getMyself"}})) == {
-        "portal": {"check": "get_myself"}
-    }
+    for spelling in ("getMyself", "get-myself", "get/myself", "GET_MYSELF"):
+        assert _auth_config(request({"portal": {"check": spelling}})) == {
+            "portal": {"check": "get_myself"}
+        }
     for bad, message in [
         ({"portal": {"check": 3}}, "must name an operation"),
         ({"portal": {"check": "whoami"}}, "no operation named 'whoami'"),

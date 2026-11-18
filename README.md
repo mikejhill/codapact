@@ -69,7 +69,7 @@ pagination live in one tested place and improve without regenerating.
   and restish.
 - [Configuration](docs/configuration.md): `codapact.yaml`, shaping transforms, target
   options, and generated CLI settings.
-- [Agent skills](scripts/agent-plugin/README.md): `create-coda-skill` writes the thin skill
+- [Agent skills](plugins/codapact/README.md): `create-coda-skill` writes the thin skill
   that lets an agent use a coda's CLI. The repository is a plugin marketplace for Claude Code, GitHub
   Copilot, and Codex: `<agent> plugin marketplace add mikejhill/codapact`.
 - [Discovery efficiency](docs/discovery-efficiency/README.md): how many tokens and calls an

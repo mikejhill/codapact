@@ -1,0 +1,21 @@
+# GitHub REST API (about 1,280 commands). See examples/README.md.
+# Generate: uvx codapact generate   (writes ./generated)
+# Run:      uvx --from ./generated codapact-github doctor
+version: 1
+source:
+  type: openapi
+  path: https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json
+  options: {strict: false}
+shape:
+  - auth: {schemes: {token: bearer}, optional: true}
+  - group: {by: tag}
+surface: {trim_namespace: true}
+cli:
+  env_prefix: GITHUB
+  auth:
+    token:
+      docs: "Run `gh auth token` (GitHub CLI), or create a fine-grained personal access token at https://github.com/settings/personal-access-tokens"
+      check: users/get-authenticated
+targets:
+  - {name: python, output: generated, options: {package: codapact_github, distribution: codapact-github}}
+  - {name: python-cli, output: generated}
