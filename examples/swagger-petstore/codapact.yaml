@@ -1,0 +1,14 @@
+# Swagger Petstore v3, a public demo server that accepts writes. See examples/README.md.
+# Generate: uvx codapact generate   (writes ./generated)
+# Run:      uvx --from ./generated codapact-petstore doctor
+version: 1
+source:
+  type: openapi
+  path: https://raw.githubusercontent.com/swagger-api/swagger-petstore/master/src/main/resources/openapi.yaml
+shape:
+  - group: {by: tag}
+cli:
+  env_prefix: PETSTORE
+targets:
+  - {name: python, output: generated, options: {package: codapact_petstore, distribution: codapact-petstore}}
+  - {name: python-cli, output: generated}

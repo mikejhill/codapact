@@ -40,7 +40,9 @@ typed JSON, against one `--help` call per command and text to parse.
    - `PROGRAM`: the command. It defaults to the distribution name (e.g. `codapact-ynab`);
      `cli.program` in the coda's `codapact.yaml` overrides it.
    - `TOOL`: what follows `uvx`. `DISTRIBUTION` when `PROGRAM` equals it, otherwise
-     `--from DISTRIBUTION PROGRAM`.
+     `--from DISTRIBUTION PROGRAM`. For a coda that is not on PyPI yet (a local
+     `codapact generate` output), `--from ABSOLUTE_PATH PROGRAM`, where the path is the
+     folder holding the generated `pyproject.toml`.
    - `API_NAME`: the product name people use (e.g. `YNAB`), not the contract title.
 
 2. **Check the coda carries the convention.** Run `uvx TOOL describe --brief` and confirm it
