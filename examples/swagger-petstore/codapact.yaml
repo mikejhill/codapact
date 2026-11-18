@@ -9,6 +9,11 @@ shape:
   - group: {by: tag}
 cli:
   env_prefix: PETSTORE
+  auth:
+    petstore_auth:
+      docs: "The demo server accepts any token; set PETSTORE_PETSTORE_AUTH to any text, e.g. demo"
+    api_key:
+      docs: "The demo server's key is special-key"
 targets:
   - {name: python, output: generated, options: {package: codapact_petstore, distribution: codapact-petstore}}
   - {name: python-cli, output: generated}
