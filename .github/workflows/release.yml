@@ -28,7 +28,10 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-      - name: Start CI for release pull request
+      # Pushes made with GITHUB_TOKEN start no pull_request workflows, and GitHub holds
+      # CodeQL for approval on such pull requests. Dispatching is allowed, and the
+      # required CodeQL results for the release branch's head come from this run.
+      - name: Start CI and CodeQL for release pull request
         if: steps.release.outputs.prs_created == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -36,6 +39,7 @@ jobs:
         run: |
           branch=$(jq -r '.headBranchName' <<< "$PR_JSON")
           gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
+          gh workflow run codeql.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
   ci:
     needs: version
     if: needs.version.outputs.created == 'true'

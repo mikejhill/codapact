@@ -1,5 +1,5 @@
 {
-  "globs": ["*.md", "docs/**/*.md", "examples/**/*.md", "plugins/**/*.md", "scripts/**/*.md"],
+  "globs": ["*.md", "docs/**/*.md", "examples/**/*.md", "extras/**/*.md", "scripts/**/*.md"],
   "ignores": [".tmp/**", ".venv*/**", "dist/**", "examples/*/generated/**"],
   "config": {
     "MD013": {"line_length": 100, "tables": false, "code_blocks": false}
