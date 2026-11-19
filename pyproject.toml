@@ -30,7 +30,7 @@ requires = ["uv_build>=0.11.1,<0.13"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-source-include = ["tests/**", "docs/**", "examples/**", "plugins/**", "scripts/**", "uv.lock", "CHANGELOG.md", "release-please-config.json", ".release-please-manifest.json", ".github/**"]
+source-include = ["tests/**", "docs/**", "examples/**", "extras/**", "scripts/**", "uv.lock", "CHANGELOG.md", "release-please-config.json", ".release-please-manifest.json", ".github/**"]
 
 [dependency-groups]
 mutation = ["mutmut>=3.8.0,<4; sys_platform != 'win32'"]

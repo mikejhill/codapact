@@ -43,7 +43,7 @@ GITHUB_URL = (
     "5c36b6f685bae2acccf24a442f3240bf121cb488/descriptions/api.github.com/api.github.com.json"
 )
 SAMPLE = 60  # commands measured per API (evenly spaced); all of them when fewer
-SKILL = ROOT / "plugins/codapact/skills/create-coda-skill/assets/SKILL.template.md"
+SKILL = ROOT / "extras/agent-plugin/skills/create-coda-skill/assets/SKILL.template.md"
 
 
 # --------------------------------------------------------------------------- tokens
