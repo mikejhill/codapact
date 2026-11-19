@@ -2,6 +2,24 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.10.0](https://github.com/mikejhill/codapact/compare/v0.9.1...v0.10.0) (2026-11-19)
+
+
+### Features
+
+* **cli:** compact JSON output when stdout is not a terminal ([#62](https://github.com/mikejhill/codapact/issues/62)) ([1b80666](https://github.com/mikejhill/codapact/commit/1b80666128834f5ba2a13d5e21e301e6f60fbafd))
+* **cli:** leaner agent discovery (lean describe COMMAND, compact JSON, grouped --brief, JSON field hints) ([#61](https://github.com/mikejhill/codapact/issues/61)) ([4070dea](https://github.com/mikejhill/codapact/commit/4070deab7eb77dabeb65cda52228af6ab8ac7232))
+* generate large real-world contracts strictly; session checks and expiry hooks ([#58](https://github.com/mikejhill/codapact/issues/58)) ([523e6b3](https://github.com/mikejhill/codapact/commit/523e6b3ac156fb7f6516d157c4b1f7809519ebee))
+* headers shaping step; multipart lists of files ([#60](https://github.com/mikejhill/codapact/issues/60)) ([7bbb762](https://github.com/mikejhill/codapact/commit/7bbb762a97aba656803d08ade48111747647a8b5))
+* move the agent plugin to extras/agent-plugin; dispatch CodeQL for release PRs ([#65](https://github.com/mikejhill/codapact/issues/65)) ([3e6c2f1](https://github.com/mikejhill/codapact/commit/3e6c2f14b69a1e86f92d0a4cc19f104f89a99d5d))
+* move the agent plugin to plugins/codapact and add live examples ([#64](https://github.com/mikejhill/codapact/issues/64)) ([98c889d](https://github.com/mikejhill/codapact/commit/98c889d6ad8e03cbe08f1b69ea05288f16fcd855))
+
+
+### Documentation
+
+* **discovery:** remeasure on main after [#61](https://github.com/mikejhill/codapact/issues/61) and [#62](https://github.com/mikejhill/codapact/issues/62) ([#63](https://github.com/mikejhill/codapact/issues/63)) ([7e9cdbb](https://github.com/mikejhill/codapact/commit/7e9cdbb5e2b0fde3d39e27c66c21abb116ed2329))
+* measure how efficiently agents discover a generated CLI ([#57](https://github.com/mikejhill/codapact/issues/57)) ([1be40c8](https://github.com/mikejhill/codapact/commit/1be40c8daae2a80c4b9a404c27865c1616571b1f))
+
 ## [0.9.1](https://github.com/mikejhill/codapact/compare/v0.9.0...v0.9.1) (2026-11-15)
 
 
