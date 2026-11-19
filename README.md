@@ -69,6 +69,8 @@ pagination live in one tested place and improve without regenerating.
   and restish.
 - [Configuration](docs/configuration.md): `codapact.yaml`, shaping transforms, target
   options, and generated CLI settings.
+- [Publishing codas](docs/publishing-codas.md): naming (`codapact-<api>`) and repository
+  layout for codas this project publishes.
 - [Agent skills](extras/agent-plugin/README.md): `create-coda-skill` writes the thin skill
   that lets an agent use a coda's CLI. The repository is a plugin marketplace for Claude Code, GitHub
   Copilot, and Codex: `<agent> plugin marketplace add mikejhill/codapact`.

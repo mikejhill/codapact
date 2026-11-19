@@ -188,6 +188,8 @@ where an agent or script reads it; `<PREFIX>_JSON_STYLE=pretty` or `compact` fix
 The command is named after the Python distribution that ships it (`distribution`, else
 `package` with `-` for `_`), so `uvx acme-api --help` runs it with no `--from`. When no
 Python target names one, it is the API's name. `cli.program` overrides both.
+Codas this project publishes are named `codapact-<api>` everywhere; see
+[Publishing codas](publishing-codas.md#naming).
 
 Renaming a CLI moves its keyring entries and settings directory to the new name. List
 the old names in `cli.previous_programs`: a saved login found only under an old name

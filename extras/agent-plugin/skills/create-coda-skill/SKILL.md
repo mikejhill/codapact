@@ -36,7 +36,9 @@ typed JSON, against one `--help` call per command and text to parse.
 
 1. **Collect the values.** Ask only for what you cannot find.
    - `DISTRIBUTION`: the PyPI name, `codapact-<api>` (e.g. `codapact-ynab`). It is `[project] name`
-     in the coda repo's root `pyproject.toml`.
+     in the coda repo's root `pyproject.toml`. Codas the Codapact project publishes always use
+     this prefix, never `coda-<api>` or `<api>-coda`
+     ([naming policy](https://github.com/mikejhill/codapact/blob/main/docs/publishing-codas.md#naming)).
    - `PROGRAM`: the command. It defaults to the distribution name (e.g. `codapact-ynab`);
      `cli.program` in the coda's `codapact.yaml` overrides it.
    - `TOOL`: what follows `uvx`. `DISTRIBUTION` when `PROGRAM` equals it, otherwise
