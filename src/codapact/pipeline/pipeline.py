@@ -218,7 +218,11 @@ def _package_output(config: ProjectConfig, target: TargetConfig) -> Path | None:
 
 
 def _relative(path: Path, start: Path) -> str:
-    return Path(os.path.relpath(path.absolute(), start.absolute())).as_posix()
+    """``path`` relative to ``start``, or absolute when they are on different drives."""
+    try:
+        return Path(os.path.relpath(path.absolute(), start.absolute())).as_posix()
+    except ValueError:  # Windows: no relative path between drives
+        return path.absolute().as_posix()
 
 
 def _readme_context(

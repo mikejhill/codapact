@@ -9,6 +9,7 @@ import pytest
 
 from codapact.core.errors import ConfigError, PluginError
 from codapact.model.api import Api, AuthKind, AuthScheme, ParamLocation
+from codapact.pipeline import pipeline as pipeline_module
 from codapact.pipeline.config import ProjectConfig
 from codapact.pipeline.defaults import default_registry
 from codapact.pipeline.pipeline import Pipeline
@@ -281,3 +282,12 @@ def test_readme_repository_is_normalized() -> None:
         "repository": "acme/cli",
         "pypi": False,
     }
+
+
+def test_paths_on_different_drives_stay_absolute(monkeypatch: pytest.MonkeyPatch) -> None:
+    def cross_drive(path: str, start: str) -> str:
+        raise ValueError("path is on mount 'D:', start on mount 'C:'")
+
+    monkeypatch.setattr(pipeline_module.os.path, "relpath", cross_drive)
+    target = Path("/elsewhere/openapi.yaml")
+    assert pipeline_module._relative(target, Path("/repo")) == target.absolute().as_posix()
