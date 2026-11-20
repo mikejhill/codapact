@@ -23,7 +23,14 @@ from typing import Any
 
 from codapact.commands.model import Arg, ArgKind, Command, CommandTree
 from codapact.core.errors import ConfigError, expect
-from codapact.model.api import Api, AuthKind, GraphQLBinding, HttpBinding, Operation
+from codapact.model.api import (
+    Api,
+    AuthKind,
+    CustomBinding,
+    GraphQLBinding,
+    HttpBinding,
+    Operation,
+)
 from codapact.model.types import (
     Enum,
     ListOf,
@@ -222,6 +229,9 @@ def _dry_run(api: Api, operation: Operation, command: Command, words: list[str])
         (a for a in command.args if a.required),
         key=lambda a: (a.positional is None, a.positional or 0),
     ):
+        if arg.kind is ArgKind.FLAG and arg.positional is None:
+            argv.append(f"--{arg.flag.kebab}")  # a switch takes no value
+            continue
         value = _arg_sample(api, arg)
         if value is None:
             case["skip"] = f"no sample satisfies the constraints of --{arg.flag.kebab}"
@@ -233,6 +243,9 @@ def _dry_run(api: Api, operation: Operation, command: Command, words: list[str])
     by_flag = {"--" + a.flag.kebab: a for a in command.args}
     for group in command.requires_one_of:  # members are optional, so none is in argv yet
         for flag in group:
+            if by_flag[flag].kind is ArgKind.FLAG:
+                argv.append(flag)
+                break
             value = _arg_sample(api, by_flag[flag])
             if value is not None:
                 argv += [flag, value]
@@ -245,7 +258,11 @@ def _dry_run(api: Api, operation: Operation, command: Command, words: list[str])
     case["run"] = [*words, *argv]
     http = operation.binding(HttpBinding)
     graphql = operation.binding(GraphQLBinding)
-    if http is not None:
+    if operation.binding(CustomBinding) is not None:
+        # A protocol handler decides what goes on the wire; the dry run must still
+        # produce a request, but its method and path are the handler's business.
+        pass
+    elif http is not None:
         case["method"] = http.method.upper()
         case["path"] = _path_pattern(http.path)
     else:

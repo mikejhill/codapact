@@ -194,11 +194,12 @@ class Suite:
         _check(result.code == 0, result, "--dry-run failed")
         request = result.json()
         _check(isinstance(request, dict) and "url" in request, result, "no request printed")
-        _check(
-            request.get("method") == data.get("method"),
-            result,
-            f"expected method {data.get('method')}",
-        )
+        if data.get("method"):
+            _check(
+                request.get("method") == data["method"],
+                result,
+                f"expected method {data['method']}",
+            )
         url = urlsplit(str(request["url"]))
         if data.get("path"):
             _check(
