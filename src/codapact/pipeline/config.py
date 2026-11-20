@@ -13,6 +13,10 @@ shape:                     # ordered L3 transforms
   - paginate: {operations: [list_pets], items: items, next: next_cursor}
 surface: {flatten_body: true, trim_namespace: true}
 cli: {program: petstore}
+readme:                    # README of the generated Python package / coda repository
+  name: Petstore API
+  docs: https://petstore.example.com/docs
+  repository: acme/petstore-cli
 e2e:                       # end-to-end tests shipped in the generated CLI bundle
   scenarios:
     - {run: [pets, list], expect: {exit: 0}}
@@ -35,6 +39,7 @@ from typing import Any
 
 from codapact.core.errors import ConfigError
 from codapact.sources.loader import Fetcher, parse_structured
+from codapact.targets.python.readme import BADGES as README_BADGES
 
 CONFIG_VERSION = 1
 
@@ -71,6 +76,7 @@ class ProjectConfig:
     surface: Mapping[str, Any] = field(default_factory=dict)
     cli: Mapping[str, Any] = field(default_factory=dict)
     e2e: Mapping[str, Any] = field(default_factory=dict)
+    readme: Mapping[str, Any] = field(default_factory=dict)
     base: Path = field(default_factory=Path.cwd)
     digest: str | None = None
     """SHA-256 of the project file, when loaded from one (recorded in output manifests)."""
@@ -85,7 +91,16 @@ class ProjectConfig:
     @classmethod
     def from_data(cls, data: Mapping[str, Any], *, base: Path) -> ProjectConfig:
         """Validate configuration data; relative paths resolve against ``base``."""
-        unknown = set(data) - {"version", "source", "shape", "surface", "cli", "e2e", "targets"}
+        unknown = set(data) - {
+            "version",
+            "source",
+            "shape",
+            "surface",
+            "cli",
+            "e2e",
+            "readme",
+            "targets",
+        }
         if unknown:
             raise ConfigError(f"unknown configuration keys {sorted(unknown)}")
         if data.get("version") != CONFIG_VERSION:
@@ -169,8 +184,53 @@ class ProjectConfig:
             surface=_mapping(data.get("surface", {}), "surface"),
             cli=cli,
             e2e=_mapping(data.get("e2e", {}), "e2e"),
+            readme=_readme(data.get("readme", {})),
             base=base,
         )
+
+
+_REPOSITORY = re.compile(r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+")
+
+
+def _readme(value: Any) -> dict[str, Any]:
+    """Validate ``readme``; ``repository`` is normalized to ``owner/name``."""
+    readme = _mapping(value, "readme")
+    known = {"name", "about", "docs", "repository", "ci_workflow", "pypi", "badges"}
+    unknown = set(readme) - known - {"examples", "sections"}
+    if unknown:
+        raise ConfigError(f"readme: unknown keys {sorted(unknown)}")
+    for key in ("name", "about", "ci_workflow"):
+        if key in readme and (not isinstance(readme[key], str) or not readme[key].strip()):
+            raise ConfigError(f"readme.{key} must be a non-empty string")
+    docs = readme.get("docs")
+    if docs is not None and (
+        not isinstance(docs, str) or not docs.startswith(("https://", "http://"))
+    ):
+        raise ConfigError("readme.docs must be an http(s) URL")
+    repository = readme.get("repository")
+    if repository is not None:
+        name = repository.removeprefix("https://github.com/") if isinstance(repository, str) else ""
+        name = name.removesuffix(".git").strip("/")
+        if not _REPOSITORY.fullmatch(name):
+            raise ConfigError("readme.repository must be a GitHub repository, e.g. acme/acme-cli")
+        readme["repository"] = name
+    if "pypi" in readme and not isinstance(readme["pypi"], bool):
+        raise ConfigError("readme.pypi must be true or false")
+    badges = readme.get("badges", list(README_BADGES))
+    if not isinstance(badges, list) or not set(badges) <= set(README_BADGES):
+        raise ConfigError(f"readme.badges must be a list of {', '.join(README_BADGES)}")
+    examples = readme.get("examples", [])
+    if not isinstance(examples, list) or not all(isinstance(e, str) and e for e in examples):
+        raise ConfigError("readme.examples must be a list of command lines")
+    sections = readme.get("sections", [])
+    if not isinstance(sections, list) or not all(
+        isinstance(s, Mapping)
+        and set(s) == {"title", "body"}
+        and all(isinstance(v, str) and v.strip() for v in s.values())
+        for s in sections
+    ):
+        raise ConfigError("readme.sections must be a list of {title, body} strings")
+    return readme
 
 
 def _mapping(value: Any, where: str) -> dict[str, Any]:

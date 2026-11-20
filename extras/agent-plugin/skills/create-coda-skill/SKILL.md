@@ -74,6 +74,10 @@ typed JSON, against one `--help` call per command and text to parse.
 5. **Place it.** Commit it in the coda repo as `skills/PROGRAM/SKILL.md`, so it ships with
    the coda. To use it, copy the `PROGRAM` folder into the agent's skills folder
    (Claude Code: `~/.claude/skills/`; GitHub Copilot: `~/.copilot/skills/`).
+   The coda's README is generated; to mention the skill there, add a `readme.sections`
+   entry to `codapact.yaml` (title `Agent skill`, body: the path and the copy step) and
+   regenerate. Never edit `README.md` by hand
+   ([README format](https://github.com/mikejhill/codapact/blob/main/docs/publishing-codas.md#readme)).
 
 6. **Test it.** Run this locally, on a machine where the user's own credentials are already
    saved (`PROGRAM auth status` shows them). Never put personal credentials in CI secrets
@@ -100,3 +104,5 @@ If the agent needed information that the CLI did not give it, fix the CLI, never
 - [ ] No version pin: the skill always installs the latest coda.
 - [ ] `name` equals `PROGRAM`; the description names the product, its resources, and the CLI.
 - [ ] `describe --brief` of the released coda has `start`, `exit_codes`, and `auth` with `docs`.
+- [ ] The coda's README is generated (`python-readme` target) and points to the skill through
+      `readme.sections`, not a hand edit.

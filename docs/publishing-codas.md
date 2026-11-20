@@ -59,7 +59,9 @@ Follow [codapact-ynab](https://github.com/mikejhill/codapact-ynab):
 - `openapi.yaml` (or the GraphQL schema): the pinned contract; `source.upstream` names the
   remote copy that `codapact sync --check` watches.
 - `codapact.yaml`: targets `python` and `python-cli` into `gen/python`, with
-  `options: {package: codapact_<api>, distribution: codapact-<api>}`.
+  `options: {package: codapact_<api>, distribution: codapact-<api>}`, and `python-readme`
+  into `.` (see [README](#readme)).
+- `README.md`: generated; never edited by hand.
 - `gen/`: generated, never edited by hand; CI regenerates and fails on a diff.
 - Root `pyproject.toml`: hand-written PyPI metadata and version (owned by release-please),
   building from `gen/python/src`.
@@ -67,3 +69,32 @@ Follow [codapact-ynab](https://github.com/mikejhill/codapact-ynab):
   [create-coda-skill](../extras/agent-plugin/skills/create-coda-skill/SKILL.md).
 
 Run a coda through `uvx`; do not document `uv tool install` as the way to run it.
+
+## README
+
+Every coda's README is generated in the [common format](configuration.md#readme), so all
+codas read the same. Set the `readme` section of `codapact.yaml`:
+
+```yaml
+readme:
+  name: YNAB API                         # product name of the API
+  docs: https://api.ynab.com/            # its public documentation
+  repository: mikejhill/codapact-ynab    # GitHub: badges and links
+  examples: [plans list, accounts list -o table]
+  sections:                              # anything coda-specific, e.g. upgrade notes
+    - {title: Notes, body: "..."}
+```
+
+- **Source and version.** With `docs` and `source.upstream` set, the README links the API,
+  the pinned contract and its upstream, and records the contract version and SHA-256 and
+  the Codapact version it was generated with. CI regenerates and fails on a diff, so this
+  always matches the code.
+- **Badges.** A coda on GitHub shows all of them: CI, PyPI version, Python versions,
+  license, API version, and Codapact version.
+- **No published API.** For a service without a public API, leave out `docs` and
+  `source.upstream` and set `about` to one sentence saying what the coda is, e.g.
+  "`codapact-acme` is a command-line tool for making calls to Acme." The README then has no
+  API source section and no API badge. Say nothing about how the contract was written.
+- **Not on PyPI yet.** Without `repository` (or with `pypi: false`), the README runs the coda
+  with `uvx --from ./gen/python codapact-<api>`.
+- **Agent skill.** Link it with a `sections` entry once the skill exists.

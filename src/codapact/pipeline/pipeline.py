@@ -9,6 +9,7 @@ acquire → translate → validate → shape → surface → commands → genera
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -128,14 +129,22 @@ class Pipeline:
             target = self.target(target_config, config.base)
             self.registry.check(target, api)
             options = {**shared.get(target_config.output, {}), **target_config.options}
-            if target.name == "python" and any(
-                t.name == "python-cli" and t.output == target_config.output for t in config.targets
-            ):
+            package_output = _package_output(config, target_config)
+            if package_output is not None:
+                if target.name == "python-readme":
+                    for key, value in shared.get(package_output, {}).items():
+                        options.setdefault(key, value)
+                if any(
+                    t.name == "python-cli" and t.output == package_output for t in config.targets
+                ):
+                    options.setdefault(
+                        "command", result.commands.program.kebab if result.commands else None
+                    )
+                    options.setdefault(
+                        "env_prefix", result.commands.env_prefix if result.commands else None
+                    )
                 options.setdefault(
-                    "command", result.commands.program.kebab if result.commands else None
-                )
-                options.setdefault(
-                    "env_prefix", result.commands.env_prefix if result.commands else None
+                    "readme", _readme_context(config, result, target_config.output, package_output)
                 )
             if target.needs_commands:
                 for key in ("auth_plugin", "auth", "previous_programs"):
@@ -197,6 +206,54 @@ def source_metadata(
             for name, data in zip(config.source.documents, companions, strict=True)
         }
     return metadata
+
+
+def _package_output(config: ProjectConfig, target: TargetConfig) -> Path | None:
+    """The Python package a ``python`` or ``python-readme`` target documents."""
+    if target.name == "python":
+        return target.output
+    if target.name == "python-readme":
+        return next((t.output for t in config.targets if t.name == "python"), None)
+    return None
+
+
+def _relative(path: Path, start: Path) -> str:
+    """``path`` relative to ``start``, or absolute when they are on different drives."""
+    try:
+        return Path(os.path.relpath(path.absolute(), start.absolute())).as_posix()
+    except ValueError:  # Windows: no relative path between drives
+        return path.absolute().as_posix()
+
+
+def _readme_context(
+    config: ProjectConfig, result: PipelineResult, output: Path, package: Path
+) -> dict[str, Any]:
+    """What a README needs beyond the model: settings, the pinned source, credential docs."""
+    location = config.source.location
+    source: dict[str, Any] = {
+        "type": config.source.type,
+        "location": location,
+        "sha256": result.source.get("sha256", ""),
+        "upstream": config.source.upstream,
+        "contract": None,
+        "contract_path": None,
+    }
+    if not location.startswith(("https://", "http://")):
+        contract = config.base / location
+        source["contract"] = _relative(contract, output)
+        source["contract_path"] = _relative(contract, config.base)
+    auth = config.cli.get("auth") or {}
+    docs = {
+        str(name): str(spec["docs"])
+        for name, spec in auth.items()
+        if isinstance(spec, dict) and isinstance(spec.get("docs"), str)
+    }
+    return {
+        "settings": dict(config.readme),
+        "source": source,
+        "auth_docs": docs,
+        "package_dir": _relative(package, output),
+    }
 
 
 def _selects_first(shape: tuple[Any, ...]) -> bool:

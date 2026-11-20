@@ -29,12 +29,17 @@ cli:
   previous_programs: [pets]   # optional; earlier names whose logins and settings carry over
   auth_plugin: my_auth:provider   # optional; see Authentication
   auth: {sso: {client_id: petstore-cli, scopes: [read]}}
+readme:                      # optional; README of the Python package (see README)
+  name: Petstore API
+  docs: https://petstore.example.com/docs
+  repository: acme/codapact-petstore
 e2e:                         # optional; tests shipped with the generated CLI
   scenarios:
     - {name: list pets, run: [pets, list], expect: {not_empty: ["$"]}}
 targets:
   - {name: python, output: out/python, options: {package: petstore}}
   - {name: python-cli, output: out/python}
+  - {name: python-readme, output: .}   # the same README at the repository root
   - {name: typescript, output: out/ts, options: {package: petstore}}
   - {plugin: [python, my_plugin.py], output: out/custom}
 ```
@@ -148,6 +153,38 @@ This is the way to generate part of a very large contract in strict mode.
 | `python` | `version` | `0.1.0` |
 | `typescript` | `package` | API name in kebab case |
 | `typescript` | `version` | `0.1.0` |
+
+`python-readme` takes no options: it writes only `README.md`, in the format below, for the
+first `python` target, usually into the repository root (`output: .`).
+
+## README
+
+The `python` target writes `README.md` next to the package, and `python-readme` writes the
+same text wherever it is pointed. Every generated README has one format, in this order:
+
+| Section | Shown when | Content |
+| --- | --- | --- |
+| Title | always | The distribution name |
+| Badges | `readme.repository` is set | CI status, PyPI version, Python versions, license, API version, generating Codapact version |
+| Introduction | always | `readme.about`, else "Typed Python client and `PROGRAM` command-line tool for the [NAME](docs)" |
+| API source | `readme.docs` or `source.upstream` is set | Link to the API, the pinned contract (linked on GitHub when hosted there) and its upstream, the contract's `info.version`, its SHA-256, and the Codapact version: the exact input the code was generated from |
+| Run | a CLI is generated | `uvx` commands (from PyPI, or `--from` the package folder when not published); never `uv tool install` |
+| Credentials | the API has auth schemes | Environment variables per scheme, `cli.auth.SCHEME.docs`, `auth login`, `doctor` |
+| Use | always | `readme.examples`, `describe --brief`, library usage |
+| Extra sections | `readme.sections` | Your own sections, verbatim |
+| Development | always | `codapact sync --check` / `sync` (with an upstream), `generate`, offline and live tests, pinned to the generating Codapact version |
+
+| `readme` key | Default | Meaning |
+| --- | --- | --- |
+| `name` | contract title | Product name of the API, e.g. `YNAB API` |
+| `about` | generated sentence | Replaces the introduction, e.g. for a service without a published API |
+| `docs` | none | Public API documentation URL. Leave it out, and `source.upstream`, when the service publishes no API: the README then has no API source section or API badge |
+| `repository` | none | GitHub `owner/name` (or its URL); turns on badges and repository links |
+| `ci_workflow` | `ci.yml` | Workflow file the CI badge shows |
+| `pypi` | `true` with `repository`, else `false` | Whether the package is on PyPI: PyPI badges and `uvx DISTRIBUTION` instead of `uvx --from PATH` |
+| `badges` | all | Subset and order of `ci`, `pypi`, `python`, `license`, `api`, `codapact` |
+| `examples` | none | Command lines after the program name, shown under Use |
+| `sections` | none | List of `{title, body}` (Markdown) added after Use |
 
 ## Generated CLI settings
 
