@@ -503,8 +503,6 @@ class _Translator:
         name = merged.pop("name", None)
         if not isinstance(name, str) or not name:
             raise ContractError(f"{where}.{PROTOCOL_KEY} needs a protocol 'name'")
-        if not _json_compatible(merged):
-            raise ContractError(f"{where}.{PROTOCOL_KEY} options must be JSON-compatible")
         return (m.CustomBinding(name, merged or None),)
 
     def pick_content(self, content: Any, where: str) -> tuple[str | None, Any]:
@@ -899,16 +897,6 @@ class _Translator:
             t.Union(name, tuple(variants), discriminator.get("propertyName"), _docs(schema))
         )
         return t.Nullable(ref) if nullable else ref
-
-
-def _json_compatible(value: Any) -> bool:
-    if value is None or isinstance(value, str | bool | int | float):
-        return True
-    if isinstance(value, list):
-        return all(_json_compatible(v) for v in value)
-    if isinstance(value, dict):
-        return all(isinstance(k, str) and _json_compatible(v) for k, v in value.items())
-    return False
 
 
 def _admits_null(schema: Any) -> bool:

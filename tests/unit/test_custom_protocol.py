@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast, override
 
 import pytest
 
 from codapact.core.errors import ConfigError, PluginError
 from codapact.model.api import CustomBinding, HttpBinding
+from codapact.model.migrations import migrate
 from codapact.model.serialize import dumps, loads
 from codapact.model.validate import validate
 from codapact.plugins.protocol import required_capabilities
@@ -24,6 +25,7 @@ from codapact.runtime import (
     send_authorized,
 )
 from codapact.runtime.protocols.custom import load_object
+from codapact.shaping.engine import Shaper
 from tests.support import FakeTransport, import_generated, openapi
 
 PROTOCOL = "x-codapact-protocol"
@@ -120,6 +122,23 @@ def test_bad_extension_values(value: Any, message: str) -> None:
     assert any(message in str(d) for d in result.diagnostics), [str(d) for d in result.diagnostics]
 
 
+def test_v2_models_migrate_unchanged() -> None:
+    assert migrate({"model_version": 2, "name": "x"}, target=3) == {
+        "model_version": 3,
+        "name": "x",
+    }
+
+
+def test_renaming_a_parameter_keeps_the_custom_binding() -> None:
+    api = translate(contract(**{PROTOCOL: "rpc"}))
+    result = Shaper().apply(api, [{"rename": {"params": {"get_day.date": "day"}}}])
+    assert result.api is not None
+    day = result.api.operation("get_day")
+    assert day.binding(CustomBinding) == api.operation("get_day").binding(CustomBinding)
+    http = day.binding(HttpBinding)
+    assert http is not None and http.params[0].param == "day"
+
+
 def test_protocol_names_are_validated() -> None:
     api = translate(contract(**{PROTOCOL: "Bad Name"}))
     assert validate(api).has_errors
@@ -132,7 +151,8 @@ class Echo:
         self.exchange = exchange
 
     def call(self, operation: Any, binding: CustomBinding, arguments: dict[str, Any]) -> Any:
-        body = json.dumps({"method": binding.options["method"], "args": arguments}).encode()
+        options: Any = binding.options
+        body = json.dumps({"method": options["method"], "args": arguments}).encode()
         request = HttpRequest("POST", self.exchange.base_url + "/rpc", {"X-Rpc": "1"}, body)
         response = send_authorized(self.exchange, operation, request)
         return self.exchange.decode(json.loads(response.body), operation.result, "$result")
@@ -149,6 +169,7 @@ def test_runtime_dispatches_to_registered_handler() -> None:
     auth = StaticAuth({"key": Credential("tok")})
     client = RuntimeClient(api, transport=transport, auth=auth, protocols={"rpc": Echo})
     assert client.call("get_day", {"date": "2030-01-01"}) == {"date": "2030-01-01"}
+    assert client.call("get_day", {"date": "2030-01-02"}) == {"date": "2030-01-02"}
     sent = transport.requests[0]
     assert sent.url == "https://rpc.example.com/rpc"
     assert sent.headers["Authorization"] == "Bearer tok"
@@ -184,6 +205,7 @@ def test_static_cookie_credentials_merge_with_handler_cookies() -> None:
     api = translate(doc)
 
     class CookieEcho(Echo):
+        @override
         def call(self, operation: Any, binding: CustomBinding, arguments: dict[str, Any]) -> Any:
             request = HttpRequest(
                 "GET", self.exchange.base_url + "/x?a=1", {"cookie": "pre=1"}, None
@@ -246,7 +268,7 @@ def test_bad_handlers_are_rejected() -> None:
     with pytest.raises(ConfigError, match="not callable"):
         not_callable.call("get_day", {"date": "d"})
     no_call = RuntimeClient(
-        api, transport=transport, auth=auth, protocols={"rpc": lambda e: object()}
+        api, transport=transport, auth=auth, protocols={"rpc": lambda e: cast(Any, object())}
     )
     with pytest.raises(ConfigError, match="no call"):
         no_call.call("get_day", {"date": "d"})
@@ -262,14 +284,15 @@ class Handler:
         self.exchange = exchange
 
     def call(self, operation, binding, arguments):
-        body = json.dumps({"method": binding.options["method"], "args": arguments}).encode()
+        options: Any = binding.options
+        body = json.dumps({"method": options["method"], "args": arguments}).encode()
         request = HttpRequest("POST", self.exchange.base_url + "/rpc", {}, body)
         response = send_authorized(self.exchange, operation, request)
         return self.exchange.decode(json.loads(response.body), operation.result, "$result")
 """
 
 
-def generate(tmp_path: Path, include: dict[str, str]):
+def generate(tmp_path: Path, include: Any):
     from codapact.pipeline.config import ProjectConfig
     from codapact.pipeline.defaults import default_registry
     from codapact.pipeline.pipeline import Pipeline
@@ -325,7 +348,7 @@ def test_includes_outside_the_project_or_missing_are_refused(tmp_path: Path) -> 
     with pytest.raises(ConfigError, match="missing.py"):
         generate(project, {"_rpc.py": "missing.py"})
     with pytest.raises(ConfigError, match="must map output paths"):
-        generate(project, ["x"])  # type: ignore[arg-type]
+        generate(project, ["x"])
     (project / "bin.py").write_bytes(b"\xff\xfe")
     with pytest.raises(ConfigError, match="not UTF-8"):
         generate(project, {"_rpc.py": "bin.py"})

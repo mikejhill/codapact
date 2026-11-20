@@ -163,12 +163,13 @@ operation.result, "$result")` validates the result according to `response_valida
 ```python
 from codapact.runtime import HttpRequest, send_authorized
 
+
 class GwtRpc:
     def __init__(self, exchange):
         self.exchange = exchange
 
     def call(self, operation, binding, arguments):
-        body = encode(binding.options, arguments)          # protocol-specific
+        body = encode(binding.options, arguments)  # protocol-specific
         request = HttpRequest("POST", f"{self.exchange.base_url}/app", {}, body)
         response = send_authorized(self.exchange, operation, request)
         return self.exchange.decode(decode(response.body), operation.result, "$result")

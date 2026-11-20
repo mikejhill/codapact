@@ -251,6 +251,19 @@ def test_dry_run_fills_a_required_body_whose_fields_are_all_optional() -> None:
     assert runs["post-bad-worse"]["skip"] == "no sample satisfies any of --bad or --worse"
 
 
+def test_dry_run_satisfies_a_required_body_with_a_switch() -> None:
+    contract = {
+        "openapi": "3.1.0",
+        "info": {"title": "Zoo", "version": "1"},
+        "servers": [{"url": "https://zoo.example.com"}],
+        "paths": {"/flag": _wrapper_body({"done": {"type": "boolean"}})},
+    }
+    api = openapi(contract).api
+    assert api is not None
+    (case,) = suite_for(api)["dry_runs"]
+    assert case["run"] == ["post-done", "--done"]
+
+
 def test_dry_run_passes_a_required_switch_without_a_value() -> None:
     contract = {
         "openapi": "3.1.0",
