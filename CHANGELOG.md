@@ -2,6 +2,13 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.12.0](https://github.com/mikejhill/codapact/compare/v0.11.0...v0.12.0) (2026-11-20)
+
+
+### Features
+
+* custom protocol bindings for non-standard APIs ([#69](https://github.com/mikejhill/codapact/issues/69)) ([4085dc7](https://github.com/mikejhill/codapact/commit/4085dc7f46820cbaf1884192425a499204f269f4))
+
 ## [0.11.0](https://github.com/mikejhill/codapact/compare/v0.10.0...v0.11.0) (2026-11-20)
 
 
