@@ -10,7 +10,8 @@ from codapact.shaping.transforms import BUILTIN_TRANSFORMS
 from codapact.sources.graphql import GraphQLSource
 from codapact.sources.openapi import OpenApiSource
 from codapact.targets.python.cli import PythonCliTarget
-from codapact.targets.python.library import PythonLibraryTarget
+from codapact.targets.python.library import CAPABILITIES, PythonLibraryTarget
+from codapact.targets.python.readme import PythonReadmeTarget
 from codapact.targets.typescript.library import TypeScriptLibraryTarget
 
 
@@ -24,6 +25,7 @@ def default_registry(extra_targets: Iterable[Target] = ()) -> Registry:
     for target in (
         PythonLibraryTarget(),
         PythonCliTarget(),
+        PythonReadmeTarget(CAPABILITIES),
         TypeScriptLibraryTarget(),
         *extra_targets,
     ):
