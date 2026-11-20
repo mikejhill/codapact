@@ -250,10 +250,16 @@ def _readme_context(
         for name, spec in auth.items()
         if isinstance(spec, dict) and isinstance(spec.get("docs"), str)
     }
+    fields = {
+        str(name): [str(f) for f in spec["fields"]]
+        for name, spec in auth.items()
+        if isinstance(spec, dict) and isinstance(spec.get("fields"), dict)
+    }
     return {
         "settings": dict(config.readme),
         "source": source,
         "auth_docs": docs,
+        "auth_fields": fields,
         "package_dir": _relative(package, output),
     }
 
