@@ -122,6 +122,81 @@ parameters) cannot block generation, and problems in schemas only those operatio
 reported as one warning. Model errors in operations it removes are likewise one warning.
 This is the way to generate part of a very large contract in strict mode.
 
+## Custom protocols
+
+APIs that are not plain REST or GraphQL (GWT-RPC, JSON-RPC, XML-RPC, positional form
+posts, vendor RPC formats) are still described with OpenAPI, so types, parameters,
+shaping, the library surface, and the CLI work as usual. An `x-codapact-protocol`
+extension names the protocol that really carries each operation:
+
+```yaml
+openapi: 3.1.0
+x-codapact-protocol: {name: gwt-rpc, service: com.example.AppService}  # default for every operation
+paths:
+  /days/{date}:                       # path and method only shape names and the CLI
+    get:
+      operationId: getDay
+      x-codapact-protocol: {method: getDayInfo, signature: [java.lang.String]}
+  /api/v3/targets:
+    get:
+      operationId: getTargets
+      x-codapact-protocol: false      # an ordinary HTTP operation
+```
+
+| Level | Meaning |
+| --- | --- |
+| document, path item, operation | `false` (no custom protocol from here down), a protocol name, or a mapping; nearer levels override keys of outer ones |
+| mapping | `name` is the protocol; every other key is a JSON option the handler reads from `binding.options` |
+
+Such an operation gets a `CustomBinding(protocol, options)` next to its HTTP binding. The
+custom binding is the one executed; the HTTP binding only names parameters and shapes
+commands, and is never sent. Calling an operation whose protocol has no handler fails with
+an error naming the protocol, rather than sending the placeholder request.
+
+A handler is a factory `(Exchange) -> handler` whose `call(operation, binding, arguments)`
+returns the decoded result. `arguments` are the validated, wire-encoded parameters keyed by
+parameter name. `codapact.runtime.send_authorized(exchange, operation, request)` sends one
+request through middleware, retries, dry runs, tracing and the operation's credentials
+(authenticators run last and can refresh a session); `exchange.decode(value,
+operation.result, "$result")` validates the result according to `response_validation`.
+
+```python
+from codapact.runtime import HttpRequest, send_authorized
+
+
+class GwtRpc:
+    def __init__(self, exchange):
+        self.exchange = exchange
+
+    def call(self, operation, binding, arguments):
+        body = encode(binding.options, arguments)  # protocol-specific
+        request = HttpRequest("POST", f"{self.exchange.base_url}/app", {}, body)
+        response = send_authorized(self.exchange, operation, request)
+        return self.exchange.decode(decode(response.body), operation.result, "$result")
+```
+
+Register handlers per client (`Client(protocols={"gwt-rpc": GwtRpc})`,
+`RuntimeClient(protocols=…)`; values may also be `"module:attribute"` strings, imported on
+first use), or bake them into a generated package with Python target options:
+
+```yaml
+targets:
+  - name: python
+    output: gen/python
+    options:
+      package: acme
+      protocols: {gwt-rpc: "acme._gwt:GwtRpc"}     # default handlers of the generated Client
+      include: {_gwt.py: handlers/gwt.py}            # hand-written files copied into the package
+  - {name: python-cli, output: gen/python}
+```
+
+`include` maps a path inside the package to a file relative to `codapact.yaml` (files outside
+the project directory are refused). Included files are written and tracked like generated
+ones, so the hand-written source stays outside the generated tree and regeneration copies
+it again. The same mechanism ships an [auth plugin](#credential-fields) with the CLI
+(`cli.auth_plugin: acme._session:provider`). Targets without the `binding:custom`
+capability (TypeScript) refuse such contracts before generating.
+
 ## Shaping transforms
 
 | Transform | Config |

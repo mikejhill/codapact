@@ -62,6 +62,7 @@ class ReadmeSettings:
     upstream: str | None = None
     sha256: str = ""
     auth_docs: Mapping[str, str] = field(default_factory=dict)
+    auth_fields: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     package_dir: str = "."
 
     @classmethod
@@ -88,6 +89,9 @@ class ReadmeSettings:
             upstream=source.get("upstream"),
             sha256=str(source.get("sha256", "")),
             auth_docs=dict(data.get("auth_docs") or {}),
+            auth_fields={
+                str(k): tuple(str(f) for f in v) for k, v in (data.get("auth_fields") or {}).items()
+            },
             package_dir=str(data.get("package_dir", ".")),
         )
 
@@ -253,7 +257,7 @@ def _credentials(api: Api, info: Package, settings: ReadmeSettings) -> str:
     docs = settings.auth_docs
     entries = []
     for scheme in api.auth_schemes:
-        entry = f"- `{scheme.name}`: `{_env_hint(prefix, scheme)}`"
+        entry = f"- `{scheme.name}`: `{_env_hint(prefix, scheme, settings.auth_fields)}`"
         hint = docs.get(scheme.name)
         if hint:
             entry += f". {' '.join(hint.split())}"
@@ -326,8 +330,13 @@ def _prefix(info: Package) -> str:
     return info.env_prefix or Name.parse(info.command or info.distribution).screaming
 
 
-def _env_hint(prefix: str, scheme: AuthScheme) -> str:
+def _env_hint(
+    prefix: str, scheme: AuthScheme, fields: Mapping[str, tuple[str, ...]] | None = None
+) -> str:
     base = env_variable(prefix, scheme.name)
+    declared = (fields or {}).get(scheme.name)
+    if declared:
+        return "`, `".join(env_variable(base, name) for name in declared)
     if scheme.kind is AuthKind.BASIC:
         return f"{base}_USERNAME`, `{base}_PASSWORD"
     return base

@@ -18,7 +18,7 @@ from codapact import __version__
 from codapact.commands.derive import derive_commands
 from codapact.commands.model import CommandTree
 from codapact.core.diagnostics import Diagnostics, Severity
-from codapact.core.errors import PluginError, expect
+from codapact.core.errors import ConfigError, PluginError, expect
 from codapact.model.api import Api
 from codapact.model.validate import validate
 from codapact.pipeline import writer
@@ -129,6 +129,8 @@ class Pipeline:
             target = self.target(target_config, config.base)
             self.registry.check(target, api)
             options = {**shared.get(target_config.output, {}), **target_config.options}
+            if "include" in options:
+                options["include_files"] = _read_includes(options["include"], config.base)
             package_output = _package_output(config, target_config)
             if package_output is not None:
                 if target.name == "python-readme":
@@ -248,12 +250,44 @@ def _readme_context(
         for name, spec in auth.items()
         if isinstance(spec, dict) and isinstance(spec.get("docs"), str)
     }
+    fields = {
+        str(name): [str(f) for f in spec["fields"]]
+        for name, spec in auth.items()
+        if isinstance(spec, dict) and isinstance(spec.get("fields"), dict)
+    }
     return {
         "settings": dict(config.readme),
         "source": source,
         "auth_docs": docs,
+        "auth_fields": fields,
         "package_dir": _relative(package, output),
     }
+
+
+def _read_includes(include: Any, base: Path) -> dict[str, str]:
+    """Read hand-written files a target copies into its output (``include`` option).
+
+    ``include`` maps an output path (relative to the target's package or output root)
+    to a source file relative to the project file; sources outside the project
+    directory are refused.
+    """
+    if not isinstance(include, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in include.items()
+    ):
+        raise ConfigError("target option 'include' must map output paths to source files")
+    root = base.resolve()
+    files: dict[str, str] = {}
+    for output, source in include.items():
+        path = (base / source).resolve()
+        if not path.is_relative_to(root):
+            raise ConfigError(f"include {source!r} is outside the project directory")
+        try:
+            files[output] = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ConfigError(f"include {source!r}: {exc.strerror or exc}") from None
+        except UnicodeDecodeError:
+            raise ConfigError(f"include {source!r} is not UTF-8 text") from None
+    return files
 
 
 def _selects_first(shape: tuple[Any, ...]) -> bool:
@@ -283,7 +317,7 @@ def _shared_options(config: ProjectConfig) -> dict[Path, dict[str, Any]]:
     shared: dict[Path, dict[str, Any]] = {}
     for target in config.targets:
         merged = shared.setdefault(target.output, {})
-        for key in ("package", "distribution", "version"):
+        for key in ("package", "distribution", "version", "protocols"):
             if key in target.options:
                 merged.setdefault(key, target.options[key])
     return shared

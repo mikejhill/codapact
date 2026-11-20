@@ -24,6 +24,7 @@ from codapact.model.api import (
     MODEL_VERSION,
     Api,
     CursorPagination,
+    CustomBinding,
     HttpBinding,
     OffsetPagination,
     PagePagination,
@@ -102,6 +103,8 @@ def required_capabilities(api: Api) -> frozenset[str]:
         for binding in operation.bindings:
             if isinstance(binding, HttpBinding):
                 needed.add("binding:http")
+            elif isinstance(binding, CustomBinding):
+                needed.add("binding:custom")
             else:
                 needed.add("binding:graphql")
         if isinstance(operation.pagination, CursorPagination):

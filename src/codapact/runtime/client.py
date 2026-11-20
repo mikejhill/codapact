@@ -8,7 +8,7 @@ once, behind replaceable seams.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from importlib.resources.abc import Traversable
 from typing import Any
 
@@ -22,6 +22,7 @@ from codapact.runtime.codec import Codec
 from codapact.runtime.errors import ClientError, ValidationError
 from codapact.runtime.middleware import Retry
 from codapact.runtime.protocols.base import RESPONSE_VALIDATION_MODES, Exchange
+from codapact.runtime.protocols.custom import CustomAdapter, ProtocolSpec
 from codapact.runtime.protocols.graphql import GraphQLAdapter
 from codapact.runtime.protocols.http import HttpAdapter
 
@@ -56,6 +57,7 @@ class RuntimeClient:
         response_validation: str = "strict",
         proxy: str | None = None,
         max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
+        protocols: Mapping[str, ProtocolSpec] | None = None,
     ) -> None:
         """Configure the client; ``base_url`` defaults to the model's first server.
 
@@ -63,6 +65,8 @@ class RuntimeClient:
         ``ResponseValidationError``), ``warn`` (emit ``ResponseValidationWarning`` and
         return the data), or ``off``. ``proxy`` overrides the ``HTTPS_PROXY`` environment.
         ``max_response_bytes`` caps each response body of the default transport.
+        ``protocols`` maps custom protocol names (``CustomBinding.protocol``) to handler
+        factories or ``"module:attribute"`` import strings; see ``runtime.protocols.custom``.
         """
         if response_validation not in RESPONSE_VALIDATION_MODES:
             raise ConfigError(
@@ -94,7 +98,10 @@ class RuntimeClient:
             user_agent=user_agent or f"codapact/{__version__}",
             response_validation=response_validation,
         )
-        self._adapters = tuple(factory(exchange) for factory in adapters)
+        self._adapters = (
+            CustomAdapter(exchange, protocols or {}),
+            *(factory(exchange) for factory in adapters),
+        )
 
     def call(self, operation_name: str, arguments: dict[str, Any]) -> Any:
         """Validate and encode arguments, execute, and return the decoded result."""

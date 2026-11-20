@@ -262,6 +262,8 @@ class AuthCommands:
             spec = field_specs(self.configured.get(scheme.name))
             if spec:
                 row["fields"] = self._field_status(scheme.name, spec)
+                if "missing" in row["fields"].values():
+                    row["status"] = "missing"  # an auth plugin cannot sign in without them
             rows.append(row)
         return rows
 

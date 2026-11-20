@@ -62,7 +62,7 @@ def test_round_trip_is_lossless_and_canonical(factory) -> None:
     text = dumps(api)
     assert loads(text) == api
     assert dumps(loads(text)) == text
-    assert json.loads(text)["model_version"] == MODEL_VERSION == 2
+    assert json.loads(text)["model_version"] == MODEL_VERSION == 3
 
 
 def test_defaults_are_omitted_and_unions_tagged() -> None:
@@ -102,7 +102,7 @@ def test_migrations_upgrade_old_documents(monkeypatch: pytest.MonkeyPatch) -> No
         "model_version": 2,
     }
     with pytest.raises(ModelError, match="no migration"):
-        migrations.migrate({"model_version": 2}, target=3)
+        migrations.migrate({"model_version": 3}, target=4)
     with pytest.raises(ModelError, match="positive"):
         migrations.migrate({"model_version": 0}, target=1)
 

@@ -13,7 +13,7 @@ from enum import StrEnum
 from codapact.model.types import TypeDef, TypeExpr
 from codapact.model.values import JsonValue
 
-MODEL_VERSION = 2
+MODEL_VERSION = 3
 
 
 class OperationKind(StrEnum):
@@ -145,7 +145,23 @@ class GraphQLBinding:
     unwrap: str | None = None
 
 
-Binding = HttpBinding | GraphQLBinding
+@dataclass(frozen=True, slots=True)
+class CustomBinding:
+    """Carry an operation over a protocol the runtime does not implement itself.
+
+    ``protocol`` names a protocol handler the client is given at run time (GWT-RPC,
+    JSON-RPC, a vendor RPC format, a binary framing, ...). ``options`` is whatever
+    static, JSON-compatible data the handler needs for this operation: a remote method
+    name, a type signature, a response mapping. An operation may also keep an
+    ``HttpBinding``; shaping and command derivation read it, the custom binding wins
+    when the operation is executed.
+    """
+
+    protocol: str
+    options: JsonValue = None
+
+
+Binding = HttpBinding | GraphQLBinding | CustomBinding
 
 
 class AuthKind(StrEnum):
@@ -238,7 +254,7 @@ class Operation:
     idempotent: bool = False
     pagination: Pagination | None = None
 
-    def binding[B: (HttpBinding, GraphQLBinding)](self, kind: type[B]) -> B | None:
+    def binding[B: (HttpBinding, GraphQLBinding, CustomBinding)](self, kind: type[B]) -> B | None:
         """Return the binding of the requested protocol, if present."""
         return next((b for b in self.bindings if isinstance(b, kind)), None)
 

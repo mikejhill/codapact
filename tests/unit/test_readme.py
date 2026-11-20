@@ -109,6 +109,14 @@ def test_coda_without_a_published_api_has_no_source_section_or_badges() -> None:
     assert "\nuv run pytest" in text and "CODAPACT_ACME_E2E_LIVE=1" in text
 
 
+def test_credentials_list_declared_sign_in_fields() -> None:
+    api = Api("Acme", "", (), auth_schemes=(AuthScheme("session", AuthKind.CUSTOM),))
+    info = Package("codapact_acme", "codapact-acme", "codapact-acme", "ACME")
+    settings = ReadmeSettings(auth_fields={"session": ("username", "password")})
+    text = render_readme(api, info, settings, "1.0.0")
+    assert "- `session`: `ACME_SESSION_USERNAME`, `ACME_SESSION_PASSWORD`\n" in text
+
+
 def test_library_only_readme() -> None:
     info = Package("pets", "pets")
     text = render_readme(Api(" ", "1", ()), info, ReadmeSettings(), "1.0.0")

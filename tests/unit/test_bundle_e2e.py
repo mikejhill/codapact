@@ -251,6 +251,51 @@ def test_dry_run_fills_a_required_body_whose_fields_are_all_optional() -> None:
     assert runs["post-bad-worse"]["skip"] == "no sample satisfies any of --bad or --worse"
 
 
+def test_dry_run_satisfies_a_required_body_with_a_switch() -> None:
+    contract = {
+        "openapi": "3.1.0",
+        "info": {"title": "Zoo", "version": "1"},
+        "servers": [{"url": "https://zoo.example.com"}],
+        "paths": {"/flag": _wrapper_body({"done": {"type": "boolean"}})},
+    }
+    api = openapi(contract).api
+    assert api is not None
+    (case,) = suite_for(api)["dry_runs"]
+    assert case["run"] == ["post-done", "--done"]
+
+
+def test_dry_run_passes_a_required_switch_without_a_value() -> None:
+    contract = {
+        "openapi": "3.1.0",
+        "info": {"title": "Zoo", "version": "1"},
+        "servers": [{"url": "https://zoo.example.com"}],
+        "paths": {
+            "/close": {
+                "post": {
+                    "operationId": "close",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["done"],
+                                    "properties": {"done": {"type": "boolean"}},
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"204": {"description": "ok"}},
+                }
+            }
+        },
+    }
+    api = openapi(contract).api
+    assert api is not None
+    (case,) = suite_for(api)["dry_runs"]
+    assert case["run"] == ["close", "--done"]
+
+
 def test_render_suite_for_graphql() -> None:
     suite = suite_for(library_api())
     case = suite["dry_runs"][0]

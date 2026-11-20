@@ -140,6 +140,13 @@ def test_status_shows_where_each_field_comes_from_never_the_value() -> None:
     assert "pw" not in str(rows) and "fields" not in rows["token"]
 
 
+def test_status_is_missing_while_a_required_field_is_missing() -> None:
+    commands, _ = _commands(MemoryTokenStore(), [])
+    rows = {row["scheme"]: row for row in commands.run(_args("status"))}
+    assert rows["portal"]["fields"]["username"] == "missing"
+    assert rows["portal"]["status"] == "missing"
+
+
 def test_logout_removes_fields_and_the_plugin_session() -> None:
     store = MemoryTokenStore()
     store.save("portal.session", {"cookie": "c"})

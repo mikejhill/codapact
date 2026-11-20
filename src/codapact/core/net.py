@@ -26,6 +26,7 @@ import os
 import socket
 import ssl
 import urllib.request
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from urllib.parse import SplitResult, urlsplit
 
@@ -56,6 +57,25 @@ class HttpResponse:
         """Return a header value using case-insensitive lookup."""
         lowered = name.lower()
         return next((v for k, v in self.headers.items() if k.lower() == lowered), None)
+
+
+def merge_headers(pairs: Iterable[tuple[str, str]]) -> dict[str, str]:
+    """Fold repeated response headers into one value per name (first spelling wins).
+
+    Repeated headers are joined with ``", "`` as RFC 9110 allows, except ``Set-Cookie``,
+    whose values may contain commas: they are joined with newlines, one cookie per line.
+    """
+    merged: dict[str, str] = {}
+    names: dict[str, str] = {}
+    for name, value in pairs:
+        key = name.lower()
+        if key not in names:
+            names[key] = name
+            merged[name] = value
+            continue
+        separator = "\n" if key == "set-cookie" else ", "
+        merged[names[key]] += separator + value
+    return merged
 
 
 def validate_url(url: str) -> SplitResult:
@@ -161,7 +181,7 @@ class SafeHttpClient:
             connection.close()
         if len(body) > self.max_bytes:
             raise ResponseTooLargeError(self.max_bytes)
-        return HttpResponse(response.status, dict(response.getheaders()), body)
+        return HttpResponse(response.status, merge_headers(response.getheaders()), body)
 
     def _resolve(self, host: str, port: int, *, check: bool) -> list[str]:
         try:

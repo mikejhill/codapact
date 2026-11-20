@@ -24,6 +24,7 @@ from codapact.sources.base import SourceInput, SourceResult, option_bool
 from codapact.sources.loader import parse_structured
 
 METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
+PROTOCOL_KEY = "x-codapact-protocol"
 SAFE_METHODS = {"get", "head", "options", "trace"}
 IDEMPOTENT_METHODS = SAFE_METHODS | {"put", "delete"}
 SCHEMA_KEYS_IGNORED = {
@@ -456,6 +457,7 @@ class _Translator:
             result=result,
             errors=errors,
             bindings=(
+                *self.custom_binding(item, op, where),
                 m.HttpBinding(
                     method.upper(),
                     path,
@@ -472,6 +474,36 @@ class _Translator:
             read_only=read_only,
             idempotent=method in IDEMPOTENT_METHODS,
         )
+
+    def custom_binding(
+        self, item: dict[str, Any], op: dict[str, Any], where: str
+    ) -> tuple[m.CustomBinding, ...]:
+        """Read ``x-codapact-protocol`` from the document, path item, and operation.
+
+        Each level is ``false`` (no custom protocol from here down), a protocol name, or
+        a mapping with an optional ``name`` whose other keys are handler options. Nearer
+        levels override keys from outer ones.
+        """
+        merged: dict[str, Any] | None = None
+        for level, source in (("", self.doc), ("path item", item), ("operation", op)):
+            if PROTOCOL_KEY not in source:
+                continue
+            raw = source[PROTOCOL_KEY]
+            label = f"{where}.{PROTOCOL_KEY}" if level else PROTOCOL_KEY
+            if raw is False or raw is None:
+                merged = None
+            elif isinstance(raw, str):
+                merged = {**(merged or {}), "name": raw}
+            elif isinstance(raw, dict):
+                merged = {**(merged or {}), **raw}
+            else:
+                raise ContractError(f"{label} must be false, a protocol name, or a mapping")
+        if merged is None:
+            return ()
+        name = merged.pop("name", None)
+        if not isinstance(name, str) or not name:
+            raise ContractError(f"{where}.{PROTOCOL_KEY} needs a protocol 'name'")
+        return (m.CustomBinding(name, merged or None),)
 
     def pick_content(self, content: Any, where: str) -> tuple[str | None, Any]:
         if not isinstance(content, dict) or not content:

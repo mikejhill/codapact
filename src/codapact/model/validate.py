@@ -13,6 +13,7 @@ import re
 from codapact.core.diagnostics import Diagnostics
 from codapact.model.api import (
     Api,
+    CustomBinding,
     GraphQLBinding,
     HttpBinding,
     Operation,
@@ -28,6 +29,7 @@ from codapact.model.types import (
 )
 
 IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+PROTOCOL_NAME = re.compile(r"[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*")
 
 
 def validate(model: Api) -> Diagnostics:
@@ -129,6 +131,13 @@ def _check_bindings(operation: Operation, diagnostics: Diagnostics, where: str) 
                 if set(bound) != params or len(bound) != len(params):
                     diagnostics.error(
                         "model.binding", "GraphQL binding must map every param once", where
+                    )
+            case CustomBinding():
+                if not PROTOCOL_NAME.fullmatch(binding.protocol):
+                    diagnostics.error(
+                        "model.binding",
+                        f"protocol name {binding.protocol!r} must match {PROTOCOL_NAME.pattern}",
+                        where,
                     )
 
 

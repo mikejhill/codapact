@@ -27,6 +27,7 @@ from codapact.runtime.abstractions import (
     AuthProvider,
     Credential,
     HttpRequest,
+    HttpResponse,
     Secret,
 )
 from codapact.runtime.errors import AuthError
@@ -220,6 +221,23 @@ def auth_hint(provider: AuthProvider, scheme: AuthScheme) -> str:
     """Return the provider's optional ``hint(scheme)``, or an empty string."""
     hint = getattr(provider, "hint", None)
     return str(hint(scheme)) if callable(hint) else ""
+
+
+def response_cookies(response: HttpResponse) -> dict[str, str]:
+    """Return ``{name: value}`` for every cookie a response sets (attributes dropped).
+
+    The default transport keeps each ``Set-Cookie`` header on its own line, so cookie
+    sessions (sign-in forms, CSRF tokens) can be followed by auth plugins. A cookie set
+    to an empty value is included as ``""``; callers decide whether that clears it.
+    """
+    cookies: dict[str, str] = {}
+    raw = response.header("Set-Cookie") or ""
+    for line in raw.splitlines():
+        pair = line.split(";", 1)[0]
+        name, sep, value = pair.partition("=")
+        if sep and name.strip():
+            cookies[name.strip()] = value.strip().strip('"')
+    return cookies
 
 
 def with_headers(request: HttpRequest, headers: Mapping[str, str]) -> HttpRequest:
