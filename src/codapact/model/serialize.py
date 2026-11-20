@@ -39,6 +39,7 @@ _TAGGED: dict[str, type] = {
     "alias": model_types.Alias,
     "http": api.HttpBinding,
     "graphql": api.GraphQLBinding,
+    "custom": api.CustomBinding,
     "cursor": api.CursorPagination,
     "offset": api.OffsetPagination,
     "page": api.PagePagination,

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from codapact import __version__
 from codapact.core.diagnostics import Diagnostic, Severity
+from codapact.core.errors import PluginError
 from codapact.core.naming import Name
 from codapact.model.api import Api
 from codapact.model.serialize import dumps
@@ -28,6 +29,7 @@ CAPABILITIES = frozenset(
     {
         "binding:http",
         "binding:graphql",
+        "binding:custom",
         "pagination:cursor",
         "pagination:offset",
         "pagination:page",
@@ -52,6 +54,10 @@ class PythonOptions:
     version: str
     command: str | None
     env_prefix: str | None = None
+    protocols: tuple[tuple[str, str], ...] = ()
+    """Custom protocol name -> ``module:attribute`` handler factory, baked into the client."""
+    include: tuple[tuple[str, str], ...] = ()
+    """Hand-written package files: path relative to the package -> file content."""
 
     @classmethod
     def from_request(cls, request: GenerationRequest) -> PythonOptions:
@@ -65,6 +71,8 @@ class PythonOptions:
             version=str(options.get("version") or "0.1.0"),
             command=str(command) if command else None,
             env_prefix=str(options["env_prefix"]) if options.get("env_prefix") else None,
+            protocols=_string_map(options.get("protocols"), "protocols"),
+            include=_string_map(options.get("include_files"), "include"),
         )
 
 
@@ -83,11 +91,15 @@ class PythonLibraryTarget:
         files = [
             GeneratedFile(f"{root}/__init__.py", _init(api)),
             GeneratedFile(f"{root}/types.py", render_types(api)),
-            GeneratedFile(f"{root}/client.py", render_client(api, request.surface.root)),
+            GeneratedFile(
+                f"{root}/client.py",
+                render_client(api, request.surface.root, dict(options.protocols)),
+            ),
             GeneratedFile(f"{root}/_model.json", dumps(api)),
             GeneratedFile(f"{root}/py.typed", ""),
             GeneratedFile("pyproject.toml", _pyproject(options, request.generator_version)),
             GeneratedFile("README.md", readme(request, options)),
+            *(GeneratedFile(f"{root}/{path}", content) for path, content in options.include),
         ]
         diagnostics = (Diagnostic(Severity.INFO, "python.generated", f"package {options.package}"),)
         return GenerationResponse(tuple(files), diagnostics)
@@ -143,14 +155,24 @@ def resource_class(path: tuple[Name, ...]) -> str:
     return "_" + "".join(n.pascal for n in path) + "Resource"
 
 
-def render_client(api: Api, root: Namespace) -> str:
+def _string_map(value: object, what: str) -> tuple[tuple[str, str], ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in value.items()
+    ):
+        raise PluginError(f"python option {what!r} must map names to strings")
+    return tuple(sorted(value.items()))
+
+
+def render_client(api: Api, root: Namespace, protocols: dict[str, str] | None = None) -> str:
     """Render ``client.py``: one class per namespace plus ``Client``."""
     out = [
         '"""Client generated from the library surface. Do not edit."""\n',
         "# ruff: noqa: E501",
         "from __future__ import annotations\n",
         "import builtins  # noqa: F401",
-        "from collections.abc import Iterator, Sequence",
+        "from collections.abc import Iterator, Mapping, Sequence",
         "from functools import cache",
         "from importlib.resources import files",
         "from os import PathLike  # noqa: F401",
@@ -165,6 +187,9 @@ def render_client(api: Api, root: Namespace) -> str:
         "from codapact.runtime.arguments import UNSET, Unset, call_args\n",
         "from codapact.runtime.arguments import fields as _fields  # noqa: F401\n",
         "from . import types as _t\n",
+        "",
+        f"PROTOCOLS: dict[str, Any] = {dict(sorted((protocols or {}).items()))!r}",
+        '"""Custom protocol handlers (``module:attribute``) this client registers by default."""\n',
         "",
         "@cache",
         "def _model() -> Any:",
@@ -227,6 +252,7 @@ def _client_class(api: Api, root: Namespace) -> str:
         "        allow_private: bool = False,",
         '        response_validation: str = "strict",',
         "        proxy: str | None = None,",
+        "        protocols: Mapping[str, Any] | None = None,",
         "    ) -> None:",
         "        self._runtime = RuntimeClient(",
         "            _model(),",
@@ -239,6 +265,7 @@ def _client_class(api: Api, root: Namespace) -> str:
         "            allow_private=allow_private,",
         "            response_validation=response_validation,",
         "            proxy=proxy,",
+        "            protocols={**PROTOCOLS, **(protocols or {})},",
         "        )",
     ]
     lines.extend(_children(root, (), "        "))

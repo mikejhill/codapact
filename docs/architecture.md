@@ -69,7 +69,8 @@ Enforced by `tests/unit/test_architecture.py` (AST import scan):
   `Primitive`, `Ref`, `ListOf`, `MapOf`, `Nullable`, `Literal`. Fields carry a `wire_name`,
   so renames never change what goes on the wire.
 - Operations: params, result, named error cases, auth requirement (alternatives of scheme
-  sets), pagination (cursor or offset), namespace, tags, and one or more bindings.
+  sets), pagination (cursor or offset), namespace, tags, and one or more bindings (HTTP,
+  GraphQL, or custom: a named protocol whose handler the client is given at run time).
 - Serialized as canonical JSON with `model_version`. `loads()` runs forward migrations
   first, so artifacts and plugins written against an older version keep working.
 - `validate()` checks unique names, resolvable references, identifier syntax, binding
@@ -89,6 +90,7 @@ Enforced by `tests/unit/test_architecture.py` (AST import scan):
 | Credentials | `AuthProvider.credential(scheme)` | `RuntimeClient(auth=…)` |
 | Bespoke auth | `Authenticator.authenticate(request, scheme)`, optional `refresh` and `expired` | returned by an `AuthProvider`; CLI `auth_plugin` |
 | Protocol | `ProtocolAdapter.supports/call` | `RuntimeClient(adapters=…)` |
+| Non-standard protocol | `CustomBinding(protocol, options)` + `ProtocolHandler.call(operation, binding, arguments)` | `x-codapact-protocol` in OpenAPI; `RuntimeClient(protocols=…)`; python option `protocols` |
 
 ### Plugin protocol
 

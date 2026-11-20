@@ -37,8 +37,13 @@ def _v1_oauth_flows(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def _v2_custom_bindings(data: dict[str, Any]) -> dict[str, Any]:
+    """v2 -> v3: adds the ``custom`` binding kind; v2 documents need no change."""
+    return data
+
+
 # MIGRATIONS[n] upgrades a version-n document to version n + 1.
-MIGRATIONS: dict[int, Migration] = {1: _v1_oauth_flows}
+MIGRATIONS: dict[int, Migration] = {1: _v1_oauth_flows, 2: _v2_custom_bindings}
 
 
 def migrate(data: dict[str, Any], *, target: int) -> dict[str, Any]:

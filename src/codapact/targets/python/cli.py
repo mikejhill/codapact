@@ -57,6 +57,7 @@ class PythonCliTarget:
                     auth_plugin=str(request.options.get("auth_plugin") or ""),
                     auth_config=_auth_config(request),
                     previous_programs=_previous_programs(request),
+                    protocols=bool(request.options.get("protocols")),
                 ),
             ),
             *(
@@ -196,8 +197,13 @@ def render_cli(
     auth_plugin: str = "",
     auth_config: dict[str, dict[str, object]] | None = None,
     previous_programs: tuple[str, ...] = (),
+    protocols: bool = False,
 ) -> str:
-    """Render the argparse module."""
+    """Render the argparse module.
+
+    ``protocols`` passes the client's custom protocol handlers to the runtime, so
+    ``doctor`` session checks reach operations that use them.
+    """
     handlers: list[str] = []
     parser_lines: list[str] = []
     program = tree.program.kebab
@@ -210,6 +216,7 @@ def render_cli(
         f"api_name={api_name!r}, api_version={api_version!r}, "
         f"model=_api_model, auth_plugin={auth_plugin!r}, auth_config={auth_config or {}!r}"
         + (f", previous_programs={previous_programs!r}" if previous_programs else "")
+        + (", protocols=_protocols" if protocols else "")
         + ")"
     )
     head = [
@@ -228,6 +235,7 @@ def render_cli(
         "    number,",
         ")\n",
         "from .client import Client",
+        *(["from .client import PROTOCOLS as _protocols"] if protocols else []),
         "from .client import _model as _api_model\n",
         f"RUNTIME = {runtime}",
         "RAW = argparse.RawDescriptionHelpFormatter\n",

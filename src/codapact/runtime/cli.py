@@ -314,6 +314,8 @@ class CliRuntime:
     previous_programs: tuple[str, ...] = ()
     """Earlier program names (``cli.previous_programs``): their saved logins, settings
     file, and profiles keep working after a rename."""
+    protocols: Mapping[str, Any] | None = None
+    """Custom protocol handlers the generated client registers (used by ``doctor``)."""
 
     @property
     def program_version(self) -> str:
@@ -1155,7 +1157,7 @@ class CliRuntime:
         """Call ``operation`` without arguments, as a command would, ignoring the result."""
         options = self._client_options(args, io.StringIO())
         options["response_validation"] = "off"
-        return RuntimeClient(api, **options).call(operation, {})
+        return RuntimeClient(api, protocols=self.protocols, **options).call(operation, {})
 
     def _client_options(self, args: argparse.Namespace, err: TextIO) -> dict[str, Any]:
         options = self.settings(args)

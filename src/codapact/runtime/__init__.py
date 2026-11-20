@@ -40,6 +40,8 @@ from codapact.runtime.oauth import (
     OAuth2,
     PasswordGrant,
 )
+from codapact.runtime.protocols.base import Exchange
+from codapact.runtime.protocols.custom import ProtocolHandler, send_authorized
 
 __all__ = [
     "ApiError",
@@ -53,6 +55,7 @@ __all__ = [
     "FunctionAuthenticator",
     "OAuth2",
     "PasswordGrant",
+    "ProtocolHandler",
     "StoreAuth",
     "AuthError",
     "AuthProvider",
@@ -61,6 +64,7 @@ __all__ = [
     "ClientError",
     "Credential",
     "EnvAuth",
+    "Exchange",
     "GraphQLResponseError",
     "HttpRequest",
     "HttpResponse",
@@ -73,4 +77,5 @@ __all__ = [
     "TransportError",
     "ValidationError",
     "load_model",
+    "send_authorized",
 ]

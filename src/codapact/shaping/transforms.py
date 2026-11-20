@@ -15,6 +15,7 @@ from codapact.model.api import (
     Api,
     AuthRequirement,
     CursorPagination,
+    GraphQLBinding,
     HttpBinding,
     HttpParam,
     OffsetPagination,
@@ -242,7 +243,7 @@ def _rename_param(op: Operation, old: str, new: str) -> Operation:
                     for p in binding.params
                 ),
             )
-        else:
+        elif isinstance(binding, GraphQLBinding):
             binding = dataclasses.replace(
                 binding,
                 variables=tuple((new if p == old else p, v) for p, v in binding.variables),
