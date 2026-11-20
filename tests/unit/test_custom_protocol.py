@@ -336,3 +336,21 @@ def test_python_option_types_are_checked(tmp_path: Path) -> None:
 
     with pytest.raises(PluginError, match="'protocols' must map"):
         _string_map({"rpc": 1}, "protocols")
+
+
+def test_repeated_headers_merge_and_cookies_parse() -> None:
+    from codapact.core.net import merge_headers
+    from codapact.runtime import response_cookies
+
+    headers = merge_headers(
+        [
+            ("Set-Cookie", "a=1; Path=/; Expires=Wed, 21 Oct 2037 07:28:00 GMT"),
+            ("Vary", "Accept"),
+            ("set-cookie", 'b="two"; HttpOnly'),
+            ("Vary", "Cookie"),
+            ("Set-Cookie", "junk"),
+        ]
+    )
+    assert headers["Vary"] == "Accept, Cookie"
+    assert response_cookies(HttpResponse(200, headers, b"")) == {"a": "1", "b": "two"}
+    assert response_cookies(HttpResponse(200, {}, b"")) == {}

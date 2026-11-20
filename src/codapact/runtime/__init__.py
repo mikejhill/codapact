@@ -20,6 +20,7 @@ from codapact.runtime.auth import (
     EnvAuth,
     FunctionAuthenticator,
     StaticAuth,
+    response_cookies,
 )
 from codapact.runtime.client import RuntimeClient, load_model
 from codapact.runtime.credentials import AuthContext, CommandAuth, StoreAuth
@@ -77,5 +78,6 @@ __all__ = [
     "TransportError",
     "ValidationError",
     "load_model",
+    "response_cookies",
     "send_authorized",
 ]
