@@ -2,6 +2,18 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.11.0](https://github.com/mikejhill/codapact/compare/v0.10.0...v0.11.0) (2026-11-20)
+
+
+### Features
+
+* generate coda READMEs in one common format ([#68](https://github.com/mikejhill/codapact/issues/68)) ([538354f](https://github.com/mikejhill/codapact/commit/538354f9cc7e4cbf8b9d8565dfc960bee1f9283c))
+
+
+### Documentation
+
+* codify codapact-&lt;api&gt; naming policy for self-published codas ([#66](https://github.com/mikejhill/codapact/issues/66)) ([ff01639](https://github.com/mikejhill/codapact/commit/ff01639caa59212958518ff2ff4458d0b759d264))
+
 ## [0.10.0](https://github.com/mikejhill/codapact/compare/v0.9.1...v0.10.0) (2026-11-19)
 
 
