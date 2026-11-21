@@ -207,7 +207,7 @@ capability (TypeScript) refuse such contracts before generating.
 | `paginate` | `operations`, `style: cursor` (`param`, `next`), `offset` (`param`, `limit_param`), or `page` (`param`, default `page`; `start`, default `1`), and `items` (`$` when the result itself is the list). Operations matched only by a pattern that lack the param or items are skipped with a warning; operations named exactly are errors |
 | `defaults` | `params: {"op_glob.param": value}`; the param becomes optional and the runtime sends `value` when it is omitted |
 | `headers` | `{SELECTOR: {Header-Name: value}}` (selectors as in `select`, e.g. `addAttachment` or `POST /rest/*`). Each header becomes an optional header param defaulting to the value, so it is always sent unless overridden (`--x-atlassian-token`); a header the contract declares just gets the default. For vendor headers contracts mention only in prose, such as Jira's `X-Atlassian-Token: no-check` |
-| `auth` | `schemes: {name: SPEC}` ([auth specs](#auth-specs)), `operations` (default all), `optional` (send credentials when set, call anonymously otherwise). For contracts that omit or under-declare `securitySchemes`; re-declaring an identical scheme is allowed |
+| `auth` | `schemes: {name: SPEC}` ([auth specs](#auth-specs)), `operations` (default all), `optional` (send credentials when set, call anonymously otherwise), `alternative` (add the schemes as another way to sign in instead of replacing the declared ones; anonymous access stays last). For contracts that omit or under-declare `securitySchemes`; re-declaring an identical scheme is allowed |
 | `prune` | none; removes unreachable types (also run by `select`) |
 
 ## Surface options
@@ -397,7 +397,9 @@ The first source that has a credential wins, per scheme:
    (`op read …`, `vault kv get …`, `gh auth token`).
 4. OAuth client: `<PREFIX>_<SCHEME>_CLIENT_ID` + `_CLIENT_SECRET` (optional `_SCOPES`)
    runs the client-credentials grant and caches the token.
-5. Saved login from `<program> auth login`.
+5. Browser session, for schemes with `cli.auth.<scheme>.browser` (see
+   [Browser sign-in](#browser-sign-in)).
+6. Saved login from `<program> auth login`.
 
 `cli.auth: {SCHEME: {client_id, scopes, flow, audience}}` bakes public OAuth settings into
 the CLI (no secrets); `fields` declares [credential fields](#credential-fields); `docs` tells a
@@ -411,6 +413,39 @@ set, then device code, then authorization code with PKCE.
 `--with-token` reads a static token from stdin; `--username` saves basic credentials.
 `auth status` shows each scheme's source; `auth token` prints what a command would send;
 `doctor` reports the same, never printing secrets.
+
+### Browser sign-in
+
+For services where API tokens are disabled, a scheme can use cookies from a real browser
+session instead. Declare a `custom` scheme as an alternative and give it `browser`
+settings:
+
+```yaml
+shape:
+  - auth: {schemes: {session: {custom: "Browser sign-in"}}, alternative: true}
+cli:
+  auth:
+    session:
+      browser:
+        login_url: "{base_url}/"                 # page that ends signed in on the API host
+        cookies: [tenant.session.token]          # names that prove the session
+        headers: {X-Atlassian-Token: no-check}   # sent with every request (optional)
+        domain: example.atlassian.net            # cookie host (default: login URL host)
+```
+
+* `<program> auth login --scheme session` opens a browser window; the person signs in
+  (SSO, MFA and all) and the CLI saves the domain's cookies in the credential store once
+  every named cookie is present and the page is back on the API host (5 minute limit).
+* Each request sends the cookies and the configured headers.
+* A 401, or a redirect to another host, renews the session without a window from the
+  same browser profile (identity providers keep their own longer login) and resends once.
+  When that fails the command exits 3 and asks for `auth login` again.
+* Playwright drives the browser: install the `browser` extra
+  (`pip install codapact[browser]`, or ship `playwright` with the coda). It uses an
+  installed Chrome, then Edge, then Playwright's Chromium; `<PREFIX>_BROWSER=chrome|msedge|chromium`
+  picks one.
+* The browser profile lives under `$XDG_STATE_HOME/<program>/browser/<profile>`
+  (`%LOCALAPPDATA%` on Windows) and `auth logout` removes it.
 
 ### Credential fields
 
@@ -489,6 +524,31 @@ client = Client(
 
 The TypeScript client accepts a string, `{username, password}`, a token function, an
 `Authenticator` object, or `clientCredentials({tokenUrl, clientId, clientSecret})`.
+
+## Call hooks and CLI extensions
+
+A call hook changes the arguments and results of operation calls; both methods are optional:
+
+```python
+class Markdown:
+    def before(self, operation, arguments):   # before validation and encoding
+        return arguments
+    def after(self, operation, result):       # on the decoded result
+        return result
+```
+
+`before` hooks run in order and `after` hooks in reverse. Pass them as
+`Client(hooks=[...])` or `RuntimeClient(hooks=[...])`, as objects, zero-argument factories,
+or `"package.module:attribute"` strings.
+
+`cli.extensions` lists `"package.module:factory"` strings (ship the module with the Python
+target's `include`). Each factory receives the `CliRuntime` and returns an object with any of:
+
+| Method | Purpose |
+| --- | --- |
+| `add_options(group, hidden)` | add global options; use `default=argparse.SUPPRESS`, and hide help when `hidden` |
+| `hooks(args)` | call hooks for this invocation |
+| `notes()` | lines added to `describe` notes so agents learn about the extension |
 
 ## Generated bundle tests
 

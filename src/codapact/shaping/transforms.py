@@ -565,9 +565,12 @@ class Auth:
         schemes: {token: bearer}          # see codapact.model.authspec for every spelling
         operations: ["*"]                 # globs or selectors; default every operation
         optional: true                    # also allow anonymous calls (default false)
+        alternative: true                 # add to the operation's existing schemes instead
     ```
 
-    Every listed scheme is required together; with ``optional`` the credential is
+    Every listed scheme is required together; with ``alternative`` they become one more
+    way to authenticate next to what the operation already accepts (a browser session
+    beside an API token). With ``optional`` the credential is
     sent when configured and the call goes out anonymously otherwise. A later step
     may name a scheme again (with the same definition) to change which operations
     require it.
@@ -579,7 +582,7 @@ class Auth:
         self, api: Api, config: Mapping[str, Any], diagnostics: Diagnostics
     ) -> TransformResult:
         """Register the schemes and set each matching operation's requirement."""
-        unknown = set(config) - {"schemes", "operations", "optional"}
+        unknown = set(config) - {"schemes", "operations", "optional", "alternative"}
         if unknown:
             raise ConfigError(f"unknown auth keys {sorted(unknown)}")
         raw = config.get("schemes")
@@ -600,7 +603,16 @@ class Auth:
         operations = []
         for op in api.operations:
             if any(_matches(op, p) for p in patterns):
-                op = dataclasses.replace(op, auth=AuthRequirement(alternatives))
+                if config.get("alternative", False):
+                    # anonymous access, if allowed, stays last: the first satisfiable wins
+                    old = op.auth.alternatives
+                    merged = tuple(a for a in old if a)
+                    merged += tuple(a for a in alternatives if a and a not in merged)
+                    if () in old or () in alternatives:
+                        merged += ((),)
+                    op = dataclasses.replace(op, auth=AuthRequirement(merged))
+                else:
+                    op = dataclasses.replace(op, auth=AuthRequirement(alternatives))
                 applied.append(op.name)
             operations.append(op)
         if not applied:

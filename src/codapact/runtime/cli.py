@@ -722,6 +722,9 @@ class CliRuntime:
             http=self._auth_http(options),
             plugin=plugin or None,
             configured=configured,
+            base_url=str(
+                options.get("base_url") or (api.servers[0].url if api.servers else "") or ""
+            ),
         )
 
     def settings(self, args: argparse.Namespace) -> dict[str, Any]:

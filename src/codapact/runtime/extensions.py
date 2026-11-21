@@ -69,7 +69,7 @@ class CliExtension(Protocol):
 def resolve_hook(value: Any) -> Any:
     """Return a hook object from a hook, a factory, or a ``"module:attribute"`` string."""
     target = load_object(value, "call hook") if isinstance(value, str) else value
-    if _is_hook(target):
+    if _is_hook(target) and not isinstance(target, type):
         return target
     if callable(target):
         made = target()
