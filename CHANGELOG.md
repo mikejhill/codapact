@@ -2,6 +2,13 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.13.0](https://github.com/mikejhill/codapact/compare/v0.12.0...v0.13.0) (2026-11-21)
+
+
+### Features
+
+* call hooks, CLI extensions, browser sign-in, Atlassian contract support ([#71](https://github.com/mikejhill/codapact/issues/71)) ([13e91f4](https://github.com/mikejhill/codapact/commit/13e91f440d7d82e6f11c1d3b338d9ec198416919))
+
 ## [0.12.0](https://github.com/mikejhill/codapact/compare/v0.11.0...v0.12.0) (2026-11-20)
 
 
