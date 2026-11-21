@@ -186,6 +186,8 @@ class Codec:
         consumed: set[str] = set()
         for f in record.fields:
             source_key, target_key = (f.name, f.wire) if encode else (f.wire, f.name)
+            if encode and source_key not in value and f.wire in value:
+                source_key = f.wire  # callers may also use the API's own field names
             if source_key not in value:
                 if f.required:
                     raise ValidationError(f"{path}.{source_key}", "is required")
@@ -211,7 +213,8 @@ class Codec:
         if union.discriminator is not None and isinstance(value, dict):
             for variant in union.variants:
                 key = self._tag_key(variant.type, union.discriminator, encode=encode)
-                if variant.tag is not None and value.get(key) == variant.tag:
+                tag = value.get(key, value.get(union.discriminator))
+                if variant.tag is not None and tag == variant.tag:
                     return self._convert(value, variant.type, path, encode=encode)
         for variant in union.variants:
             try:

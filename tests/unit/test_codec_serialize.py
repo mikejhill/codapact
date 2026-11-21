@@ -62,6 +62,12 @@ CODEC = Codec(Api("t", "1", (), TYPES))
         (1, Ref("Color"), 1),
         ({"kind": "cat"}, Ref("Pet"), {"kind": "cat"}),
         ({"kind": "dog", "good_boy": True}, Ref("Pet"), {"kind": "dog", "goodBoy": True}),
+        ({"kind": "dog", "goodBoy": True}, Ref("Pet"), {"kind": "dog", "goodBoy": True}),
+        (
+            [{"kind": "dog", "goodBoy": False}],
+            ListOf(Ref("Dog")),
+            [{"kind": "dog", "goodBoy": False}],
+        ),
         ("x", Ref("Loose"), "x"),
         ({"id": "ab", "extra": 2}, Ref("Bag"), {"id": "ab", "extra": 2}),
     ],
