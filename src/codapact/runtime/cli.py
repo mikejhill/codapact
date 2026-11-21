@@ -37,6 +37,7 @@ from codapact.runtime.auth import ChainAuth, EnvAuth, FunctionAuthenticator
 from codapact.runtime.client import DEFAULT_MAX_RESPONSE_BYTES, RuntimeClient
 from codapact.runtime.credentials import cli_auth as build_cli_auth
 from codapact.runtime.credentials import field_specs
+from codapact.runtime.extensions import load_extension
 from codapact.runtime.errors import (
     ApiError,
     AuthError,
@@ -316,6 +317,13 @@ class CliRuntime:
     file, and profiles keep working after a rename."""
     protocols: Mapping[str, Any] | None = None
     """Custom protocol handlers the generated client registers (used by ``doctor``)."""
+    extensions: tuple[str, ...] = ()
+    """``package.module:factory`` CLI extensions (``cli.extensions``): extra global options,
+    call hooks, and ``describe`` notes; see ``codapact.runtime.extensions``."""
+
+    def loaded_extensions(self) -> list[Any]:
+        """Return the CLI extension objects (built afresh on each call)."""
+        return [load_extension(spec, self) for spec in self.extensions]
 
     @property
     def program_version(self) -> str:
@@ -489,6 +497,10 @@ class CliRuntime:
             default=keep,
             help=text("on a response that breaks the contract: fail, warn (default), or ignore"),
         )
+        for extension in self.loaded_extensions():
+            add_options = getattr(extension, "add_options", None)
+            if callable(add_options):
+                add_options(group, hidden)
 
     def global_help(self) -> str:
         """Return the reminder of global options shown on every command's help."""
@@ -965,6 +977,12 @@ class CliRuntime:
                         "Errors print to stderr; --error-format json makes them one JSON object.",
                         "JSON arguments accept inline JSON, @file, or @- for stdin.",
                         "--dry-run prints the HTTP request without sending it.",
+                        *(
+                            note
+                            for extension in self.loaded_extensions()
+                            if callable(getattr(extension, "notes", None))
+                            for note in extension.notes()
+                        ),
                     ],
                 }
                 if api.auth_schemes:
@@ -1179,6 +1197,14 @@ class CliRuntime:
         elif getattr(args, "verbose", False):
             secrets = self._secrets() + self._resolved_secrets(options.get("auth"))
             options["middleware"] = (Retry(), Trace(err, secrets))
+        hooks = [
+            hook
+            for extension in self.loaded_extensions()
+            if callable(getattr(extension, "hooks", None))
+            for hook in extension.hooks(args)
+        ]
+        if hooks:
+            options["hooks"] = tuple(hooks)
         return options
 
     def _resolved_secrets(self, chain: Any) -> tuple[str, ...]:

@@ -20,6 +20,7 @@ from codapact.model.serialize import loads
 from codapact.runtime.abstractions import AuthProvider, Middleware, ProtocolAdapter, Transport
 from codapact.runtime.codec import Codec
 from codapact.runtime.errors import ClientError, ValidationError
+from codapact.runtime.extensions import resolve_hook, run_after, run_before
 from codapact.runtime.middleware import Retry
 from codapact.runtime.protocols.base import RESPONSE_VALIDATION_MODES, Exchange
 from codapact.runtime.protocols.custom import CustomAdapter, ProtocolSpec
@@ -58,6 +59,7 @@ class RuntimeClient:
         proxy: str | None = None,
         max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
         protocols: Mapping[str, ProtocolSpec] | None = None,
+        hooks: Sequence[Any] = (),
     ) -> None:
         """Configure the client; ``base_url`` defaults to the model's first server.
 
@@ -67,6 +69,8 @@ class RuntimeClient:
         ``max_response_bytes`` caps each response body of the default transport.
         ``protocols`` maps custom protocol names (``CustomBinding.protocol``) to handler
         factories or ``"module:attribute"`` import strings; see ``runtime.protocols.custom``.
+        ``hooks`` are call hooks (``before``/``after``) or import strings naming them; see
+        ``runtime.extensions``.
         """
         if response_validation not in RESPONSE_VALIDATION_MODES:
             raise ConfigError(
@@ -81,6 +85,7 @@ class RuntimeClient:
         self._operations = {op.name: op for op in api.operations}
         self._codec = Codec(api)
         self._validate = validate
+        self._hooks = tuple(resolve_hook(hook) for hook in hooks)
         exchange = Exchange(
             api=api,
             codec=self._codec,
@@ -106,10 +111,13 @@ class RuntimeClient:
     def call(self, operation_name: str, arguments: dict[str, Any]) -> Any:
         """Validate and encode arguments, execute, and return the decoded result."""
         operation = self._operation(operation_name)
+        if self._hooks:
+            arguments = run_before(self._hooks, operation, arguments)
         encoded = self._encode(operation, arguments)
         for adapter in self._adapters:
             if adapter.supports(operation):
-                return adapter.call(operation, encoded)
+                result = adapter.call(operation, encoded)
+                return run_after(self._hooks, operation, result) if self._hooks else result
         raise ClientError(f"no protocol adapter can execute {operation_name!r}")
 
     def paginate(

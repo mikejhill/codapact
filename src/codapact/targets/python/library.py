@@ -253,6 +253,7 @@ def _client_class(api: Api, root: Namespace) -> str:
         '        response_validation: str = "strict",',
         "        proxy: str | None = None,",
         "        protocols: Mapping[str, Any] | None = None,",
+        "        hooks: Sequence[Any] = (),",
         "    ) -> None:",
         "        self._runtime = RuntimeClient(",
         "            _model(),",
@@ -266,6 +267,7 @@ def _client_class(api: Api, root: Namespace) -> str:
         "            response_validation=response_validation,",
         "            proxy=proxy,",
         "            protocols={**PROTOCOLS, **(protocols or {})},",
+        "            hooks=hooks,",
         "        )",
     ]
     lines.extend(_children(root, (), "        "))

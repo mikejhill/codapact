@@ -58,6 +58,7 @@ class PythonCliTarget:
                     auth_config=_auth_config(request),
                     previous_programs=_previous_programs(request),
                     protocols=bool(request.options.get("protocols")),
+                    extensions=_extensions(request),
                 ),
             ),
             *(
@@ -75,6 +76,13 @@ class PythonCliTarget:
             ),
         )
         return GenerationResponse(files)
+
+
+def _extensions(request: GenerationRequest) -> tuple[str, ...]:
+    value = request.options.get("extensions") or ()
+    if isinstance(value, str) or not all(isinstance(v, str) and ":" in v for v in value):
+        raise PluginError("cli.extensions must be a list of 'package.module:factory' strings")
+    return tuple(value)
 
 
 def _auth_help(request: GenerationRequest) -> str:
@@ -198,6 +206,7 @@ def render_cli(
     auth_config: dict[str, dict[str, object]] | None = None,
     previous_programs: tuple[str, ...] = (),
     protocols: bool = False,
+    extensions: tuple[str, ...] = (),
 ) -> str:
     """Render the argparse module.
 
@@ -217,6 +226,7 @@ def render_cli(
         f"model=_api_model, auth_plugin={auth_plugin!r}, auth_config={auth_config or {}!r}"
         + (f", previous_programs={previous_programs!r}" if previous_programs else "")
         + (", protocols=_protocols" if protocols else "")
+        + (f", extensions={extensions!r}" if extensions else "")
         + ")"
     )
     head = [
