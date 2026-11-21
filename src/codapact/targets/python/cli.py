@@ -18,7 +18,7 @@ from codapact.model.types import ListOf, Nullable, Record, Ref, ScalarKind, Type
 from codapact.plugins.protocol import GeneratedFile, GenerationRequest, GenerationResponse
 from codapact.targets.python.e2e import render_suite
 from codapact.targets.python.library import CAPABILITIES, PythonOptions
-from codapact.targets.python.naming import ident, method_ident
+from codapact.targets.python.naming import ident, method_ident, used_imports
 
 METAVARS = {"date": "YYYY-MM-DD", "datetime": "DATETIME", "binary": "TEXT|@FILE"}
 PARSERS = {
@@ -261,14 +261,12 @@ def render_cli(
         "import argparse",
         "from collections.abc import Sequence",
         "from typing import Any\n",
-        "from codapact.runtime.cli import (  # noqa: F401",
-        "    CliRuntime,",
-        "    binary_value,",
-        "    compact,",
-        "    integer,",
-        "    json_value,",
-        "    number,",
-        ")\n",
+        *used_imports(
+            "codapact.runtime.cli",
+            ["CliRuntime", "binary_value", "compact", "integer", "json_value", "number"],
+            "\n".join(handlers + parser_lines) + runtime,
+        ),
+        "",
         "from .client import Client",
         *(["from .client import PROTOCOLS as _protocols"] if protocols else []),
         "from .client import _model as _api_model\n",

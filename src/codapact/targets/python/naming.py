@@ -108,3 +108,17 @@ def package_name(raw: str) -> str:
 def default_package(api: Api) -> str:
     """Derive a package name from the API title."""
     return ident(Name.parse(api.name or "api"))
+
+
+def used_imports(module: str, names: list[str], body: str) -> list[str]:
+    """Return ``from module import ...`` lines for the ``names`` that ``body`` uses.
+
+    Generated modules import only what they reference, so linters and code scanning
+    see no unused imports. A name may be ``"real as alias"``; the alias is searched.
+    """
+    kept = [n for n in names if re.search(rf"\b{re.escape(n.split(' as ')[-1])}\b", body)]
+    if not kept:
+        return []
+    if len(kept) <= 3:
+        return [f"from {module} import {', '.join(kept)}"]
+    return [f"from {module} import (", *(f"    {n}," for n in kept), ")"]
