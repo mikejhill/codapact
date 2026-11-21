@@ -201,6 +201,7 @@ capability (TypeScript) refuse such contracts before generating.
 
 | Transform | Config |
 | --- | --- |
+| `server` | `url` (replaces the default server, e.g. a `https://{your-domain}` template), `prefix` (a path such as `/wiki/api/v2` moved from the server URL into every operation path, so `--base-url` is the site) |
 | `select` | `include`, `exclude`: lists of globs or `{name, path, tag, kind, namespace, read_only}` selectors. Names match in any spelling (`getIssue`, `get-issue` and `get_issue` are the same); a glob starting with `/` or a method (`GET /rest/api/3/issue/*`) matches the HTTP path |
 | `rename` | `operations`, `types`, `fields` (`Type.field`), `params` (`op.param`), `patterns` (`[{match: regex, replace: template}]` over operation names; explicit `operations` entries win); wire names are kept |
 | `group` | `by: tag` or `by: path`, and/or `operations: {glob: dotted.namespace}` |

@@ -390,7 +390,9 @@ class _Translator:
             if "content" in parameter:
                 self.unsupported("parameters with content maps are not supported", pwhere)
             style = parameter.get("style")
-            if style not in (None, "form", "simple"):
+            if style == "deepObject" and location != "query":
+                self.unsupported("deepObject style is only valid in the query", pwhere)
+            if style not in (None, "form", "simple", "deepObject"):
                 self.unsupported(f"parameter style {style!r} is not supported", pwhere)
             param_name = _identifier(wire)
             if param_name in taken:
@@ -415,6 +417,7 @@ class _Translator:
                     m.ParamLocation(location),
                     wire,
                     explode=bool(parameter.get("explode", location in {"query", "cookie"})),
+                    style="deepObject" if style == "deepObject" else "form",
                 )
             )
         request_media = None
@@ -784,6 +787,9 @@ class _Translator:
             )
             number = t.Primitive(t.ScalarKind.FLOAT, schema.get("format"))
             return t.Nullable(number) if nullable else number
+        if not values and nullable:
+            # ``enum: [null]``: the value is always null
+            return t.Nullable(t.Primitive(t.ScalarKind.ANY))
         if not values or not all(
             isinstance(v, str | int) and not isinstance(v, bool) for v in values
         ):

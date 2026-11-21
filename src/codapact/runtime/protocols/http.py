@@ -56,7 +56,9 @@ class HttpAdapter:
                 case ParamLocation.QUERY:
                     if value is None:
                         continue
-                    if isinstance(value, list):
+                    if placement.style == "deepObject" and isinstance(value, dict):
+                        query.extend(_deep_object(placement.wire_name, value))
+                    elif isinstance(value, list):
                         if placement.explode:
                             query.extend((placement.wire_name, _text(v)) for v in value)
                         else:
@@ -127,6 +129,18 @@ def _match(responses: tuple[BoundResponse, ...], status: int) -> BoundResponse |
             if response.status == candidate:
                 return response
     return next((r for r in responses if r.status == "default"), None)
+
+
+def _deep_object(prefix: str, value: Any) -> list[tuple[str, str]]:
+    """Encode ``{"a": {"b": 1}}`` as ``prefix[a][b]=1`` (OpenAPI ``deepObject``)."""
+    if isinstance(value, dict):
+        pairs: list[tuple[str, str]] = []
+        for key, item in value.items():
+            pairs.extend(_deep_object(f"{prefix}[{key}]", item))
+        return pairs
+    if isinstance(value, list):
+        return [(prefix, _text(v)) for v in value]
+    return [] if value is None else [(prefix, _text(value))]
 
 
 def _text(value: Any) -> str:

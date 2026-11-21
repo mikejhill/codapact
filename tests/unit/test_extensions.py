@@ -676,3 +676,71 @@ def test_auth_transform_adds_an_alternative() -> None:
     assert replaced is not None
     assert {op.auth for op in replaced.operations} == {AuthRequirement((("session",),))}
     assert [s.name for s in replaced.auth_schemes] == ["session"]  # basic is unused now
+
+
+# -- contract features the Atlassian codas need -----------------------------------------
+
+
+def test_server_transform_moves_a_path_prefix() -> None:
+    contract = json.loads(json.dumps(CONTRACT))
+    contract["servers"] = [
+        {"url": "https://{site}/wiki/api/v2", "variables": {"site": {"default": "x"}}}
+    ]
+    result = openapi(contract)
+    assert result.api is not None
+    shaped = Shaper().apply(
+        result.api, [{"server": {"url": "https://example.atlassian.net", "prefix": "/wiki/api/v2"}}]
+    )
+    api = shaped.api
+    assert api is not None
+    assert api.servers[0].url == "https://example.atlassian.net"
+    from codapact.model.api import HttpBinding
+
+    bindings = {op.name: op.binding(HttpBinding) for op in api.operations}
+    paths = {name: b.path for name, b in bindings.items() if b is not None}
+    assert paths["create_note"] == "/wiki/api/v2/notes"
+    assert Shaper().apply(result.api, [{"server": {"prefix": "wiki"}}]).diagnostics.has_errors
+
+
+def test_deep_object_query_and_null_enums() -> None:
+    contract = json.loads(json.dumps(CONTRACT))
+    contract["paths"]["/entries"] = {
+        "get": {
+            "operationId": "listEntries",
+            "parameters": [
+                {
+                    "name": "filter",
+                    "in": "query",
+                    "style": "deepObject",
+                    "explode": True,
+                    "schema": {"type": "object", "additionalProperties": True},
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "ok",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {"value": {"nullable": True, "enum": [None]}},
+                            }
+                        }
+                    },
+                }
+            },
+        }
+    }
+    result = openapi(contract)
+    assert result.api is not None, result.diagnostics
+    from codapact.runtime import StaticAuth
+
+    transport = FakeTransport(lambda request: json_response(200, {"value": None}))
+    client = RuntimeClient(
+        result.api, transport=transport, middleware=(), auth=StaticAuth({"basic": ("u", "p")})
+    )
+    assert client.call(
+        "list_entries", {"filter": {"status": "open", "date": {"gte": "2026-01-01"}}}
+    ) == {"value": None}
+    query = transport.requests[0].url.split("?", 1)[1]
+    assert query == "filter%5Bstatus%5D=open&filter%5Bdate%5D%5Bgte%5D=2026-01-01"

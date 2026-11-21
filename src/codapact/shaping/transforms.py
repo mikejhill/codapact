@@ -25,6 +25,7 @@ from codapact.model.api import (
     Pagination,
     Param,
     ParamLocation,
+    Server,
 )
 from codapact.model.authspec import scheme_from_config
 from codapact.model.rewrite import reachable_types, rename_types, unwrap
@@ -631,8 +632,65 @@ class Auth:
         )
 
 
+class ServerTransform:
+    """Change the default server and move a shared path prefix into every operation path.
+
+    ```yaml
+    - server: {url: "https://your-site.atlassian.net", prefix: /wiki/api/v2}
+    ```
+
+    With ``prefix``, the server URL loses that prefix (if it ends with it) and each HTTP
+    path gains it, so ``--base-url`` is the site and not the API root. ``url`` replaces
+    the default server (for contracts whose server is a template such as
+    ``https://{your-domain}``).
+    """
+
+    name = "server"
+
+    def apply(
+        self, api: Api, config: Mapping[str, Any], diagnostics: Diagnostics
+    ) -> TransformResult:
+        """Rewrite the default server and the HTTP paths."""
+        if not isinstance(config, Mapping) or set(config) - {"url", "prefix", "docs"} or not config:
+            raise ConfigError("server takes url, prefix and docs")
+        prefix = str(config.get("prefix") or "").rstrip("/")
+        if prefix and not prefix.startswith("/"):
+            raise ConfigError("server.prefix must start with /")
+        servers = list(api.servers)
+        if "url" in config:
+            url = str(config["url"]).rstrip("/")
+            docs = str(config.get("docs") or (servers[0].docs if servers else ""))
+            servers = [Server(url, docs), *servers[1:]]
+        elif prefix:
+            servers = [
+                dataclasses.replace(s, url=s.url.rstrip("/").removesuffix(prefix)) for s in servers
+            ]
+        operations = []
+        for op in api.operations:
+            binding = op.binding(HttpBinding)
+            if prefix and binding is not None and not binding.path.startswith(prefix + "/"):
+                moved = dataclasses.replace(binding, path=prefix + binding.path)
+                op = dataclasses.replace(
+                    op, bindings=tuple(moved if b is binding else b for b in op.bindings)
+                )
+            operations.append(op)
+        del diagnostics
+        api = dataclasses.replace(api, servers=tuple(servers), operations=tuple(operations))
+        return TransformResult(
+            api,
+            [
+                {
+                    "transform": self.name,
+                    "server": servers[0].url if servers else "",
+                    "prefix": prefix,
+                }
+            ],
+        )
+
+
 BUILTIN_TRANSFORMS = (
     Select(),
+    ServerTransform(),
     Rename(),
     Group(),
     Paginate(),

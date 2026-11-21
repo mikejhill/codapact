@@ -112,6 +112,8 @@ class HttpParam:
     location: ParamLocation
     wire_name: str
     explode: bool = True
+    style: str = "form"
+    """Query serialization: ``form`` or ``deepObject`` (``name[key]=value``)."""
 
 
 @dataclass(frozen=True, slots=True)
