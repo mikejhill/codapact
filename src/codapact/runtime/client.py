@@ -20,6 +20,7 @@ from codapact.model.serialize import loads
 from codapact.runtime.abstractions import AuthProvider, Middleware, ProtocolAdapter, Transport
 from codapact.runtime.codec import Codec
 from codapact.runtime.errors import ClientError, ValidationError
+from codapact.runtime.extensions import resolve_hook, run_after, run_before
 from codapact.runtime.middleware import Retry
 from codapact.runtime.protocols.base import RESPONSE_VALIDATION_MODES, Exchange
 from codapact.runtime.protocols.custom import CustomAdapter, ProtocolSpec
@@ -58,6 +59,7 @@ class RuntimeClient:
         proxy: str | None = None,
         max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
         protocols: Mapping[str, ProtocolSpec] | None = None,
+        hooks: Sequence[Any] = (),
     ) -> None:
         """Configure the client; ``base_url`` defaults to the model's first server.
 
@@ -67,6 +69,8 @@ class RuntimeClient:
         ``max_response_bytes`` caps each response body of the default transport.
         ``protocols`` maps custom protocol names (``CustomBinding.protocol``) to handler
         factories or ``"module:attribute"`` import strings; see ``runtime.protocols.custom``.
+        ``hooks`` are call hooks (``before``/``after``) or import strings naming them; see
+        ``runtime.extensions``.
         """
         if response_validation not in RESPONSE_VALIDATION_MODES:
             raise ConfigError(
@@ -81,6 +85,7 @@ class RuntimeClient:
         self._operations = {op.name: op for op in api.operations}
         self._codec = Codec(api)
         self._validate = validate
+        self._hooks = tuple(resolve_hook(hook) for hook in hooks)
         exchange = Exchange(
             api=api,
             codec=self._codec,
@@ -106,16 +111,27 @@ class RuntimeClient:
     def call(self, operation_name: str, arguments: dict[str, Any]) -> Any:
         """Validate and encode arguments, execute, and return the decoded result."""
         operation = self._operation(operation_name)
+        result = self._execute(operation, arguments)
+        return run_after(self._hooks, operation, result) if self._hooks else result
+
+    def _execute(self, operation: Operation, arguments: dict[str, Any]) -> Any:
+        """Run ``before`` hooks, encode, and execute; the result is not yet hooked."""
+        if self._hooks:
+            arguments = run_before(self._hooks, operation, arguments)
         encoded = self._encode(operation, arguments)
         for adapter in self._adapters:
             if adapter.supports(operation):
                 return adapter.call(operation, encoded)
-        raise ClientError(f"no protocol adapter can execute {operation_name!r}")
+        raise ClientError(f"no protocol adapter can execute {operation.name!r}")
 
     def paginate(
         self, operation_name: str, arguments: dict[str, Any], *, max_items: int | None = None
     ) -> Iterator[Any]:
-        """Yield items across pages using the operation's declared pagination."""
+        """Yield items across pages using the operation's declared pagination.
+
+        Cursors and item lists come from the page as decoded; ``after`` hooks then run on
+        each item, so a hook that reshapes results cannot break paging.
+        """
         operation = self._operation(operation_name)
         strategy = operation.pagination
         if strategy is None:
@@ -128,13 +144,13 @@ class RuntimeClient:
             arguments[strategy.page_param] = strategy.start if default is None else default
         produced = 0
         for _ in range(MAX_PAGES):
-            page = self.call(operation_name, arguments)
+            page = self._execute(operation, arguments)
             items = _dig(page, strategy.items) or []
             for item in items:
                 if max_items is not None and produced >= max_items:
                     return
                 produced += 1
-                yield item
+                yield run_after(self._hooks, operation, item) if self._hooks else item
             if isinstance(strategy, CursorPagination):
                 cursor = _dig(page, strategy.next_cursor)
                 if not cursor or not items:

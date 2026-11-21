@@ -22,6 +22,7 @@ from codapact.targets.python.naming import (
     method_ident,
     package_name,
     type_name,
+    used_imports,
 )
 from codapact.targets.python.readme import Package, ReadmeSettings, render_readme
 
@@ -41,6 +42,7 @@ CAPABILITIES = frozenset(
         "type:union",
         "type:map",
         "type:literal",
+        "param:deep-object",
     }
 )
 
@@ -116,16 +118,17 @@ def _init(api: Api) -> str:
 
 def render_types(api: Api) -> str:
     """Render ``types.py``: TypedDicts for records, aliases for everything else."""
+    body = "\n".join(_definition(definition) for definition in api.types)
     lines = [
         '"""Types generated from the semantic model. Do not edit."""\n',
-        "# ruff: noqa: E501, F401, UP013",
+        "# ruff: noqa: E501, UP013",
         "from __future__ import annotations\n",
-        "from os import PathLike",
-        "from typing import Any, Literal, NotRequired, TypedDict\n",
+        *used_imports("os", ["PathLike"], body),
+        *used_imports("typing", ["Any", "Literal", "NotRequired", "TypedDict"], body),
+        "",
         "__all__ = [" + ", ".join(repr(type_name(d.name)) for d in api.types) + "]\n",
+        body,
     ]
-    for definition in api.types:
-        lines.append(_definition(definition))
     return "\n".join(lines)
 
 
@@ -168,25 +171,6 @@ def _string_map(value: object, what: str) -> tuple[tuple[str, str], ...]:
 def render_client(api: Api, root: Namespace, protocols: dict[str, str] | None = None) -> str:
     """Render ``client.py``: one class per namespace plus ``Client``."""
     out = [
-        '"""Client generated from the library surface. Do not edit."""\n',
-        "# ruff: noqa: E501",
-        "from __future__ import annotations\n",
-        "import builtins  # noqa: F401",
-        "from collections.abc import Iterator, Mapping, Sequence",
-        "from functools import cache",
-        "from importlib.resources import files",
-        "from os import PathLike  # noqa: F401",
-        "from typing import Any, Literal, cast  # noqa: F401\n",
-        "from codapact.runtime import (",
-        "    AuthProvider,",
-        "    Middleware,",
-        "    RuntimeClient,",
-        "    Transport,",
-        "    load_model,",
-        ")",
-        "from codapact.runtime.arguments import UNSET, Unset, call_args\n",
-        "from codapact.runtime.arguments import fields as _fields  # noqa: F401\n",
-        "from . import types as _t\n",
         "",
         f"PROTOCOLS: dict[str, Any] = {dict(sorted((protocols or {}).items()))!r}",
         '"""Custom protocol handlers (``module:attribute``) this client registers by default."""\n',
@@ -215,7 +199,29 @@ def render_client(api: Api, root: Namespace, protocols: dict[str, str] | None = 
         for method in namespace.methods:
             out.append(_method(method))
     out.append(_client_class(api, root))
-    return "\n".join(out) + "\n"
+    body = "\n".join(out)
+    head = [
+        '"""Client generated from the library surface. Do not edit."""\n',
+        "# ruff: noqa: E501",
+        "from __future__ import annotations\n",
+        *(["import builtins"] if re.search(r"\bbuiltins\.", body) else []),
+        *used_imports("collections.abc", ["Iterator", "Mapping", "Sequence"], body),
+        "from functools import cache",
+        "from importlib.resources import files",
+        *used_imports("os", ["PathLike"], body),
+        *used_imports("typing", ["Any", "Literal", "cast"], body),
+        "",
+        *used_imports(
+            "codapact.runtime",
+            ["AuthProvider", "Middleware", "RuntimeClient", "Transport", "load_model"],
+            body,
+        ),
+        *used_imports("codapact.runtime.arguments", ["UNSET", "Unset", "call_args"], body),
+        *used_imports("codapact.runtime.arguments", ["fields as _fields"], body),
+        "",
+        *(["from . import types as _t\n"] if re.search(r"\b_t\.", body) else []),
+    ]
+    return "\n".join(head) + body + "\n"
 
 
 def _children(namespace: Namespace, path: tuple[Name, ...], indent: str) -> list[str]:
@@ -253,6 +259,7 @@ def _client_class(api: Api, root: Namespace) -> str:
         '        response_validation: str = "strict",',
         "        proxy: str | None = None,",
         "        protocols: Mapping[str, Any] | None = None,",
+        "        hooks: Sequence[Any] = (),",
         "    ) -> None:",
         "        self._runtime = RuntimeClient(",
         "            _model(),",
@@ -266,6 +273,7 @@ def _client_class(api: Api, root: Namespace) -> str:
         "            response_validation=response_validation,",
         "            proxy=proxy,",
         "            protocols={**PROTOCOLS, **(protocols or {})},",
+        "            hooks=hooks,",
         "        )",
     ]
     lines.extend(_children(root, (), "        "))

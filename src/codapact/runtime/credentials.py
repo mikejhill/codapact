@@ -26,6 +26,7 @@ from codapact.core.naming import env_variable
 from codapact.model.api import Api, AuthKind, AuthScheme
 from codapact.runtime.abstractions import AuthProvider, Credential, Secret, Transport
 from codapact.runtime.auth import ChainAuth, EnvAuth, StaticAuth, auth_hint
+from codapact.runtime.browser import BrowserAuth
 from codapact.runtime.errors import AuthError
 from codapact.runtime.oauth import (
     ClientAuth,
@@ -335,6 +336,7 @@ def cli_auth(
     http: Transport,
     plugin: str | None = None,
     configured: Mapping[str, Mapping[str, Any]] | None = None,
+    base_url: str = "",
 ) -> ChainAuth:
     """Build the credential chain every generated CLI uses (see the module docs)."""
     providers: list[AuthProvider] = []
@@ -345,8 +347,20 @@ def cli_auth(
         EnvAuth(prefix, environ),
         CommandAuth(prefix, environ),
         OAuthClientAuth(prefix, environ, http, dict(configured or {})),
-        StoreAuth(store, http, f"{program} auth login"),
     ]
+    if any(isinstance(s, Mapping) and "browser" in s for s in (configured or {}).values()):
+        providers.append(
+            BrowserAuth(
+                dict(configured or {}),
+                store,
+                program,
+                prefix,
+                environ,
+                base_url,
+                str(getattr(store, "profile", "") or ""),
+            )
+        )
+    providers.append(StoreAuth(store, http, f"{program} auth login"))
     return ChainAuth(tuple(providers))
 
 
@@ -372,6 +386,8 @@ def _provider_label(provider: AuthProvider, scheme: AuthScheme) -> str:
             return "OAuth client credentials"
         case StoreAuth():
             return f"saved login ({store_location(provider.store, scheme.name)})"
+        case BrowserAuth():
+            return f"browser session ({store_location(provider.store, scheme.name)})"
         case _:
             pass
     return f"auth plugin ({type(provider).__name__})"

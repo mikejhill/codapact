@@ -28,7 +28,12 @@ from urllib.parse import quote, quote_plus
 import yaml
 
 from codapact import __version__
-from codapact.core.errors import CodapactError, ResponseTooLargeError, TransportError
+from codapact.core.errors import (
+    CodapactError,
+    ConfigError,
+    ResponseTooLargeError,
+    TransportError,
+)
 from codapact.core.net import HttpRequest, HttpResponse, SafeHttpClient
 from codapact.model.api import Api, AuthKind, AuthScheme
 from codapact.runtime import cli_auth, cli_tools
@@ -45,6 +50,7 @@ from codapact.runtime.errors import (
     ResponseValidationWarning,
     ValidationError,
 )
+from codapact.runtime.extensions import extension_method, load_extension
 from codapact.runtime.middleware import Retry
 from codapact.runtime.oauth import TokenStore, default_store
 from codapact.runtime.profiles import ProfileIndex, ProfileStore, check_profile_name
@@ -316,6 +322,13 @@ class CliRuntime:
     file, and profiles keep working after a rename."""
     protocols: Mapping[str, Any] | None = None
     """Custom protocol handlers the generated client registers (used by ``doctor``)."""
+    extensions: tuple[str, ...] = ()
+    """``package.module:factory`` CLI extensions (``cli.extensions``): extra global options,
+    call hooks, and ``describe`` notes; see ``codapact.runtime.extensions``."""
+
+    def loaded_extensions(self) -> list[Any]:
+        """Return the CLI extension objects (built afresh on each call)."""
+        return [load_extension(spec, self) for spec in self.extensions]
 
     @property
     def program_version(self) -> str:
@@ -489,6 +502,10 @@ class CliRuntime:
             default=keep,
             help=text("on a response that breaks the contract: fail, warn (default), or ignore"),
         )
+        for extension in self.loaded_extensions():
+            add_options = extension_method(extension, "add_options")
+            if add_options is not None:
+                add_options(group, hidden)
 
     def global_help(self) -> str:
         """Return the reminder of global options shown on every command's help."""
@@ -710,6 +727,9 @@ class CliRuntime:
             http=self._auth_http(options),
             plugin=plugin or None,
             configured=configured,
+            base_url=str(
+                options.get("base_url") or (api.servers[0].url if api.servers else "") or ""
+            ),
         )
 
     def settings(self, args: argparse.Namespace) -> dict[str, Any]:
@@ -903,7 +923,10 @@ class CliRuntime:
         err = stderr or _utf8(sys.stderr)
         token = _error_format.set(self._error_mode(self._pre_scan(words).error_format))
         try:
-            parser = build_parser()
+            try:
+                parser = build_parser()
+            except ConfigError as error:  # a cli.extensions module that will not load
+                return emit_error(self.program, "usage", str(error), EXIT_USAGE, err)
             if words[:1] == ["__complete"]:
                 for candidate in cli_tools.complete(parser, words[1:]):
                     print(candidate, file=out)
@@ -965,6 +988,12 @@ class CliRuntime:
                         "Errors print to stderr; --error-format json makes them one JSON object.",
                         "JSON arguments accept inline JSON, @file, or @- for stdin.",
                         "--dry-run prints the HTTP request without sending it.",
+                        *(
+                            note
+                            for extension in self.loaded_extensions()
+                            if extension_method(extension, "notes") is not None
+                            for note in extension.notes() or ()
+                        ),
                     ],
                 }
                 if api.auth_schemes:
@@ -1179,6 +1208,14 @@ class CliRuntime:
         elif getattr(args, "verbose", False):
             secrets = self._secrets() + self._resolved_secrets(options.get("auth"))
             options["middleware"] = (Retry(), Trace(err, secrets))
+        hooks = [
+            hook
+            for extension in self.loaded_extensions()
+            if extension_method(extension, "hooks") is not None
+            for hook in extension.hooks(args) or ()
+        ]
+        if hooks:
+            options["hooks"] = tuple(hooks)
         return options
 
     def _resolved_secrets(self, chain: Any) -> tuple[str, ...]:

@@ -78,6 +78,8 @@ def annotation(expr: TypeExpr, prefix: str = "") -> str:
     if isinstance(expr, Nullable):
         return f"{annotation(expr.inner, prefix)} | None"
     value = expr.value
+    if value is None:
+        return "None"
     return f"Literal[{value!r}]" if isinstance(value, str | int | bool) else "Any"
 
 
@@ -106,3 +108,25 @@ def package_name(raw: str) -> str:
 def default_package(api: Api) -> str:
     """Derive a package name from the API title."""
     return ident(Name.parse(api.name or "api"))
+
+
+_STRINGS = re.compile(
+    r'"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\''
+)
+
+
+def used_imports(module: str, names: list[str], body: str, *, code_only: bool = False) -> list[str]:
+    """Return ``from module import ...`` lines for the ``names`` that ``body`` uses.
+
+    Generated modules import only what they reference, so linters and code scanning
+    see no unused imports. A name may be ``"real as alias"``; the alias is searched.
+    ``code_only`` ignores string literals (help text); leave it off where annotations
+    are quoted strings.
+    """
+    code = _STRINGS.sub('""', body) if code_only else body
+    kept = [n for n in names if re.search(rf"\b{re.escape(n.split(' as ')[-1])}\b", code)]
+    if not kept:
+        return []
+    if len(kept) <= 3:
+        return [f"from {module} import {', '.join(kept)}"]
+    return [f"from {module} import (", *(f"    {n}," for n in kept), ")"]

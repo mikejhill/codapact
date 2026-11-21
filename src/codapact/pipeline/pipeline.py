@@ -149,7 +149,7 @@ class Pipeline:
                     "readme", _readme_context(config, result, target_config.output, package_output)
                 )
             if target.needs_commands:
-                for key in ("auth_plugin", "auth", "previous_programs"):
+                for key in ("auth_plugin", "auth", "previous_programs", "extensions"):
                     if key in config.cli:
                         options.setdefault(key, config.cli[key])
                 if config.e2e:

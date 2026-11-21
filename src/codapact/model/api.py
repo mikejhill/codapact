@@ -13,7 +13,7 @@ from enum import StrEnum
 from codapact.model.types import TypeDef, TypeExpr
 from codapact.model.values import JsonValue
 
-MODEL_VERSION = 3
+MODEL_VERSION = 4
 
 
 class OperationKind(StrEnum):
@@ -112,6 +112,8 @@ class HttpParam:
     location: ParamLocation
     wire_name: str
     explode: bool = True
+    style: str = "form"
+    """Query serialization: ``form`` or ``deepObject`` (``name[key]=value``)."""
 
 
 @dataclass(frozen=True, slots=True)

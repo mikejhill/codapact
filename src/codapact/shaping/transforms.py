@@ -7,6 +7,7 @@ import re
 from collections.abc import Callable, Mapping
 from fnmatch import fnmatchcase
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from codapact.core.diagnostics import Diagnostics
 from codapact.core.errors import ConfigError
@@ -25,6 +26,7 @@ from codapact.model.api import (
     Pagination,
     Param,
     ParamLocation,
+    Server,
 )
 from codapact.model.authspec import scheme_from_config
 from codapact.model.rewrite import reachable_types, rename_types, unwrap
@@ -565,9 +567,12 @@ class Auth:
         schemes: {token: bearer}          # see codapact.model.authspec for every spelling
         operations: ["*"]                 # globs or selectors; default every operation
         optional: true                    # also allow anonymous calls (default false)
+        alternative: true                 # add to the operation's existing schemes instead
     ```
 
-    Every listed scheme is required together; with ``optional`` the credential is
+    Every listed scheme is required together; with ``alternative`` they become one more
+    way to authenticate next to what the operation already accepts (a browser session
+    beside an API token). With ``optional`` the credential is
     sent when configured and the call goes out anonymously otherwise. A later step
     may name a scheme again (with the same definition) to change which operations
     require it.
@@ -579,7 +584,7 @@ class Auth:
         self, api: Api, config: Mapping[str, Any], diagnostics: Diagnostics
     ) -> TransformResult:
         """Register the schemes and set each matching operation's requirement."""
-        unknown = set(config) - {"schemes", "operations", "optional"}
+        unknown = set(config) - {"schemes", "operations", "optional", "alternative"}
         if unknown:
             raise ConfigError(f"unknown auth keys {sorted(unknown)}")
         raw = config.get("schemes")
@@ -600,21 +605,104 @@ class Auth:
         operations = []
         for op in api.operations:
             if any(_matches(op, p) for p in patterns):
-                op = dataclasses.replace(op, auth=AuthRequirement(alternatives))
+                if config.get("alternative", False):
+                    # anonymous access, if allowed, stays last: the first satisfiable wins
+                    old = op.auth.alternatives
+                    merged = tuple(a for a in old if a)
+                    merged += tuple(a for a in alternatives if a and a not in merged)
+                    if () in old or () in alternatives:
+                        merged += ((),)
+                    op = dataclasses.replace(op, auth=AuthRequirement(merged))
+                else:
+                    op = dataclasses.replace(op, auth=AuthRequirement(alternatives))
                 applied.append(op.name)
             operations.append(op)
         if not applied:
             diagnostics.warning("shape.auth.unmatched", f"{patterns!r} matched nothing")
-        api = dataclasses.replace(
-            api, auth_schemes=api.auth_schemes + added, operations=tuple(operations)
-        )
+        schemes_now = api.auth_schemes + added
+        if not config.get("alternative", False):
+            # schemes this replaced and nothing else uses would only clutter auth status
+            used = {name for op in operations for alt in op.auth.alternatives for name in alt}
+            dropped = [s.name for s in schemes_now if s.name not in used]
+            schemes_now = tuple(s for s in schemes_now if s.name in used)
+            if dropped:
+                diagnostics.info("shape.auth.dropped", f"unused auth schemes removed: {dropped}")
+        api = dataclasses.replace(api, auth_schemes=schemes_now, operations=tuple(operations))
         return TransformResult(
             api, [{"transform": self.name, "schemes": list(required), "operations": applied}]
         )
 
 
+def _has_path_suffix(url: str, prefix: str) -> bool:
+    return urlsplit(url).path.rstrip("/").endswith(prefix)  # prefix starts with /
+
+
+def _strip_path(url: str, prefix: str) -> str:
+    """Remove ``prefix`` from the end of the URL's path (never from its host)."""
+    parts = urlsplit(url)
+    path = parts.path.rstrip("/").removesuffix(prefix)
+    return urlunsplit(parts._replace(path=path)).rstrip("/")
+
+
+class ServerTransform:
+    """Change the default server and move a shared path prefix into every operation path.
+
+    ```yaml
+    - server: {url: "https://your-site.atlassian.net", prefix: /wiki/api/v2}
+    ```
+
+    With ``prefix``, the server URL loses that prefix (if it ends with it) and each HTTP
+    path gains it, so ``--base-url`` is the site and not the API root. ``url`` replaces
+    the default server (for contracts whose server is a template such as
+    ``https://{your-domain}``).
+    """
+
+    name = "server"
+
+    def apply(
+        self, api: Api, config: Mapping[str, Any], diagnostics: Diagnostics
+    ) -> TransformResult:
+        """Rewrite the default server and the HTTP paths."""
+        if not isinstance(config, Mapping) or set(config) - {"url", "prefix", "docs"} or not config:
+            raise ConfigError("server takes url, prefix and docs")
+        prefix = str(config.get("prefix") or "").rstrip("/")
+        if prefix and not prefix.startswith("/"):
+            raise ConfigError("server.prefix must start with /")
+        servers = list(api.servers)
+        if "url" in config:
+            url = str(config["url"]).rstrip("/")
+            docs = str(config.get("docs") or (servers[0].docs if servers else ""))
+            servers = [Server(url, docs), *servers[1:]]
+        elif prefix:
+            if not servers or not all(_has_path_suffix(s.url, prefix) for s in servers):
+                raise ConfigError(f"server.prefix {prefix} is not the end of every server URL path")
+            servers = [dataclasses.replace(s, url=_strip_path(s.url, prefix)) for s in servers]
+        operations = []
+        for op in api.operations:
+            binding = op.binding(HttpBinding)
+            if prefix and binding is not None:  # the prefix left the server: every path gains it
+                moved = dataclasses.replace(binding, path=prefix + binding.path)
+                op = dataclasses.replace(
+                    op, bindings=tuple(moved if b is binding else b for b in op.bindings)
+                )
+            operations.append(op)
+        del diagnostics
+        api = dataclasses.replace(api, servers=tuple(servers), operations=tuple(operations))
+        return TransformResult(
+            api,
+            [
+                {
+                    "transform": self.name,
+                    "server": servers[0].url if servers else "",
+                    "prefix": prefix,
+                }
+            ],
+        )
+
+
 BUILTIN_TRANSFORMS = (
     Select(),
+    ServerTransform(),
     Rename(),
     Group(),
     Paginate(),

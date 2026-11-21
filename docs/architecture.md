@@ -103,7 +103,7 @@ Enforced by `tests/unit/test_architecture.py` (AST import scan):
 ### Capability negotiation
 
 `required_capabilities(api)` yields tokens such as `binding:http`, `binding:graphql`,
-`auth:bearer`, `pagination:cursor`, `type:union`, `type:map`, `type:literal`. A target
+`auth:bearer`, `pagination:cursor`, `type:union`, `type:map`, `type:literal`, `param:deep-object`. A target
 missing any token fails before generation with `CapabilityError`, rather than emitting code
 that silently mishandles the feature.
 

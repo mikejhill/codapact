@@ -18,7 +18,7 @@ from codapact.model.types import ListOf, Nullable, Record, Ref, ScalarKind, Type
 from codapact.plugins.protocol import GeneratedFile, GenerationRequest, GenerationResponse
 from codapact.targets.python.e2e import render_suite
 from codapact.targets.python.library import CAPABILITIES, PythonOptions
-from codapact.targets.python.naming import ident, method_ident
+from codapact.targets.python.naming import ident, method_ident, used_imports
 
 METAVARS = {"date": "YYYY-MM-DD", "datetime": "DATETIME", "binary": "TEXT|@FILE"}
 PARSERS = {
@@ -58,6 +58,7 @@ class PythonCliTarget:
                     auth_config=_auth_config(request),
                     previous_programs=_previous_programs(request),
                     protocols=bool(request.options.get("protocols")),
+                    extensions=_extensions(request),
                 ),
             ),
             *(
@@ -75,6 +76,15 @@ class PythonCliTarget:
             ),
         )
         return GenerationResponse(files)
+
+
+def _extensions(request: GenerationRequest) -> tuple[str, ...]:
+    value = request.options.get("extensions") or ()
+    if not isinstance(value, list | tuple) or not all(
+        isinstance(v, str) and ":" in v for v in value
+    ):
+        raise PluginError("cli.extensions must be a list of 'package.module:factory' strings")
+    return tuple(value)
 
 
 def _auth_help(request: GenerationRequest) -> str:
@@ -125,7 +135,7 @@ def _auth_config(request: GenerationRequest) -> dict[str, dict[str, object]]:
     for name, value in raw.items():
         if name not in known:
             raise PluginError(f"cli.auth: unknown scheme {name!r}")
-        allowed = ("client_id", "scopes", "flow", "audience", "fields", "docs", "check")
+        allowed = ("client_id", "scopes", "flow", "audience", "fields", "docs", "check", "browser")
         if not isinstance(value, dict) or set(value) - set(allowed):
             # No client_secret: secrets must never be baked into generated code.
             raise PluginError(f"cli.auth.{name} allows {', '.join(allowed)}")
@@ -136,7 +146,30 @@ def _auth_config(request: GenerationRequest) -> dict[str, dict[str, object]]:
             config[str(name)]["fields"] = _fields(str(name), value["fields"])
         if "check" in value:
             config[str(name)]["check"] = _check_operation(request, str(name), value["check"])
+        if "browser" in value:
+            _browser_settings(str(name), value["browser"])
     return config
+
+
+def _browser_settings(scheme: str, value: object) -> None:
+    """Validate ``cli.auth.<scheme>.browser`` (see ``codapact.runtime.browser``)."""
+    where = f"cli.auth.{scheme}.browser"
+    if not isinstance(value, dict):
+        raise PluginError(f"{where} must be a mapping")
+    allowed = {"login_url", "cookies", "headers", "domain", "signin_hosts"}
+    if set(value) - allowed:
+        raise PluginError(f"{where} allows {', '.join(sorted(allowed))}")
+    cookies = value.get("cookies")
+    if not isinstance(cookies, list) or not cookies or not all(isinstance(c, str) for c in cookies):
+        raise PluginError(f"{where}.cookies must list the session cookie names")
+    for key in ("login_url", "domain"):
+        if key in value and not isinstance(value[key], str):
+            raise PluginError(f"{where}.{key} must be a string")
+    if not isinstance(value.get("headers", {}), dict):
+        raise PluginError(f"{where}.headers must map names to values")
+    hosts = value.get("signin_hosts", [])
+    if not isinstance(hosts, list) or not all(isinstance(h, str) for h in hosts):
+        raise PluginError(f"{where}.signin_hosts must list host names or globs")
 
 
 def _spelling(name: str) -> str:
@@ -198,6 +231,7 @@ def render_cli(
     auth_config: dict[str, dict[str, object]] | None = None,
     previous_programs: tuple[str, ...] = (),
     protocols: bool = False,
+    extensions: tuple[str, ...] = (),
 ) -> str:
     """Render the argparse module.
 
@@ -217,6 +251,7 @@ def render_cli(
         f"model=_api_model, auth_plugin={auth_plugin!r}, auth_config={auth_config or {}!r}"
         + (f", previous_programs={previous_programs!r}" if previous_programs else "")
         + (", protocols=_protocols" if protocols else "")
+        + (f", extensions={extensions!r}" if extensions else "")
         + ")"
     )
     head = [
@@ -226,14 +261,13 @@ def render_cli(
         "import argparse",
         "from collections.abc import Sequence",
         "from typing import Any\n",
-        "from codapact.runtime.cli import (  # noqa: F401",
-        "    CliRuntime,",
-        "    binary_value,",
-        "    compact,",
-        "    integer,",
-        "    json_value,",
-        "    number,",
-        ")\n",
+        *used_imports(
+            "codapact.runtime.cli",
+            ["CliRuntime", "binary_value", "compact", "integer", "json_value", "number"],
+            "\n".join(handlers + parser_lines) + runtime,
+            code_only=True,
+        ),
+        "",
         "from .client import Client",
         *(["from .client import PROTOCOLS as _protocols"] if protocols else []),
         "from .client import _model as _api_model\n",

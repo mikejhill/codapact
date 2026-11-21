@@ -31,10 +31,12 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, TextIO
 
+from codapact.core.errors import ConfigError
 from codapact.core.naming import env_variable
 from codapact.model.api import Api, AuthKind, AuthScheme, OAuthFlowKind
 from codapact.runtime.abstractions import Credential, Transport
 from codapact.runtime.auth import ChainAuth
+from codapact.runtime.browser import BrowserAuth
 from codapact.runtime.credentials import (
     credential_fields,
     describe_source,
@@ -285,7 +287,10 @@ class AuthCommands:
         removed = []
         for scheme in targets:
             session = self.store.delete(session_key(scheme.name))
-            if self.store.delete(scheme.name) or session:
+            saved = self.store.delete(scheme.name)  # before the browser cleanup, which can fail
+            browser = self._browser_auth()
+            profile = browser.forget(scheme, self.profile or None) if browser is not None else False
+            if saved or session or profile:
                 removed.append(scheme.name)
         result = self._scoped({"removed": removed})
         if not name and self.profile and self.profiles.remove(self.profile):
@@ -310,6 +315,21 @@ class AuthCommands:
         spec = field_specs(self.configured.get(scheme.name))
         if spec:
             return self._fields_login(scheme, spec, getattr(args, "field", None) or [])
+        browser = self._browser(scheme)
+        if browser is not None:
+            if self.err is not None:
+                print(
+                    f"Sign in to {browser.login.domain} in the browser window that opens; "
+                    "it closes by itself once you are signed in.",
+                    file=self.err,
+                )
+            cookies = browser.sign_in()
+            return {
+                "scheme": scheme.name,
+                "signed_in": browser.login.domain,
+                "cookies": sorted({str(c["name"]) for c in cookies}),
+                "saved": _location(self.store, scheme.name),
+            }
         if scheme.kind is AuthKind.CUSTOM:
             raise AuthError(
                 f"{scheme.name} is a custom scheme; set {self.prefix}_AUTH_PLUGIN to code "
@@ -330,6 +350,19 @@ class AuthCommands:
             secret = self._read_secret(args.with_token, f"{scheme.name} token: ")
             self.store.save(scheme.name, {"type": "token", "secret": secret})
         return {"scheme": scheme.name, "saved": _location(self.store, scheme.name)}
+
+    def _browser_auth(self) -> BrowserAuth | None:
+        return next((p for p in self.chain.providers if isinstance(p, BrowserAuth)), None)
+
+    def _browser(self, scheme: AuthScheme) -> Any:
+        """Return the browser session handler for ``scheme`` in the profile chosen now."""
+        provider = self._browser_auth()
+        if provider is None:
+            return None
+        try:
+            return provider.session(scheme, store=self.store, profile=self.profile or None)
+        except ConfigError as error:
+            raise AuthError(str(error)) from None
 
     def _fields_login(
         self, scheme: AuthScheme, spec: Mapping[str, Mapping[str, Any]], given: list[str]
