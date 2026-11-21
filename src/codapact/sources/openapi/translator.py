@@ -789,7 +789,7 @@ class _Translator:
             return t.Nullable(number) if nullable else number
         if not values and nullable:
             # ``enum: [null]``: the value is always null
-            return t.Nullable(t.Primitive(t.ScalarKind.ANY))
+            return t.Literal(None)
         if not values or not all(
             isinstance(v, str | int) and not isinstance(v, bool) for v in values
         ):

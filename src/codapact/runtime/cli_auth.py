@@ -287,9 +287,10 @@ class AuthCommands:
         removed = []
         for scheme in targets:
             session = self.store.delete(session_key(scheme.name))
+            saved = self.store.delete(scheme.name)  # before the browser cleanup, which can fail
             browser = self._browser_auth()
             profile = browser.forget(scheme, self.profile or None) if browser is not None else False
-            if self.store.delete(scheme.name) or session or profile:
+            if saved or session or profile:
                 removed.append(scheme.name)
         result = self._scoped({"removed": removed})
         if not name and self.profile and self.profiles.remove(self.profile):

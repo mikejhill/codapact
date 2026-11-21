@@ -103,6 +103,8 @@ def required_capabilities(api: Api) -> frozenset[str]:
         for binding in operation.bindings:
             if isinstance(binding, HttpBinding):
                 needed.add("binding:http")
+                if any(p.style == "deepObject" for p in binding.params):
+                    needed.add("param:deep-object")
             elif isinstance(binding, CustomBinding):
                 needed.add("binding:custom")
             else:

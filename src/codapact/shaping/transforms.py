@@ -7,6 +7,7 @@ import re
 from collections.abc import Callable, Mapping
 from fnmatch import fnmatchcase
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from codapact.core.diagnostics import Diagnostics
 from codapact.core.errors import ConfigError
@@ -632,6 +633,17 @@ class Auth:
         )
 
 
+def _has_path_suffix(url: str, prefix: str) -> bool:
+    return urlsplit(url).path.rstrip("/").endswith(prefix)  # prefix starts with /
+
+
+def _strip_path(url: str, prefix: str) -> str:
+    """Remove ``prefix`` from the end of the URL's path (never from its host)."""
+    parts = urlsplit(url)
+    path = parts.path.rstrip("/").removesuffix(prefix)
+    return urlunsplit(parts._replace(path=path)).rstrip("/")
+
+
 class ServerTransform:
     """Change the default server and move a shared path prefix into every operation path.
 
@@ -662,13 +674,13 @@ class ServerTransform:
             docs = str(config.get("docs") or (servers[0].docs if servers else ""))
             servers = [Server(url, docs), *servers[1:]]
         elif prefix:
-            servers = [
-                dataclasses.replace(s, url=s.url.rstrip("/").removesuffix(prefix)) for s in servers
-            ]
+            if not servers or not all(_has_path_suffix(s.url, prefix) for s in servers):
+                raise ConfigError(f"server.prefix {prefix} is not the end of every server URL path")
+            servers = [dataclasses.replace(s, url=_strip_path(s.url, prefix)) for s in servers]
         operations = []
         for op in api.operations:
             binding = op.binding(HttpBinding)
-            if prefix and binding is not None and not binding.path.startswith(prefix + "/"):
+            if prefix and binding is not None:  # the prefix left the server: every path gains it
                 moved = dataclasses.replace(binding, path=prefix + binding.path)
                 op = dataclasses.replace(
                     op, bindings=tuple(moved if b is binding else b for b in op.bindings)

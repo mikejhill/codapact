@@ -42,8 +42,13 @@ def _v2_custom_bindings(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def _v3_param_style(data: dict[str, Any]) -> dict[str, Any]:
+    """v3 -> v4: HTTP parameters gain ``style`` (default ``form``), so nothing changes."""
+    return data
+
+
 # MIGRATIONS[n] upgrades a version-n document to version n + 1.
-MIGRATIONS: dict[int, Migration] = {1: _v1_oauth_flows, 2: _v2_custom_bindings}
+MIGRATIONS: dict[int, Migration] = {1: _v1_oauth_flows, 2: _v2_custom_bindings, 3: _v3_param_style}
 
 
 def migrate(data: dict[str, Any], *, target: int) -> dict[str, Any]:

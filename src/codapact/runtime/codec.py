@@ -184,9 +184,10 @@ class Codec:
             raise ValidationError(path, f"expected an object ({record.name})")
         result: dict[str, Any] = {}
         consumed: set[str] = set()
+        names = {f.name for f in record.fields} if encode else set()
         for f in record.fields:
             source_key, target_key = (f.name, f.wire) if encode else (f.wire, f.name)
-            if encode and source_key not in value and f.wire in value:
+            if encode and source_key not in value and f.wire in value and f.wire not in names:
                 source_key = f.wire  # callers may also use the API's own field names
             if source_key not in value:
                 if f.required:

@@ -78,6 +78,8 @@ def annotation(expr: TypeExpr, prefix: str = "") -> str:
     if isinstance(expr, Nullable):
         return f"{annotation(expr.inner, prefix)} | None"
     value = expr.value
+    if value is None:
+        return "None"
     return f"Literal[{value!r}]" if isinstance(value, str | int | bool) else "Any"
 
 

@@ -41,6 +41,7 @@ CAPABILITIES = frozenset(
         "type:union",
         "type:map",
         "type:literal",
+        "param:deep-object",
     }
 )
 

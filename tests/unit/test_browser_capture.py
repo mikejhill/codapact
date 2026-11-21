@@ -54,7 +54,7 @@ class FakePage:
         self.url = self.land_on
 
     def wait_for_timeout(self, ms: int) -> None:
-        del ms
+        assert ms > 0
 
 
 class FakeContext:
@@ -260,3 +260,193 @@ def test_server_prefix_without_a_url_trims_the_server() -> None:
     assert api is not None
     assert api.servers[0].url == "https://api.example.com"
     assert Shaper().apply(result.api, [{"server": {"bogus": 1}}]).diagnostics.has_errors
+
+
+# -- review fixes ------------------------------------------------------------------------
+
+
+def test_sessions_bind_to_the_host_sign_in_finishes_on(tmp_path: Path) -> None:
+    from codapact.runtime import HttpRequest
+
+    settings = {
+        "session": {
+            "browser": {
+                "login_url": "https://id.example.com/login",
+                "domain": "acme.example.net",
+                "cookies": ["tenant.session.token"],
+            }
+        }
+    }
+    auth = BrowserAuth(
+        settings,
+        DiskLikeStore(),
+        "acme",
+        "ACME",
+        {"XDG_STATE_HOME": str(tmp_path)},
+        SITE,
+        "",
+        FakeBrowser(jar(tenant_session_token="abc")),
+    )
+    session = auth.session(SESSION)
+    assert session is not None
+    session.sign_in()
+    request = session.authenticate(HttpRequest("GET", SITE + ":443/x", {}, None), SESSION)
+    assert request.headers["Cookie"] == "tenant.session.token=abc"
+
+
+def test_sign_in_words_match_whole_labels_and_segments() -> None:
+    assert LOGIN.sign_in_redirect("https://id.example.com/auth/start")
+    assert LOGIN.sign_in_redirect("https://login.example.org/")
+    assert not LOGIN.sign_in_redirect("https://results.example.org/authors/42")
+
+
+def test_memory_store_logout_leaves_persistent_profiles(tmp_path: Path) -> None:
+    from codapact.runtime.browser import profile_dir
+    from codapact.runtime.oauth import MemoryTokenStore
+
+    environ = {"XDG_STATE_HOME": str(tmp_path)}
+    directory = profile_dir("acme", "", environ, "session")
+    directory.mkdir(parents=True)
+    auth = BrowserAuth(SETTINGS, MemoryTokenStore(), "acme", "ACME", environ)
+    assert not auth.forget(SESSION)
+    assert directory.exists()
+
+
+def test_logout_clears_cookies_even_when_the_profile_is_locked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = DiskLikeStore()
+    commands, _ = _commands(tmp_path, store, FakeBrowser(jar(tenant_session_token="abc")))
+    commands.run(
+        argparse.Namespace(
+            auth_action="login",
+            scheme="session",
+            with_token=False,
+            username=None,
+            flow=None,
+            field=[],
+        )
+    )
+
+    def refuse(path: Any, *args: Any, **kwargs: Any) -> None:
+        raise PermissionError(13, "in use")
+
+    monkeypatch.setattr("shutil.rmtree", refuse)
+    with pytest.raises(AuthError, match="could not remove"):
+        commands.run(argparse.Namespace(auth_action="logout", scheme="session"))
+    assert store.load("session") is None
+
+
+def test_wire_aliases_never_shadow_generated_names() -> None:
+    from codapact.model import Api
+    from codapact.model.types import Field, Primitive, Record, Ref, ScalarKind
+    from codapact.runtime.codec import Codec
+
+    text = Primitive(ScalarKind.STRING)
+    record = Record(
+        "R",
+        (
+            Field("foo_bar", text, required=False, wire_name="fooBar"),
+            Field("foo_bar_2", text, required=False, wire_name="foo_bar"),
+        ),
+    )
+    codec = Codec(Api("t", "1", (), (record,)))
+    assert codec.encode({"foo_bar": "x"}, Ref("R")) == {"fooBar": "x"}
+
+
+def test_server_prefix_is_trimmed_from_the_path_only() -> None:
+    from codapact.shaping.transforms import _strip_path
+
+    assert _strip_path("https://api/api", "/api") == "https://api"
+    assert _strip_path("https://api.example.com/v1/", "/v1") == "https://api.example.com"
+
+
+def test_moving_a_prefix_keeps_every_endpoint() -> None:
+    from codapact.model.api import HttpBinding
+    from codapact.shaping.engine import Shaper
+    from tests.unit.test_extensions import CONTRACT, openapi
+
+    contract = {
+        **CONTRACT,
+        "servers": [{"url": "https://example.net/v1"}],
+        "paths": {
+            "/v1/items": {
+                "get": {"operationId": "listItems", "responses": {"204": {"description": "x"}}}
+            }
+        },
+    }
+    result = openapi(contract)
+    assert result.api is not None
+    api = Shaper().apply(result.api, [{"server": {"prefix": "/v1"}}]).api
+    assert api is not None
+    binding = api.operations[0].binding(HttpBinding)
+    assert binding is not None
+    assert binding.path == "/v1/v1/items"
+    assert api.servers[0].url == "https://example.net"
+    other = Shaper().apply(result.api, [{"server": {"prefix": "/v2"}}])
+    assert other.diagnostics.has_errors
+
+
+def test_deep_object_needs_a_target_that_supports_it() -> None:
+    from codapact.plugins.protocol import required_capabilities
+    from codapact.targets.python.library import CAPABILITIES
+    from codapact.targets.typescript.library import TypeScriptLibraryTarget
+    from tests.unit.test_extensions import CONTRACT, openapi
+
+    contract = {
+        **CONTRACT,
+        "paths": {
+            "/e": {
+                "get": {
+                    "operationId": "list",
+                    "parameters": [
+                        {
+                            "name": "f",
+                            "in": "query",
+                            "style": "deepObject",
+                            "schema": {"type": "object"},
+                        }
+                    ],
+                    "responses": {"204": {"description": "x"}},
+                }
+            }
+        },
+    }
+    result = openapi(contract)
+    assert result.api is not None
+    needed = required_capabilities(result.api)
+    assert "param:deep-object" in needed
+    assert "param:deep-object" in CAPABILITIES
+    assert "param:deep-object" not in TypeScriptLibraryTarget.capabilities
+
+
+def test_null_only_enums_reject_other_values() -> None:
+    from codapact.model.types import Literal, Ref
+    from codapact.runtime.codec import Codec
+    from codapact.runtime.errors import ValidationError
+    from codapact.targets.python.naming import annotation
+    from tests.unit.test_extensions import CONTRACT, openapi
+
+    contract = {
+        **CONTRACT,
+        "components": {"schemas": {"N": {"nullable": True, "enum": [None]}}},
+    }
+    result = openapi(contract)
+    assert result.api is not None
+    codec = Codec(result.api)
+    with pytest.raises(ValidationError, match="expected None"):
+        codec.encode("x", Ref("N"))
+    assert codec.encode(None, Ref("N")) is None
+    assert codec.encode(None, Literal(None)) is None
+    with pytest.raises(ValidationError, match="expected None"):
+        codec.encode("x", Literal(None))
+    assert annotation(Literal(None)) == "None"
+
+
+def test_model_v3_documents_migrate() -> None:
+    from codapact.model import migrations
+
+    assert migrations.migrate({"model_version": 3, "name": "x"}, target=4) == {
+        "model_version": 4,
+        "name": "x",
+    }

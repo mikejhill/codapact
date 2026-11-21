@@ -50,9 +50,23 @@ BROWSERS = ("chrome", "msedge", "chromium")
 INTERACTIVE_TIMEOUT = 300.0
 RENEW_TIMEOUT = 45.0
 REDIRECTS = (301, 302, 303, 307, 308)
-SIGN_IN_WORDS = re.compile(
-    r"(login|log-in|signin|sign-in|sso|saml|oauth|openid|authorize|auth)", re.I
+SIGN_IN_WORDS = frozenset(
+    {
+        "login",
+        "log-in",
+        "signin",
+        "sign-in",
+        "sso",
+        "saml",
+        "oauth",
+        "oauth2",
+        "openid",
+        "authorize",
+        "auth",
+    }
 )
+"""Whole host labels or path segments that mark a sign-in page (``authors`` is not one)."""
+DEFAULT_PORTS = {"http": 80, "https": 443}
 _SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 
 
@@ -113,7 +127,8 @@ class BrowserLogin:
             return False
         if self.signin_hosts:
             return any(fnmatch.fnmatch(host, pattern.lower()) for pattern in self.signin_hosts)
-        return bool(SIGN_IN_WORDS.search(host + parts.path))
+        tokens = {*host.split("."), *(s.lower() for s in parts.path.split("/"))}
+        return not tokens.isdisjoint(SIGN_IN_WORDS)
 
 
 Cookie = dict[str, Any]
@@ -243,10 +258,20 @@ def _on_host(url: str, domain: str) -> bool:
 
 
 def _origin(url: str) -> str:
+    """Return ``scheme://host[:port]``, leaving out the scheme's default port."""
     parts = urlsplit(url)
-    return f"{parts.scheme}://{(parts.hostname or '').lower()}" + (
-        f":{parts.port}" if parts.port else ""
-    )
+    scheme = parts.scheme.lower()
+    port = parts.port if parts.port not in (None, DEFAULT_PORTS.get(scheme)) else None
+    return f"{scheme}://{(parts.hostname or '').lower()}" + (f":{port}" if port else "")
+
+
+def _api_origin(login: BrowserLogin) -> str:
+    """The origin requests go to: the host sign-in finishes on, not the login page's host."""
+    parts = urlsplit(login.login_url)
+    host = login.domain.lower()
+    if (parts.hostname or "").lower() == host:
+        return _origin(login.login_url)
+    return _origin(f"{parts.scheme}://{host}")
 
 
 def _ephemeral(store: Any) -> bool:
@@ -294,7 +319,8 @@ class BrowserSession:
                 f"the saved {scheme.name} session belongs to {origin}, not {_origin(request.url)}: "
                 f"run {self.login_hint}"
             )
-        jar = cookie_header(self.cookies(), request.url)
+        saved = [c for c in record["cookies"] if isinstance(c, dict)]  # the record checked above
+        jar = cookie_header(saved, request.url)
         existing = request.headers.get("Cookie") or request.headers.get("cookie") or ""
         headers = dict(self.login.headers)
         if jar or existing:
@@ -347,7 +373,7 @@ class BrowserSession:
             self.key,
             {
                 "type": "browser",
-                "origin": _origin(self.login.login_url),
+                "origin": _api_origin(self.login),
                 "cookies": [dict(c) for c in cookies],
                 "saved_at": int(time.time()),
             },
@@ -426,8 +452,12 @@ class BrowserAuth:
         )
 
     def forget(self, scheme: AuthScheme, profile: str | None = None) -> bool:
-        """Delete the browser profile of ``scheme``; needs no working login settings."""
-        if not self.uses_browser(scheme):
+        """Delete the browser profile of ``scheme``; needs no working login settings.
+
+        A memory credential store signs in with a throwaway profile, so there is nothing
+        to delete, and the persistent profile may belong to a file or keyring login.
+        """
+        if not self.uses_browser(scheme) or _ephemeral(self.store):
             return False
         return forget_profile(
             self.directory(scheme, profile), browser_root(self.program, self.environ)
