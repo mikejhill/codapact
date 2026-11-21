@@ -382,7 +382,7 @@ def _pyproject(options: PythonOptions, generator_version: str) -> str:
         f'dependencies = ["{runtime}"]\n'
         f"{scripts}\n"
         "[build-system]\n"
-        'requires = ["uv_build>=0.11.1,<0.13"]\n'
+        'requires = ["uv_build>=0.11.1,<0.14"]\n'
         'build-backend = "uv_build"\n'
     )
 

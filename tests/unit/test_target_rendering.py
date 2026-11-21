@@ -41,7 +41,7 @@ from codapact.targets.typescript.library import (
 from tests.support import petstore_api
 
 BUILD_SYSTEM = (
-    '\n[build-system]\nrequires = ["uv_build>=0.11.1,<0.13"]\nbuild-backend = "uv_build"\n'
+    '\n[build-system]\nrequires = ["uv_build>=0.11.1,<0.14"]\nbuild-backend = "uv_build"\n'
 )
 
 
