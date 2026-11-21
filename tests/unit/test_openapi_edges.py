@@ -152,7 +152,7 @@ def test_circular_reference() -> None:
     "parameter",
     [
         {"name": "q", "in": "query", "content": {"application/json": {}}},
-        {"name": "q", "in": "query", "style": "deepObject", "schema": {"type": "object"}},
+        {"name": "q", "in": "header", "style": "deepObject", "schema": {"type": "object"}},
         {"name": "q", "in": "query", "schema": {"$ref": "other.yaml#/x"}},
     ],
 )
