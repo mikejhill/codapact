@@ -265,6 +265,7 @@ def render_cli(
             "codapact.runtime.cli",
             ["CliRuntime", "binary_value", "compact", "integer", "json_value", "number"],
             "\n".join(handlers + parser_lines) + runtime,
+            code_only=True,
         ),
         "",
         "from .client import Client",

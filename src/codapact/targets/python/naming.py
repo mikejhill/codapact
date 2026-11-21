@@ -110,13 +110,21 @@ def default_package(api: Api) -> str:
     return ident(Name.parse(api.name or "api"))
 
 
-def used_imports(module: str, names: list[str], body: str) -> list[str]:
+_STRINGS = re.compile(
+    r'"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\''
+)
+
+
+def used_imports(module: str, names: list[str], body: str, *, code_only: bool = False) -> list[str]:
     """Return ``from module import ...`` lines for the ``names`` that ``body`` uses.
 
     Generated modules import only what they reference, so linters and code scanning
     see no unused imports. A name may be ``"real as alias"``; the alias is searched.
+    ``code_only`` ignores string literals (help text); leave it off where annotations
+    are quoted strings.
     """
-    kept = [n for n in names if re.search(rf"\b{re.escape(n.split(' as ')[-1])}\b", body)]
+    code = _STRINGS.sub('""', body) if code_only else body
+    kept = [n for n in names if re.search(rf"\b{re.escape(n.split(' as ')[-1])}\b", code)]
     if not kept:
         return []
     if len(kept) <= 3:
