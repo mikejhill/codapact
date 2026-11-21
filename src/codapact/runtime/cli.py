@@ -37,7 +37,6 @@ from codapact.runtime.auth import ChainAuth, EnvAuth, FunctionAuthenticator
 from codapact.runtime.client import DEFAULT_MAX_RESPONSE_BYTES, RuntimeClient
 from codapact.runtime.credentials import cli_auth as build_cli_auth
 from codapact.runtime.credentials import field_specs
-from codapact.runtime.extensions import load_extension
 from codapact.runtime.errors import (
     ApiError,
     AuthError,
@@ -46,6 +45,7 @@ from codapact.runtime.errors import (
     ResponseValidationWarning,
     ValidationError,
 )
+from codapact.runtime.extensions import load_extension
 from codapact.runtime.middleware import Retry
 from codapact.runtime.oauth import TokenStore, default_store
 from codapact.runtime.profiles import ProfileIndex, ProfileStore, check_profile_name

@@ -82,7 +82,9 @@ def _is_hook(value: Any) -> bool:
     return callable(getattr(value, "before", None)) or callable(getattr(value, "after", None))
 
 
-def run_before(hooks: Sequence[Any], operation: Operation, arguments: dict[str, Any]) -> dict[str, Any]:
+def run_before(
+    hooks: Sequence[Any], operation: Operation, arguments: dict[str, Any]
+) -> dict[str, Any]:
     """Apply each hook's ``before`` in order."""
     for hook in hooks:
         before = getattr(hook, "before", None)
