@@ -408,7 +408,7 @@ class _Translator:
                     required=required,
                     docs=str(parameter.get("description", "")),
                     deprecated=bool(parameter.get("deprecated", False)),
-                    default=schema.get("default") if isinstance(schema, dict) else None,
+                    default=_default(schema),
                 )
             )
             http_params.append(
@@ -753,7 +753,7 @@ class _Translator:
                     wire_name=None if field_name == wire else wire,
                     docs=_docs(prop),
                     deprecated=bool(isinstance(prop, dict) and prop.get("deprecated", False)),
-                    default=prop.get("default") if isinstance(prop, dict) else None,
+                    default=_default(prop),
                 )
             )
         return fields
@@ -985,6 +985,22 @@ def _type_name(raw: str) -> str:
 
 
 _SIGNS = {"+": "plus", "-": "minus"}
+
+
+def _default(schema: Any) -> Any:
+    """Return the schema's default, or ``None`` when it contradicts the schema's own enum.
+
+    Some specs document the server's behaviour as a default (Confluence's label ``prefix``
+    says ``"my, team"`` while allowing only ``my`` or ``team``); sending it would fail
+    validation, so the server is left to apply its own default.
+    """
+    if not isinstance(schema, dict) or "default" not in schema:
+        return None
+    default = schema["default"]
+    allowed = schema.get("enum")
+    if isinstance(allowed, list) and default not in allowed:
+        return None
+    return default
 
 
 def _identifier(raw: str) -> str:

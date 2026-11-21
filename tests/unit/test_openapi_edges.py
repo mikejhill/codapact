@@ -339,3 +339,15 @@ def test_colliding_parameter_names_are_suffixed() -> None:
     api, _ = ok(doc)
     names = [p.name for p in api.operations[0].params]
     assert names == ["foo_bar", "query_foo_bar", "body", "request_body", "request_body_2"]
+
+
+def test_defaults_outside_the_enum_are_dropped() -> None:
+    enum = {"type": "string", "enum": ["my", "team"]}
+    parameters = [
+        {"name": "bad", "in": "query", "schema": {**enum, "default": "my, team"}},
+        {"name": "good", "in": "query", "schema": {**enum, "default": "team"}},
+        {"name": "free", "in": "query", "schema": {"type": "integer", "default": 5}},
+    ]
+    api, _ = ok(spec(get(parameters=parameters)))
+    defaults = {p.name: p.default for p in api.operations[0].params}
+    assert defaults == {"bad": None, "good": "team", "free": 5}
