@@ -675,3 +675,4 @@ def test_auth_transform_adds_an_alternative() -> None:
     replaced = Shaper().apply(_api(), [{"auth": {"schemes": {"session": "custom"}}}]).api
     assert replaced is not None
     assert {op.auth for op in replaced.operations} == {AuthRequirement((("session",),))}
+    assert [s.name for s in replaced.auth_schemes] == ["session"]  # basic is unused now

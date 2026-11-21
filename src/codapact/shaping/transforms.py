@@ -617,9 +617,15 @@ class Auth:
             operations.append(op)
         if not applied:
             diagnostics.warning("shape.auth.unmatched", f"{patterns!r} matched nothing")
-        api = dataclasses.replace(
-            api, auth_schemes=api.auth_schemes + added, operations=tuple(operations)
-        )
+        schemes_now = api.auth_schemes + added
+        if not config.get("alternative", False):
+            # schemes this replaced and nothing else uses would only clutter auth status
+            used = {name for op in operations for alt in op.auth.alternatives for name in alt}
+            dropped = [s.name for s in schemes_now if s.name not in used]
+            schemes_now = tuple(s for s in schemes_now if s.name in used)
+            if dropped:
+                diagnostics.info("shape.auth.dropped", f"unused auth schemes removed: {dropped}")
+        api = dataclasses.replace(api, auth_schemes=schemes_now, operations=tuple(operations))
         return TransformResult(
             api, [{"transform": self.name, "schemes": list(required), "operations": applied}]
         )
