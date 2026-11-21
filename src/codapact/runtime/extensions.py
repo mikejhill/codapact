@@ -65,7 +65,7 @@ class CliExtension(Protocol):
 
     def add_options(self, group: argparse._ArgumentGroup, hidden: bool) -> None:
         """Add global options (none by default)."""
-        del group, hidden
+        return None
 
     def hooks(self, args: argparse.Namespace) -> Sequence[CallHook]:
         """Return call hooks for this invocation (none by default)."""

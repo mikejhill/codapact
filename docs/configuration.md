@@ -540,9 +540,10 @@ A call hook changes the arguments and results of operation calls; both methods a
 
 ```python
 class Markdown:
-    def before(self, operation, arguments):   # before validation and encoding
+    def before(self, operation, arguments):  # before validation and encoding
         return arguments
-    def after(self, operation, result):       # on the decoded result
+
+    def after(self, operation, result):  # on the decoded result
         return result
 ```
 

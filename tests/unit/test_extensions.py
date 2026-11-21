@@ -126,7 +126,7 @@ def test_hooks_resolve_from_import_strings_and_factories() -> None:
     hook = Markup()
     assert resolve_hook(hook) is hook
     with pytest.raises(ConfigError, match="neither before"):
-        resolve_hook(lambda: object())
+        resolve_hook(object)
 
 
 def test_before_must_return_a_dict() -> None:

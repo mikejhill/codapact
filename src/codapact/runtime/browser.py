@@ -267,7 +267,7 @@ class BrowserSession:
     key: str
     directory: Path
     login_hint: str
-    capture: Capture = playwright_capture
+    capture: Capture = field(default_factory=lambda: playwright_capture)  # an instance attribute
     browser: str | None = None
     ephemeral: bool = False
     """Use a throwaway browser profile (the credential store keeps nothing either)."""
@@ -387,7 +387,7 @@ class BrowserAuth:
     environ: Mapping[str, str]
     base_url: str = ""
     profile: str = ""
-    capture: Capture = playwright_capture
+    capture: Capture = field(default_factory=lambda: playwright_capture)  # an instance attribute
 
     def uses_browser(self, scheme: AuthScheme) -> bool:
         """Whether ``scheme`` has ``browser`` settings."""
