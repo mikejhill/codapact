@@ -111,19 +111,27 @@ class RuntimeClient:
     def call(self, operation_name: str, arguments: dict[str, Any]) -> Any:
         """Validate and encode arguments, execute, and return the decoded result."""
         operation = self._operation(operation_name)
+        result = self._execute(operation, arguments)
+        return run_after(self._hooks, operation, result) if self._hooks else result
+
+    def _execute(self, operation: Operation, arguments: dict[str, Any]) -> Any:
+        """Run ``before`` hooks, encode, and execute; the result is not yet hooked."""
         if self._hooks:
             arguments = run_before(self._hooks, operation, arguments)
         encoded = self._encode(operation, arguments)
         for adapter in self._adapters:
             if adapter.supports(operation):
-                result = adapter.call(operation, encoded)
-                return run_after(self._hooks, operation, result) if self._hooks else result
-        raise ClientError(f"no protocol adapter can execute {operation_name!r}")
+                return adapter.call(operation, encoded)
+        raise ClientError(f"no protocol adapter can execute {operation.name!r}")
 
     def paginate(
         self, operation_name: str, arguments: dict[str, Any], *, max_items: int | None = None
     ) -> Iterator[Any]:
-        """Yield items across pages using the operation's declared pagination."""
+        """Yield items across pages using the operation's declared pagination.
+
+        Cursors and item lists come from the page as decoded; ``after`` hooks then run on
+        each item, so a hook that reshapes results cannot break paging.
+        """
         operation = self._operation(operation_name)
         strategy = operation.pagination
         if strategy is None:
@@ -136,13 +144,13 @@ class RuntimeClient:
             arguments[strategy.page_param] = strategy.start if default is None else default
         produced = 0
         for _ in range(MAX_PAGES):
-            page = self.call(operation_name, arguments)
+            page = self._execute(operation, arguments)
             items = _dig(page, strategy.items) or []
             for item in items:
                 if max_items is not None and produced >= max_items:
                     return
                 produced += 1
-                yield item
+                yield run_after(self._hooks, operation, item) if self._hooks else item
             if isinstance(strategy, CursorPagination):
                 cursor = _dig(page, strategy.next_cursor)
                 if not cursor or not items:

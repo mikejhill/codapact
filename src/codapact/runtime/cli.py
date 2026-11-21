@@ -28,7 +28,12 @@ from urllib.parse import quote, quote_plus
 import yaml
 
 from codapact import __version__
-from codapact.core.errors import CodapactError, ResponseTooLargeError, TransportError
+from codapact.core.errors import (
+    CodapactError,
+    ConfigError,
+    ResponseTooLargeError,
+    TransportError,
+)
 from codapact.core.net import HttpRequest, HttpResponse, SafeHttpClient
 from codapact.model.api import Api, AuthKind, AuthScheme
 from codapact.runtime import cli_auth, cli_tools
@@ -45,7 +50,7 @@ from codapact.runtime.errors import (
     ResponseValidationWarning,
     ValidationError,
 )
-from codapact.runtime.extensions import load_extension
+from codapact.runtime.extensions import extension_method, load_extension
 from codapact.runtime.middleware import Retry
 from codapact.runtime.oauth import TokenStore, default_store
 from codapact.runtime.profiles import ProfileIndex, ProfileStore, check_profile_name
@@ -498,8 +503,8 @@ class CliRuntime:
             help=text("on a response that breaks the contract: fail, warn (default), or ignore"),
         )
         for extension in self.loaded_extensions():
-            add_options = getattr(extension, "add_options", None)
-            if callable(add_options):
+            add_options = extension_method(extension, "add_options")
+            if add_options is not None:
                 add_options(group, hidden)
 
     def global_help(self) -> str:
@@ -918,7 +923,10 @@ class CliRuntime:
         err = stderr or _utf8(sys.stderr)
         token = _error_format.set(self._error_mode(self._pre_scan(words).error_format))
         try:
-            parser = build_parser()
+            try:
+                parser = build_parser()
+            except ConfigError as error:  # a cli.extensions module that will not load
+                return emit_error(self.program, "usage", str(error), EXIT_USAGE, err)
             if words[:1] == ["__complete"]:
                 for candidate in cli_tools.complete(parser, words[1:]):
                     print(candidate, file=out)
@@ -983,8 +991,8 @@ class CliRuntime:
                         *(
                             note
                             for extension in self.loaded_extensions()
-                            if callable(getattr(extension, "notes", None))
-                            for note in extension.notes()
+                            if extension_method(extension, "notes") is not None
+                            for note in extension.notes() or ()
                         ),
                     ],
                 }
@@ -1203,8 +1211,8 @@ class CliRuntime:
         hooks = [
             hook
             for extension in self.loaded_extensions()
-            if callable(getattr(extension, "hooks", None))
-            for hook in extension.hooks(args)
+            if extension_method(extension, "hooks") is not None
+            for hook in extension.hooks(args) or ()
         ]
         if hooks:
             options["hooks"] = tuple(hooks)

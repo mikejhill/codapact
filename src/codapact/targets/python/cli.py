@@ -80,7 +80,9 @@ class PythonCliTarget:
 
 def _extensions(request: GenerationRequest) -> tuple[str, ...]:
     value = request.options.get("extensions") or ()
-    if isinstance(value, str) or not all(isinstance(v, str) and ":" in v for v in value):
+    if not isinstance(value, list | tuple) or not all(
+        isinstance(v, str) and ":" in v for v in value
+    ):
         raise PluginError("cli.extensions must be a list of 'package.module:factory' strings")
     return tuple(value)
 
@@ -133,7 +135,7 @@ def _auth_config(request: GenerationRequest) -> dict[str, dict[str, object]]:
     for name, value in raw.items():
         if name not in known:
             raise PluginError(f"cli.auth: unknown scheme {name!r}")
-        allowed = ("client_id", "scopes", "flow", "audience", "fields", "docs", "check")
+        allowed = ("client_id", "scopes", "flow", "audience", "fields", "docs", "check", "browser")
         if not isinstance(value, dict) or set(value) - set(allowed):
             # No client_secret: secrets must never be baked into generated code.
             raise PluginError(f"cli.auth.{name} allows {', '.join(allowed)}")
@@ -144,7 +146,30 @@ def _auth_config(request: GenerationRequest) -> dict[str, dict[str, object]]:
             config[str(name)]["fields"] = _fields(str(name), value["fields"])
         if "check" in value:
             config[str(name)]["check"] = _check_operation(request, str(name), value["check"])
+        if "browser" in value:
+            _browser_settings(str(name), value["browser"])
     return config
+
+
+def _browser_settings(scheme: str, value: object) -> None:
+    """Validate ``cli.auth.<scheme>.browser`` (see ``codapact.runtime.browser``)."""
+    where = f"cli.auth.{scheme}.browser"
+    if not isinstance(value, dict):
+        raise PluginError(f"{where} must be a mapping")
+    allowed = {"login_url", "cookies", "headers", "domain", "signin_hosts"}
+    if set(value) - allowed:
+        raise PluginError(f"{where} allows {', '.join(sorted(allowed))}")
+    cookies = value.get("cookies")
+    if not isinstance(cookies, list) or not cookies or not all(isinstance(c, str) for c in cookies):
+        raise PluginError(f"{where}.cookies must list the session cookie names")
+    for key in ("login_url", "domain"):
+        if key in value and not isinstance(value[key], str):
+            raise PluginError(f"{where}.{key} must be a string")
+    if not isinstance(value.get("headers", {}), dict):
+        raise PluginError(f"{where}.headers must map names to values")
+    hosts = value.get("signin_hosts", [])
+    if not isinstance(hosts, list) or not all(isinstance(h, str) for h in hosts):
+        raise PluginError(f"{where}.signin_hosts must list host names or globs")
 
 
 def _spelling(name: str) -> str:

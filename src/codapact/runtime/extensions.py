@@ -35,35 +35,46 @@ from codapact.core.errors import ConfigError
 from codapact.model.api import Operation
 from codapact.runtime.protocols.custom import load_object
 
-__all__ = ["CallHook", "CliExtension", "load_extension", "resolve_hook", "run_after", "run_before"]
+__all__ = [
+    "CallHook",
+    "CliExtension",
+    "extension_method",
+    "load_extension",
+    "resolve_hook",
+    "run_after",
+    "run_before",
+]
 
 
 class CallHook(Protocol):
     """Transform the arguments and the result of operation calls (both methods optional)."""
 
     def before(self, operation: Operation, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Return the arguments to validate and send."""
-        ...
+        """Return the arguments to validate and send (unchanged by default)."""
+        del operation
+        return arguments
 
     def after(self, operation: Operation, result: Any) -> Any:
-        """Return the result handed to the caller."""
-        ...
+        """Return the result handed to the caller (unchanged by default)."""
+        del operation
+        return result
 
 
 class CliExtension(Protocol):
     """What a ``cli.extensions`` factory returns (every method optional)."""
 
     def add_options(self, group: argparse._ArgumentGroup, hidden: bool) -> None:
-        """Add global options."""
-        ...
+        """Add global options (none by default)."""
+        del group, hidden
 
     def hooks(self, args: argparse.Namespace) -> Sequence[CallHook]:
-        """Return call hooks for this invocation."""
-        ...
+        """Return call hooks for this invocation (none by default)."""
+        del args
+        return ()
 
     def notes(self) -> Sequence[str]:
-        """Return ``describe`` notes."""
-        ...
+        """Return ``describe`` notes (none by default)."""
+        return ()
 
 
 def resolve_hook(value: Any) -> Any:
@@ -78,8 +89,17 @@ def resolve_hook(value: Any) -> Any:
     raise ConfigError(f"call hook {value!r} has neither before() nor after()")
 
 
+def extension_method(extension: Any, name: str) -> Any:
+    """Return ``extension.name`` when it is callable, else ``None``."""
+    method = getattr(extension, name, None)
+    return method if callable(method) else None
+
+
 def _is_hook(value: Any) -> bool:
-    return callable(getattr(value, "before", None)) or callable(getattr(value, "after", None))
+    return (
+        extension_method(value, "before") is not None
+        or extension_method(value, "after") is not None
+    )
 
 
 def run_before(
@@ -87,8 +107,8 @@ def run_before(
 ) -> dict[str, Any]:
     """Apply each hook's ``before`` in order."""
     for hook in hooks:
-        before = getattr(hook, "before", None)
-        if callable(before):
+        before = extension_method(hook, "before")
+        if before is not None:
             arguments = before(operation, dict(arguments))
             if not isinstance(arguments, dict):
                 raise ConfigError(f"call hook {hook!r}: before() must return a dict")
@@ -98,8 +118,8 @@ def run_before(
 def run_after(hooks: Sequence[Any], operation: Operation, result: Any) -> Any:
     """Apply each hook's ``after`` in reverse order."""
     for hook in reversed(hooks):
-        after = getattr(hook, "after", None)
-        if callable(after):
+        after = extension_method(hook, "after")
+        if after is not None:
             result = after(operation, result)
     return result
 

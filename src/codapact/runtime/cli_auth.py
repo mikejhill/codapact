@@ -287,8 +287,8 @@ class AuthCommands:
         removed = []
         for scheme in targets:
             session = self.store.delete(session_key(scheme.name))
-            browser = self._browser(scheme)
-            profile = browser.forget() if browser is not None else False
+            browser = self._browser_auth()
+            profile = browser.forget(scheme, self.profile or None) if browser is not None else False
             if self.store.delete(scheme.name) or session or profile:
                 removed.append(scheme.name)
         result = self._scoped({"removed": removed})
@@ -326,7 +326,7 @@ class AuthCommands:
             return {
                 "scheme": scheme.name,
                 "signed_in": browser.login.domain,
-                "cookies": sorted(cookies),
+                "cookies": sorted({str(c["name"]) for c in cookies}),
                 "saved": _location(self.store, scheme.name),
             }
         if scheme.kind is AuthKind.CUSTOM:
@@ -350,15 +350,18 @@ class AuthCommands:
             self.store.save(scheme.name, {"type": "token", "secret": secret})
         return {"scheme": scheme.name, "saved": _location(self.store, scheme.name)}
 
+    def _browser_auth(self) -> BrowserAuth | None:
+        return next((p for p in self.chain.providers if isinstance(p, BrowserAuth)), None)
+
     def _browser(self, scheme: AuthScheme) -> Any:
-        """Return the browser session handler for ``scheme``, if it signs in with one."""
-        for provider in self.chain.providers:
-            if isinstance(provider, BrowserAuth):
-                try:
-                    return provider.session(scheme)
-                except ConfigError as error:
-                    raise AuthError(str(error)) from None
-        return None
+        """Return the browser session handler for ``scheme`` in the profile chosen now."""
+        provider = self._browser_auth()
+        if provider is None:
+            return None
+        try:
+            return provider.session(scheme, store=self.store, profile=self.profile or None)
+        except ConfigError as error:
+            raise AuthError(str(error)) from None
 
     def _fields_login(
         self, scheme: AuthScheme, spec: Mapping[str, Mapping[str, Any]], given: list[str]

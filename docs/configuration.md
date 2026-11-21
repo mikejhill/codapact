@@ -431,21 +431,29 @@ cli:
         cookies: [tenant.session.token]          # names that prove the session
         headers: {X-Atlassian-Token: no-check}   # sent with every request (optional)
         domain: example.atlassian.net            # cookie host (default: login URL host)
+        signin_hosts: ["id.example.com"]         # sign-in hosts a rejected session redirects to
 ```
 
 * `<program> auth login --scheme session` opens a browser window; the person signs in
   (SSO, MFA and all) and the CLI saves the domain's cookies in the credential store once
   every named cookie is present and the page is back on the API host (5 minute limit).
-* Each request sends the cookies and the configured headers.
-* A 401, or a redirect to another host, renews the session without a window from the
+* Each request sends the cookies a browser would send to that URL (domain, path, Secure
+  and expiry rules) and the configured headers. A session only goes to the origin that
+  issued it; after changing `--base-url`, sign in again.
+* A 401, or a redirect to a sign-in page, renews the session without a window from the
   same browser profile (identity providers keep their own longer login) and resends once.
-  When that fails the command exits 3 and asks for `auth login` again.
+  A sign-in page is a host in `signin_hosts`, or, when that is unset, an off-host URL
+  that looks like one (`login`, `sso`, `saml`, `oauth`...); other redirects, such as a
+  303 to a result, are never treated as expiry, so writes are not replayed.
+  When renewal fails the command exits 3 and asks for `auth login` again.
 * Playwright drives the browser: install the `browser` extra
   (`pip install codapact[browser]`, or ship `playwright` with the coda). It uses an
   installed Chrome, then Edge, then Playwright's Chromium; `<PREFIX>_BROWSER=chrome|msedge|chromium`
   picks one.
-* The browser profile lives under `$XDG_STATE_HOME/<program>/browser/<profile>`
-  (`%LOCALAPPDATA%` on Windows) and `auth logout` removes it.
+* Each scheme and profile has its own browser directory under
+  `$XDG_STATE_HOME/<program>/browser/<profile>/<scheme>` (`%LOCALAPPDATA%` on Windows);
+  `auth logout` removes it and reports when it cannot. With
+  `<PREFIX>_CREDENTIAL_STORE=memory` the browser profile is temporary as well.
 
 ### Credential fields
 
@@ -537,7 +545,9 @@ class Markdown:
         return result
 ```
 
-`before` hooks run in order and `after` hooks in reverse. Pass them as
+`before` hooks run in order and `after` hooks in reverse; on paginated calls `after` runs
+on each item (paging reads cursors from the unmodified page). Subclasses of `CallHook` and
+`CliExtension` inherit pass-through defaults. Pass them as
 `Client(hooks=[...])` or `RuntimeClient(hooks=[...])`, as objects, zero-argument factories,
 or `"package.module:attribute"` strings.
 
