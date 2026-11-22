@@ -985,3 +985,17 @@ def test_keyring_copy_cleanup_never_fails_a_save() -> None:
     store = KeyringTokenStore("codapact:acme", NoCopies())
     store.save("token", {"secret": "s"})
     assert store.load("token") == {"secret": "s"}
+
+
+def test_malformed_manifests_are_plain_values() -> None:
+    from codapact.runtime.oauth import KeyringTokenStore
+    from tests.unit.test_oauth import FakeKeyring
+
+    backend = FakeKeyring()
+    store = KeyringTokenStore("codapact:acme", backend)
+    for raw in (
+        '{"codapact_chunks": 2, "codapact_generation": "ab", "codapact_retired": [["x"]]}',
+        '{"codapact_chunks": 2, "codapact_generation": "ab", "codapact_retired": "no"}',
+    ):
+        backend.items[("codapact:acme:m", "m")] = raw
+        assert store.load("m") == json.loads(raw)
