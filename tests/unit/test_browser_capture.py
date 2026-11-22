@@ -20,6 +20,7 @@ from codapact.runtime.browser import (
     browser_root,
     cookie_header,
     forget_profile,
+    guard_password,
     playwright_capture,
     sign_in_headless,
 )
@@ -66,6 +67,11 @@ class FakeContext:
         self.land_on = land_on
         self.fail_close = fail_close
         self.closed = False
+        self.routes: list[Any] = []
+
+    def route(self, pattern: str, handler: Any) -> None:
+        assert pattern == "**/*"
+        self.routes.append(handler)
 
     def new_page(self) -> FakePage:
         page = FakePage(self.land_on)
@@ -587,3 +593,78 @@ def test_renewal_types_the_saved_password(tmp_path: Path) -> None:
     session.save_password(None)  # nothing to forget
     store.save("session", {**(store.load("session") or {}), "renewal_password": 7})
     assert session.password() == ""
+
+
+class FakeRoute:
+    """A routed request: records whether it was continued, aborted or fulfilled."""
+
+    def __init__(self, url: str, body: bytes | None = None, method: str = "POST", **reply: Any):
+        self.request = types.SimpleNamespace(url=url, post_data_buffer=body, method=method)
+        self.reply = reply
+        self.outcome = ""
+
+    def continue_(self) -> None:
+        self.outcome = "continued"
+
+    def abort(self) -> None:
+        self.outcome = "aborted"
+
+    def fetch(self, max_redirects: int) -> Any:
+        assert max_redirects == 0
+        headers = {"location": self.reply["location"]} if "location" in self.reply else {}
+        return types.SimpleNamespace(status=self.reply.get("status", 200), headers=headers)
+
+    def fulfill(self, response: Any) -> None:
+        self.outcome = f"fulfilled {response.status}"
+
+
+def test_requests_carrying_the_password_are_checked() -> None:
+    login = replace(
+        BrowserLogin(SITE + "/", ("t",), domain="acme.example.net", username="amy"),
+        password='p ss"w',
+        signin_hosts=("id.example.com",),
+    )
+    context = FakeContext([[]], SITE, False)
+    guard_password(context, login)
+    (handle,) = context.routes
+    good = "https://id.example.com/login"
+    cases = [
+        (FakeRoute(good, b"user=amy"), "continued"),  # no password in it
+        (FakeRoute(good, None, "GET"), "continued"),
+        (FakeRoute(good, b"user=amy&p=p+ss%22w"), "fulfilled 200"),
+        (FakeRoute(good, b'{"password": "p ss\\"w"}'), "fulfilled 200"),  # JSON
+        (FakeRoute(good + "?p=p%20ss%22w", None, "GET"), "aborted"),  # in a URL
+        (FakeRoute(good, b"p=p+ss%22w", "PUT"), "aborted"),
+        (FakeRoute("https://evil.test/x", b'p=p ss"w'), "aborted"),
+        (FakeRoute("http://id.example.com/login", b'p=p ss"w'), "aborted"),  # plain HTTP
+        (FakeRoute(good, b"p=p+ss%22w", status=307, location="https://evil.test/"), "aborted"),
+        (FakeRoute(good, b"p=p+ss%22w", status=308, location="/next"), "fulfilled 308"),
+        (
+            FakeRoute(good, b"p=p+ss%22w", status=302, location="https://evil.test/"),
+            "fulfilled 302",
+        ),
+    ]
+    for route, expected in cases:
+        handle(route)
+        assert route.outcome == expected, route.request
+
+
+def test_password_pages_and_scope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    login = BrowserLogin("http://localhost:8080/", ("t",), signin_hosts=("id.*.com",))
+    assert login.password_page("http://localhost:8080/login")
+    assert login.password_page("https://id.example.com/")
+    remote = BrowserLogin("http://intranet.example/", ("t",))
+    assert remote.trusted_page("http://intranet.example/login")  # for the username
+    assert not remote.password_page("http://intranet.example/login")  # not for a password
+    assert login.password_scope == ["http://localhost:8080", "id.*.com", "localhost"]
+    # the guard is only set up for a headless renewal with a password
+    launches = fake_playwright(monkeypatch, [jar(tenant_session_token="abc")])
+    playwright_capture(LOGIN, tmp_path / "p", True, 5.0, "chromium")
+    assert "service_workers" not in launches[-1]
+    named = replace(LOGIN, username="amy", password="pw")
+    playwright_capture(named, tmp_path / "p", True, 5.0, "chromium")
+    assert launches[-1]["service_workers"] == "block"
+    assert (
+        sign_in_headless(FormPage("http://acme.example.net/x", "raise"), named, set(), FakeError)
+        == "unsafe"
+    )

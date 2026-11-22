@@ -596,8 +596,14 @@ changed it), and a password is always posted, never put in a URL. Pages with a o
 box, several password boxes or a new-password box, a form that names another account (even in
 a hidden field), a disabled submit button, or an email-only form on a page that is not a
 sign-in page (a `signin_hosts` host or a URL with sign-in words such as `login`) are left
-alone. The password is kept exactly as typed (spaces too) inside the session record, with the
-username it was saved for; after a login with another username it is not used. `auth status` shows
+alone. The browser itself blocks any request that would carry the password in a URL, by a method
+other than `POST`, to a host that is not trusted, or through a `307`/`308` redirect off them,
+whatever the page does on submit. A password is only typed into and sent to HTTPS pages (plain
+HTTP only on `localhost`). It is kept exactly as typed (spaces too) inside the session record,
+with the username and the sign-in pages (login URL, cookie domain, `signin_hosts`) it was
+saved for; after a login with another username, or a change to those pages, it is not used
+and `auth status` says so. Signing in as another username starts from a clean browser
+profile, so the previous account's cookies are never saved as the new account's session. `auth status` shows
 `renewal: saved password, no window needed`; `auth login --no-save-secret`, answering `n`,
 or `auth logout --scheme NAME` forgets it. Without a terminal or a flag, `auth login` leaves
 a saved password as it is.

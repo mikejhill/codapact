@@ -534,7 +534,7 @@ class AuthCommands:
                 if token.refresh_token:
                     row["expires_in"] += " (refreshable)"
             if stored and stored.get("type") == "browser" and stored.get(RENEWAL_PASSWORD):
-                row["renewal"] = "saved password, no window needed"
+                row["renewal"] = self._renewal_status(scheme)
             spec = field_specs(self.configured.get(scheme.name))
             if spec:
                 row["fields"] = self._field_status(scheme.name, spec)
@@ -542,6 +542,17 @@ class AuthCommands:
                     row["status"] = "missing"  # an auth plugin cannot sign in without them
             rows.append(row)
         return rows
+
+    def _renewal_status(self, scheme: AuthScheme) -> str:
+        """Whether the saved password still renews this scheme's session."""
+        username = self.profiles.settings(self.profile_name).get(username_key(scheme.name))
+        try:
+            browser = self._browser(scheme, username or None)
+        except AuthError:
+            browser = None
+        if browser is not None and browser.password():
+            return "saved password, no window needed"
+        return "saved password not used (another username or sign-in page): run auth login"
 
     def _field_status(self, scheme: str, spec: Mapping[str, Mapping[str, Any]]) -> dict[str, str]:
         saved = credential_fields(scheme, spec, self.prefix, {}, self.store)
@@ -624,7 +635,10 @@ class AuthCommands:
                     "it closes by itself once you are signed in.",
                     file=self.err,
                 )
-            cookies = browser.sign_in()
+            # another account: a clean browser profile, so the old account's cookies are not
+            # taken for the new one's session (the old profile comes back if this fails)
+            with self._fresh_browser(scheme, bool(previous) and username != previous):
+                cookies = browser.sign_in()
             result = {
                 "scheme": scheme.name,
                 "signed_in": browser.login.domain,

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import fnmatch
 import importlib
+import json
 import re
 import shutil
 import sys
@@ -38,7 +39,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, override
-from urllib.parse import urlsplit
+from urllib.parse import quote, quote_plus, unquote_plus, urljoin, urlsplit
 
 from codapact.core.errors import ConfigError
 from codapact.model.api import AuthScheme
@@ -69,6 +70,10 @@ SIGN_IN_WORDS = frozenset(
 DEFAULT_PORTS = {"http": 80, "https": 443}
 RENEWAL_PASSWORD = "renewal_password"  # noqa: S105 (a field name)
 """The session record field holding the password saved for headless renewal."""
+LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})
+"""Hosts a saved password may reach over plain HTTP (a local app)."""
+RENEWAL_SCOPE = "renewal_scope"
+"""The session record field listing where the saved password was approved for."""
 RENEWAL_USERNAME = "renewal_username"
 """The session record field naming the username that password belongs to."""
 SIGN_IN_ATTEMPTS = 3
@@ -141,6 +146,21 @@ class BrowserLogin:
             tuple(hosts),
             sign_in_attempts=attempts,
         )
+
+    def password_page(self, url: str) -> bool:
+        """Whether a saved password may be typed into, or sent to, ``url``.
+
+        A trusted page (``trusted_page``) over HTTPS; plain HTTP only on this machine.
+        """
+        parts = urlsplit(url)
+        local = (parts.hostname or "").lower() in LOOPBACK
+        return self.trusted_page(url) and (parts.scheme == "https" or local)
+
+    @property
+    def password_scope(self) -> list[str]:
+        """What a saved password was approved for: the login origin and the sign-in hosts."""
+        domain = (self.domain or urlsplit(self.login_url).hostname or "").lower()
+        return sorted({_origin(self.login_url), domain, *self.signin_hosts})
 
     def trusted_page(self, url: str) -> bool:
         """Whether ``url`` is safe to type the username into.
@@ -250,6 +270,9 @@ def playwright_capture(
     with api.sync_playwright() as playwright:
         for choice in choices:
             options: dict[str, Any] = {"headless": headless}
+            guarded = headless and bool(login.password and login.username)
+            if guarded:
+                options["service_workers"] = "block"  # so every request passes the guard
             if choice != "chromium":
                 options["channel"] = choice
             try:
@@ -258,6 +281,8 @@ def playwright_capture(
                 errors.append(f"{choice}: {str(error).splitlines()[0]}")
                 continue
             try:
+                if guarded:
+                    guard_password(context, login)
                 page = context.pages[0] if context.pages else context.new_page()
                 page.goto(login.login_url)
                 deadline = time.monotonic() + timeout
@@ -281,6 +306,44 @@ def playwright_capture(
                 except playwright_error:
                     pass
     raise AuthError("could not start a browser (" + "; ".join(errors) + ")")
+
+
+def guard_password(context: Any, login: BrowserLogin) -> None:
+    """Block every request that would carry the saved password where it may not go.
+
+    The form checks run in the page, which can still change the request on submit; this
+    checks the request the browser really sends. One carrying the password (raw, URL- or
+    JSON-encoded) must be a ``POST`` to a password page (``BrowserLogin.password_page``)
+    and never has it in its URL; a ``307``/``308`` redirect that would resend it elsewhere
+    is stopped too.
+    """
+    secret = login.password
+    forms = {secret, quote_plus(secret), quote(secret, safe=""), json.dumps(secret)[1:-1]}
+    marks = [f.encode() for f in forms if f]
+
+    def carries(data: bytes) -> bool:
+        return any(mark in data for mark in marks)
+
+    def handle(route: Any) -> None:
+        request = route.request
+        url = str(request.url)
+        if carries(url.encode()) or carries(unquote_plus(url).encode()):
+            route.abort()
+            return
+        if not carries(request.post_data_buffer or b""):
+            route.continue_()
+            return
+        if request.method != "POST" or not login.password_page(url):
+            route.abort()
+            return
+        response = route.fetch(max_redirects=0)
+        location = urljoin(url, response.headers.get("location", ""))
+        if response.status in (307, 308) and not login.password_page(location):
+            route.abort()
+            return
+        route.fulfill(response=response)
+
+    context.route("**/*", handle)
 
 
 USERNAME_FIELDS = (
@@ -333,8 +396,7 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
   if (location.href !== href) return { outcome: "moved" };
   const laidOut = (el) => el && el.offsetParent !== null;
   const shown = (el) => laidOut(el) && !el.disabled;
-  const find = (root, s) => Array.from(root.querySelectorAll(s));
-  const visible = (root, s) => find(root, s).filter(shown);
+  const visible = (root, s) => Array.from(root.querySelectorAll(s)).filter(shown);
   const otp = /(^|[-_ ])(otp|totp|mfa|2fa|passcode|verification|code)([-_ ]|$)/i;
   const challenge = visible(document, "input").some(
     (el) => /one-time-code/i.test(el.autocomplete || "") || otp.test(el.name) || otp.test(el.id)
@@ -345,26 +407,33 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
     return { outcome: "unclear" };
   const pass = passes[0];
   if (pass && !pass.form) return { outcome: "stuck" };
-  const root = pass ? pass.form : document;  // the password's own form decides
-  const user = selectors.flatMap((s) => visible(root, s))[0];
+  // the password's own form decides; its controls include those tied by form="…"
+  const owned = (form) => Array.from(form.elements);
+  const matching = (els, s) => els.filter((el) => el.matches(s));
+  const user = pass
+    ? selectors.flatMap((s) => matching(owned(pass.form), s)).find(shown)
+    : selectors.flatMap((s) => visible(document, s))[0];
   if (!user && !pass) return { outcome: "none" };
   const step = pass ? "password" : "username";
   if (done.includes(step)) return { outcome: "done" };
   const strong = "input[autocomplete~='username'], input[name='username'], " +
     "input[name='loginfmt'], input[id='username']";
-  if (!pass && !user.matches(strong) && !signinPage) return { outcome: "not-sign-in" };
+  // a password only on a sign-in page; a username alone also where the box says so
+  if (!signinPage && (pass || !user.matches(strong))) return { outcome: "not-sign-in" };
   const form = (pass || user).form;
   if (!form) return { outcome: "stuck" };
-  const accounts = selectors.flatMap((s) => find(form, s)).concat(
-    find(form, "input[type=hidden]").filter((el) => /user|email|login/i.test(el.name || ""))
+  const account = /^(user(_?name)?|e-?mail|login(_?(hint|name|id))?|loginfmt|identifier)$/i;
+  const accounts = selectors.flatMap((s) => matching(owned(form), s)).concat(
+    owned(form).filter((el) => el.type === "hidden" && account.test(el.name || ""))
   );
   const wanted = name.trim().toLowerCase();
   if (accounts.some((el) => el.value && el.value.trim().toLowerCase() !== wanted))
     return { outcome: "other-account" };
   const plan = () => {
     const button =
-      find(form, "button[type=submit], input[type=submit], button:not([type])").find(laidOut) ||
-      null;
+      matching(owned(form), "button[type=submit], input[type=submit], button:not([type])").find(
+        laidOut
+      ) || null;
     const own = (attr) => button && button.getAttribute(attr) !== null;
     const dest = (own("formaction") ? button.formAction : form.action) || location.href;
     const method = own("formmethod") ? button.formMethod : form.method;  // effective
@@ -434,6 +503,8 @@ def sign_in_headless(
     href = str(page.url)
     if len(filled) >= login.sign_in_attempts:
         return "done"
+    if not login.password_page(href):
+        return "unsafe"
     done = [step for step in ("username", "password") if f"{step} {href}" in filled]
     base = [login.username, login.password, href, list(USERNAME_FIELDS), done]
     flag = _sign_in_page(login, href)
@@ -442,7 +513,7 @@ def sign_in_headless(
         outcome = str(plan.get("outcome")) if isinstance(plan, dict) else "none"
         if outcome not in ("username", "password"):
             return outcome
-        if not login.trusted_page(str(plan.get("dest"))):
+        if not login.password_page(str(plan.get("dest"))):
             return "unsafe"
         if plan.get("blocked"):
             return "stuck"  # a button waiting for validation or a CAPTCHA
@@ -586,6 +657,8 @@ class BrowserSession:
         user = record.get(RENEWAL_USERNAME)
         if not (isinstance(secret, str) and self.login.username and user == self.login.username):
             return ""
+        if record.get(RENEWAL_SCOPE) != self.login.password_scope:
+            return ""  # the sign-in pages changed since it was approved
         return secret
 
     def save_password(self, secret: str | None) -> None:
@@ -597,12 +670,19 @@ class BrowserSession:
         record = dict(self.saved())
         if not record or (secret is None and RENEWAL_PASSWORD not in record):
             return
-        record.pop(RENEWAL_PASSWORD, None)
-        record.pop(RENEWAL_USERNAME, None)
+        for field_name in (RENEWAL_PASSWORD, RENEWAL_USERNAME, RENEWAL_SCOPE):
+            record.pop(field_name, None)
         if secret is not None and self.login.username:
-            record[RENEWAL_PASSWORD] = secret
-            record[RENEWAL_USERNAME] = self.login.username
+            record.update(self._renewal(secret))
         self.store.save(self.key, record)
+
+    def _renewal(self, secret: str) -> dict[str, Any]:
+        """The record fields of a saved password: it, its username and its scope."""
+        return {
+            RENEWAL_PASSWORD: secret,
+            RENEWAL_USERNAME: self.login.username,
+            RENEWAL_SCOPE: self.login.password_scope,
+        }
 
     def sign_in(self) -> list[Cookie]:
         """Open a browser window for the person to sign in; save and return the cookies."""
@@ -636,8 +716,7 @@ class BrowserSession:
         }
         password = self.password()
         if password:
-            record[RENEWAL_PASSWORD] = password
-            record[RENEWAL_USERNAME] = self.login.username
+            record.update(self._renewal(password))
         self.store.save(self.key, record)
 
     @override

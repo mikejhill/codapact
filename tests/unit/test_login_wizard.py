@@ -1258,3 +1258,34 @@ def test_browser_password_default_and_failed_sign_in(tmp_path: Path) -> None:
     with pytest.raises(AuthError, match="sign-in did not finish"):
         failing.run(login())
     assert inner.items["default:session"]["renewal_password"] == "pw"
+
+
+def test_another_account_gets_a_clean_browser_and_status_follows(tmp_path: Path) -> None:
+    auth, _, inner, index = browser_wizard(["https://a.test", "2", "amy", "y", "pw"], tmp_path)
+    auth.run(login())
+    provider = next(p for p in auth.chain.providers if isinstance(p, BrowserAuth))
+    directory = provider.directory(SESSION, auth.profile or None)
+    directory.mkdir(parents=True)
+    (directory / "Cookies").write_text("amy's")
+    # the same account keeps its browser profile
+    same, _, _, _ = browser_wizard(["", "", "", "y", "pw"], tmp_path, index=index, inner=inner)
+    same.run(login())
+    assert (directory / "Cookies").exists()
+    # another username on a terminal: a clean profile, so amy's cookies are not bob's session
+    other, _, _, _ = browser_wizard(["", "", "bob", "n"], tmp_path, index=index, inner=inner)
+    other.run(login())
+    assert not directory.exists()
+    # status says whether the saved password still renews for the profile's username
+    keep, _, _, _ = browser_wizard(["", "", "amy", "y", "pw"], tmp_path, index=index, inner=inner)
+    keep.run(login())
+    assert keep.status()[1]["renewal"] == "saved password, no window needed"
+    index.update_settings("default", {"username.session": "carol"})  # another store's login
+    assert keep.status()[1]["renewal"].startswith("saved password not used")
+    record = inner.items["default:session"]
+    assert record["renewal_scope"] == ["a.test", "https://a.test"]
+    record["renewal_scope"] = ["https://old.test"]  # the sign-in pages changed since
+    index.update_settings("default", {"username.session": "amy"})
+    assert keep.status()[1]["renewal"].startswith("saved password not used")
+    provider = next(p for p in keep.chain.providers if isinstance(p, BrowserAuth))
+    provider.base_url = ""  # no site: no session handler either
+    assert keep._renewal_status(SESSION).startswith("saved password not used")
