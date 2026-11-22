@@ -20,11 +20,13 @@ existed (unscoped keys) belong to ``default`` and move there when first read.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import tempfile
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -35,7 +37,7 @@ from codapact.runtime.oauth import TokenStore, store_location
 DEFAULT_PROFILE = "default"
 PROFILE_SETTINGS = ("base_url", "scheme", "username.<scheme>")
 """Non-secret values a profile keeps next to its saved logins."""
-_USERNAME_KEY = re.compile(r"username\.[A-Za-z0-9_.-]{1,64}")
+_USERNAME_KEY = re.compile(r"username\..+", re.DOTALL)
 
 
 def setting_allowed(key: str) -> bool:
@@ -107,6 +109,17 @@ class ProfileIndex:
         if self.path is not None:
             self._data = None
 
+    @contextlib.contextmanager
+    def _changing(self) -> Generator[dict[str, Any]]:
+        """Read, change and write the index under a lock shared with other processes."""
+        if self.path is None:
+            yield self._load()
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with _locked(self.path.with_name(self.path.name + ".lock")):
+            self._data = None
+            yield self._load()
+
     def _save(self) -> None:
         if self.path is None:
             return
@@ -147,29 +160,28 @@ class ProfileIndex:
 
     def add(self, name: str) -> bool:
         """Record ``name``; the first profile becomes the default. Return whether it was new."""
-        self._reload()
-        data = self._load()
-        if name in data["profiles"]:
-            return False
-        data["profiles"].append(check_profile_name(name))
-        if data["default"] not in data["profiles"]:
-            data["default"] = name
-        self._save()
+        with self._changing() as data:
+            if name in data["profiles"]:
+                return False
+            data["profiles"].append(check_profile_name(name))
+            if data["default"] not in data["profiles"]:
+                data["default"] = name
+            self._save()
         return True
 
     def use(self, name: str) -> None:
         """Make ``name`` the default profile."""
-        self._reload()
-        if not self.known(name):
-            raise self.unknown(name)
-        data = self._load()
-        if name not in data["profiles"]:
-            data["profiles"].append(name)
-        data["default"] = name
-        self._save()
+        with self._changing() as data:
+            if not self.known(name):
+                raise self.unknown(name)
+            if name not in data["profiles"]:
+                data["profiles"].append(name)
+            data["default"] = name
+            self._save()
 
     def settings(self, name: str) -> dict[str, str]:
         """The non-secret settings saved for profile ``name`` (empty when none)."""
+        self._reload()
         return dict(self._load()["settings"].get(name, {}))
 
     def update_settings(self, name: str, values: dict[str, str]) -> None:
@@ -180,33 +192,31 @@ class ProfileIndex:
         unknown = {k for k in values if not setting_allowed(k)}
         if unknown:
             raise AuthError(f"unknown profile settings: {', '.join(sorted(unknown))}")
-        self._reload()
-        data = self._load()
-        current = data["settings"].setdefault(check_profile_name(name), {})
-        for key, value in values.items():
-            if value:
-                current[key] = value
-            else:
-                current.pop(key, None)
-        if not current:
-            del data["settings"][name]
-        if name not in data["profiles"]:
-            data["profiles"].append(name)
-            if data["default"] not in data["profiles"]:
-                data["default"] = name
-        self._save()
+        with self._changing() as data:
+            current = data["settings"].setdefault(check_profile_name(name), {})
+            for key, value in values.items():
+                if value:
+                    current[key] = value
+                else:
+                    current.pop(key, None)
+            if not current:
+                del data["settings"][name]
+            if name not in data["profiles"]:
+                data["profiles"].append(name)
+                if data["default"] not in data["profiles"]:
+                    data["default"] = name
+            self._save()
 
     def remove(self, name: str) -> bool:
         """Forget ``name`` and its settings; the default moves to the oldest remaining profile."""
-        self._reload()
-        data = self._load()
-        if name not in data["profiles"]:
-            return False
-        data["profiles"].remove(name)
-        data["settings"].pop(name, None)
-        if data["default"] == name:
-            data["default"] = data["profiles"][0] if data["profiles"] else None
-        self._save()
+        with self._changing() as data:
+            if name not in data["profiles"]:
+                return False
+            data["profiles"].remove(name)
+            data["settings"].pop(name, None)
+            if data["default"] == name:
+                data["default"] = data["profiles"][0] if data["profiles"] else None
+            self._save()
         return True
 
     def unknown(self, name: str) -> AuthError:
@@ -277,6 +287,41 @@ class ProfileStore:
     def _registered(self) -> None:
         if self.on_save is not None:
             self.on_save(self.profile)
+
+
+LOCK_TIMEOUT = 10.0
+
+
+@contextlib.contextmanager
+def _locked(path: Path) -> Generator[None]:
+    """Hold an exclusive lock on ``path`` (created if missing) across processes."""
+    with path.open("a+b") as handle:
+        if os.name == "nt":  # pragma: no cover - exercised by the Windows CI job
+            import msvcrt  # noqa: PLC0415
+
+            deadline = time.monotonic() + LOCK_TIMEOUT
+            while True:
+                try:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    if time.monotonic() > deadline:
+                        raise AuthError(f"profiles file is locked: {path}") from None
+                    time.sleep(0.05)
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl  # noqa: PLC0415
+
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def profiles_path(program: str, environ: dict[str, str] | Any) -> Path:

@@ -122,19 +122,21 @@ class BrowserLogin:
         )
 
     def trusted_page(self, url: str) -> bool:
-        """Whether ``url`` is this site or one of its sign-in pages (safe to type a username).
+        """Whether ``url`` is safe to type the username into.
 
-        The login URL's host, the cookie domain, and sign-in hosts (``signin_hosts``, or
-        the sign-in words when none are set), over HTTPS unless the login URL is HTTP.
+        Only the login URL's host, the cookie domain, and the configured ``signin_hosts``
+        (never a guess from the host or path), over HTTPS unless the login URL is HTTP.
         """
         parts = urlsplit(url)
         login = urlsplit(self.login_url)
         if parts.scheme != "https" and parts.scheme != login.scheme:
             return False
         host = (parts.hostname or "").lower()
+        if not host:
+            return False
         if host in {(login.hostname or "").lower(), self.domain.lower()}:
-            return bool(host)
-        return self.sign_in_redirect(url)
+            return True
+        return any(fnmatch.fnmatch(host, pattern.lower()) for pattern in self.signin_hosts)
 
     def sign_in_redirect(self, location: str) -> bool:
         """Whether a redirect to ``location`` sends the person to sign in again."""

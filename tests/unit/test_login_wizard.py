@@ -6,11 +6,12 @@ import argparse
 import base64
 import io
 import json
+import os
 import sys
 import types
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 
 import pytest
 
@@ -19,7 +20,7 @@ from codapact.runtime import cli as cli_module
 from codapact.runtime.abstractions import Credential, HttpRequest
 from codapact.runtime.browser import BrowserAuth, BrowserLogin, prefill_username
 from codapact.runtime.cli import CliRuntime
-from codapact.runtime.cli_auth import AuthCommands, _first_sentence, _normal_url
+from codapact.runtime.cli_auth import AuthCommands, _normal_url
 from codapact.runtime.credentials import (
     AskedPassword,
     StoreAuth,
@@ -234,7 +235,8 @@ def test_wizard_asks_for_the_site_scheme_and_username(tmp_path: Path) -> None:
     ]
     assert isinstance(auth.err, io.StringIO)
     assert auth.err.getvalue() == (
-        "Sign-in methods:\n  1. basic: Your email and an API token\n  2. token\n"
+        "Sign-in methods:\n  1. basic: Your email and an API token. Create one in settings.\n"
+        "  2. token\n"
     )
     assert inner.items == {"default:basic": {"type": "basic", "username": "amy@x.test"}}
     assert index.settings("default") == {
@@ -315,9 +317,11 @@ def test_save_secret_options() -> None:
         wizard(["amy"], interactive=False)[0].run(
             login(scheme="basic", with_token=True, save_secret=False)
         )
-    piped, _, inner, _ = wizard(["amy"], configured={"basic": {"save_secret": False}})
+    piped, _, inner, _ = wizard(["amy", "amy"], configured={"basic": {"save_secret": False}})
     piped.stdin = io.StringIO("tok\n")
-    piped.run(login(scheme="basic", with_token=True, base_url="https://a.test"))
+    with pytest.raises(AuthError, match="add --save-secret to save the one read from stdin"):
+        piped.run(login(scheme="basic", with_token=True, base_url="https://a.test"))
+    piped.run(login(scheme="basic", with_token=True, base_url="https://a.test", save_secret=True))
     assert inner.items["default:basic"]["secret"] == "tok"
     quiet, labels, inner, _ = wizard(["amy"], interactive=False)
     inner.save("default:basic", {"type": "basic", "username": "amy", "secret": "old"})
@@ -493,9 +497,6 @@ def test_status_names_the_asked_password() -> None:
 def test_helpers() -> None:
     assert _normal_url(" site.test/ ") == "https://site.test"
     assert _normal_url("http://localhost:8080") == "http://localhost:8080"
-    assert _first_sentence("One two.  Three.") == "One two"
-    assert _first_sentence("x" * 120, limit=10) == "xxxxxxxxx…"
-    assert _first_sentence("one two (three four", limit=12) == "one two…"
 
 
 def test_capture_fills_the_username_only_in_a_window(
@@ -542,10 +543,10 @@ def test_changing_site_needs_consent_to_drop_saved_logins() -> None:
     empty.run(login())  # nothing saved yet: switching sites needs no question
     same, _, _, _ = wizard(["", "2", "tok2"], index=index, inner=inner)
     same.run(login())  # same site: no question
-    refused, labels, _, _ = wizard(["https://b.test", "n"], index=index, inner=inner)
+    refused, labels, _, _ = wizard(["https://b.test", "2", "n"], index=index, inner=inner)
     with pytest.raises(AuthError, match="has saved logins for https://a.test"):
         refused.run(login())
-    assert labels[1] == (
+    assert labels[2] == (
         "Profile default signs in to https://a.test; its saved logins (token) would be sent "
         "to https://b.test. Forget them and switch? [y/N]: "
     )
@@ -553,7 +554,11 @@ def test_changing_site_needs_consent_to_drop_saved_logins() -> None:
         wizard([], index=index, inner=inner, interactive=False)[0].run(
             login(scheme="token", base_url="https://b.test")
         )
-    agreed, _, _, _ = wizard(["https://b.test", "y", "2", "tok3"], index=index, inner=inner)
+    typo, _, _, _ = wizard(["https://b.test"], index=index, inner=inner)
+    with pytest.raises(AuthError, match="unknown scheme 'tokn'"):
+        typo.run(login(scheme="tokn"))
+    assert inner.items  # a typo never drops the working logins
+    agreed, _, _, _ = wizard(["https://b.test", "2", "y", "tok3"], index=index, inner=inner)
     agreed.run(login())
     assert inner.items == {"default:token": {"type": "token", "secret": "tok3"}}
     assert index.settings("default")["base_url"] == "https://b.test"
@@ -570,7 +575,7 @@ def test_wizard_offers_the_settings_file_url_and_follows_the_new_profile() -> No
     provider = next(p for p in browser.chain.providers if isinstance(p, BrowserAuth))
     provider.base_url = "https://previous-profile.test"
     browser.fallback_base_url = "https://c.test"
-    assert browser._base_url(login(), {}) == ""
+    assert browser._destination(login(), {}, True) == "https://c.test"
     assert provider.base_url == "https://c.test"
 
 
@@ -593,11 +598,12 @@ def test_sign_in_pages_trusted_for_the_username() -> None:
     assert not named.trusted_page("https://evil.test/login")
     assert not named.trusted_page("http://id.atlassian.com/login")
     assert not named.trusted_page("about:blank")
+    assert not named.trusted_page("https:///no-host")
     plain = BrowserLogin("http://localhost:8080/", ("sid",), domain="localhost")
     assert plain.trusted_page("http://localhost:8080/sign-in")
-    words = BrowserLogin("https://app.test/", ("sid",), domain="app.test")
-    assert words.trusted_page("https://login.idp.test/")
-    assert not words.trusted_page("https://news.test/")
+    guessed = BrowserLogin("https://app.test/", ("sid",), domain="app.test")
+    assert not guessed.trusted_page("https://login.idp.test/")  # only configured hosts
+    assert not guessed.trusted_page("https://news.test/login")
 
 
 def test_profile_updates_merge_with_other_processes(tmp_path: Path) -> None:
@@ -609,3 +615,81 @@ def test_profile_updates_merge_with_other_processes(tmp_path: Path) -> None:
     mine.update_settings("default", {"scheme": "basic"})
     fresh = ProfileIndex(path)
     assert fresh.names == ["work", "default"] and fresh.default == "work"
+
+
+def test_environment_site_is_checked_and_saved() -> None:
+    index = ProfileIndex(None)
+    inner = MemoryTokenStore()
+    first, _, _, _ = wizard(["https://a.test", "2", "tok"], index=index, inner=inner)
+    first.run(login())
+    env, _, _, _ = wizard(
+        [], index=index, inner=inner, interactive=False, source="env ACME_BASE_URL"
+    )
+    env.base_url = "https://b.test"
+    with pytest.raises(AuthError, match="has saved logins for https://a.test"):
+        env.run(login(scheme="token"))
+    unknown, _, inner2, _ = wizard([], interactive=False, contract=PLACEHOLDER)
+    inner2.save("default:token", {"type": "token", "secret": "s"})
+    with pytest.raises(AuthError, match="saved logins for an unknown site"):
+        unknown.run(login(scheme="token", base_url="https://c.test"))
+
+
+def test_keyring_values_too_big_for_one_entry_are_split() -> None:
+    from codapact.runtime.oauth import KEYRING_CHUNK, KeyringTokenStore
+    from tests.unit.test_oauth import FakeKeyring
+
+    backend = FakeKeyring()
+    store = KeyringTokenStore("codapact:acme", backend)
+    big = {"type": "browser", "cookies": [{"name": "t", "value": "x" * (KEYRING_CHUNK * 2)}]}
+    store.save("session", big)
+    assert all(len(v) <= KEYRING_CHUNK for v in backend.items.values())
+    assert backend.items[("codapact:acme:session", "session")] == '{"codapact_chunks":3}'
+    assert store.load("session") == big
+    store.save("session", {"type": "browser", "cookies": []})
+    assert sorted(k for _, k in backend.items) == ["session"]  # stale parts removed
+    store.save("session", big)
+    del backend.items[("codapact:acme:session#2", "session#2")]
+    assert store.load("session") is None  # half-written: no credential
+    assert store.delete("session") is True
+    assert backend.items == {}
+    backend.items[("codapact:acme:x", "x")] = '{"codapact_chunks": 1}'
+    assert store.load("x") == {"codapact_chunks": 1}  # one part is never a split value
+
+    class Refusing(FakeKeyring):
+        @override
+        def set_password(self, service: str, key: str, value: str) -> None:
+            raise OSError(1783, "The stub received bad data")
+
+    with pytest.raises(AuthError, match="could not save 'k' in the keyring .OSError"):
+        KeyringTokenStore("codapact:acme", Refusing()).save("k", {"secret": "s"})
+
+
+def test_more_review_cases() -> None:
+    with pytest.raises(AuthError, match="must not have a query string"):
+        _normal_url("https://a.test/?token=abc")
+    index = ProfileIndex(None)
+    long_name = "basic-" + "x" * 80
+    index.update_settings("default", {f"username.{long_name}": "amy"})
+    assert index.settings("default") == {f"username.{long_name}": "amy"}
+    auth, _, inner, _ = wizard([], interactive=False)
+    inner.save("default:token.session", {"cached": True})  # a plugin's session only
+    assert auth._signed_in() == ["token"]
+    auth.fallback_base_url = PLACEHOLDER
+    assert auth._destination(login(), {}, False) == ""  # still the placeholder: unknown
+
+
+def test_scheme_docs_wrap_instead_of_truncating(monkeypatch: pytest.MonkeyPatch) -> None:
+    import shutil
+
+    monkeypatch.setattr(shutil, "get_terminal_size", lambda fallback: os.terminal_size((50, 20)))
+    long = "Use your Atlassian account email as the username and an API token as the password."
+    auth, _, _, _ = wizard(
+        ["https://a.test", "1", "amy", "n"], configured={"basic": {"docs": long}}
+    )
+    auth.run(login())
+    assert isinstance(auth.err, io.StringIO)
+    lines = auth.err.getvalue().splitlines()
+    assert lines[1].startswith("  1. basic: Use your")
+    assert all(len(line) <= 49 for line in lines)
+    assert " ".join(line.strip() for line in lines[1:-1]).endswith("as the password.")
+    assert lines[2].startswith("       ")

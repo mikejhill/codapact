@@ -155,6 +155,9 @@ def _auth_config(request: GenerationRequest) -> dict[str, dict[str, object]]:
             raise PluginError(f"cli.auth.{name}.save_secret must be true or false")
         if "save_secret" in value and "fields" in value:
             raise PluginError(f"cli.auth.{name}: save_secret does not apply to declared fields")
+        kinds = {s.name: s.kind for s in request.api.auth_schemes}
+        if "save_secret" in value and kinds[name] is not AuthKind.BASIC:
+            raise PluginError(f"cli.auth.{name}.save_secret applies to basic schemes only")
         config[str(name)] = dict(value)
         if "fields" in value:
             config[str(name)]["fields"] = _fields(str(name), value["fields"])

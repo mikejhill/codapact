@@ -1096,6 +1096,7 @@ class CliRuntime:
             contract_url=contract,
             base_url_source=sources.get("base_url", ""),
             fallback_base_url=str(file_settings.get("base_url") or contract),
+            base_url=str(options.get("base_url") or contract),
         )
         try:
             if args.auth_action == "token":

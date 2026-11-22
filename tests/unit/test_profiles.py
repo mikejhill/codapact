@@ -94,7 +94,7 @@ def test_index_write_failure_leaves_no_temp_file(
     monkeypatch.setattr("codapact.runtime.profiles.json.dump", explode)
     with pytest.raises(OSError, match="disk full"):
         ProfileIndex(tmp_path / "profiles.json").add("a")
-    assert list(tmp_path.iterdir()) == []
+    assert [p.name for p in tmp_path.iterdir()] == ["profiles.json.lock"]
 
 
 def test_profiles_path() -> None:

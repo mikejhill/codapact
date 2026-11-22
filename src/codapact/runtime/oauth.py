@@ -230,6 +230,10 @@ class KeyringTokenStore:
     user name ``<key>``): an entry found only there is moved to the new name the
     first time it is read, and ``save``/``delete`` remove the old entry too.
 
+    Windows Credential Manager holds at most 2560 bytes per entry, so a value longer
+    than ``KEYRING_CHUNK`` characters (a browser session's cookies) is split over
+    entries ``<key>#1``, ``<key>#2``, … with ``{"codapact_chunks": N}`` under ``<key>``.
+
     Needs the optional ``keyring`` package.
     """
 
@@ -262,29 +266,71 @@ class KeyringTokenStore:
     def load(self, key: str) -> dict[str, Any] | None:
         """Return the stored data for ``key``, moving a legacy entry to its new name."""
         backend = self._keyring()
-        data = _decode(backend.get_password(self.entry(key), key))
+        data = self._read(backend, key)
         if data is not None or not self.legacy_service:
             return data
         data = _decode(backend.get_password(self.legacy_service, key))
         if data is not None:
-            backend.set_password(self.entry(key), key, json.dumps(data, sort_keys=True))
+            self._write(backend, key, data)
             self._drop_legacy(backend, key)
         return data
 
     def save(self, key: str, data: dict[str, Any]) -> None:
         """Store ``data`` under ``key``."""
         backend = self._keyring()
-        backend.set_password(self.entry(key), key, json.dumps(data, sort_keys=True))
+        try:
+            self._write(backend, key, data)
+        except Exception as error:  # noqa: BLE001 - every backend raises its own types
+            raise AuthError(
+                f"could not save {key!r} in the keyring ({type(error).__name__}: {error}); "
+                "set the CLI's <PREFIX>_CREDENTIAL_STORE=file to use a file instead"
+            ) from None
         self._drop_legacy(backend, key)
 
     def delete(self, key: str) -> bool:
         """Remove ``key`` (and any legacy entry for it)."""
         backend = self._keyring()
         removed = self._drop_legacy(backend, key)
-        if backend.get_password(self.entry(key), key) is not None:
+        raw = backend.get_password(self.entry(key), key)
+        if raw is not None:
+            self._drop_chunks(backend, key, _chunk_count(raw))
             backend.delete_password(self.entry(key), key)
             removed = True
         return removed
+
+    def _read(self, backend: Any, key: str) -> dict[str, Any] | None:
+        raw = backend.get_password(self.entry(key), key)
+        count = _chunk_count(raw)
+        if not count:
+            return _decode(raw)
+        parts = [
+            backend.get_password(self.entry(f"{key}#{n}"), f"{key}#{n}")
+            for n in range(1, count + 1)
+        ]
+        if any(part is None for part in parts):
+            return None  # a half-written value is no credential
+        return _decode("".join(str(part) for part in parts))
+
+    def _write(self, backend: Any, key: str, data: dict[str, Any]) -> None:
+        old = _chunk_count(backend.get_password(self.entry(key), key))
+        text = json.dumps(data, sort_keys=True)
+        if len(text) > KEYRING_CHUNK:
+            text = json.dumps(data, sort_keys=True, separators=(",", ":"))
+        parts = [text[i : i + KEYRING_CHUNK] for i in range(0, len(text), KEYRING_CHUNK)]
+        if len(parts) <= 1:
+            backend.set_password(self.entry(key), key, text)
+        else:
+            for n, part in enumerate(parts, start=1):
+                backend.set_password(self.entry(f"{key}#{n}"), f"{key}#{n}", part)
+            backend.set_password(
+                self.entry(key), key, json.dumps({CHUNKS: len(parts)}, separators=(",", ":"))
+            )
+        self._drop_chunks(backend, key, old, keep=len(parts) if len(parts) > 1 else 0)
+
+    def _drop_chunks(self, backend: Any, key: str, count: int, keep: int = 0) -> None:
+        for n in range(keep + 1, count + 1):
+            if backend.get_password(self.entry(f"{key}#{n}"), f"{key}#{n}") is not None:
+                backend.delete_password(self.entry(f"{key}#{n}"), f"{key}#{n}")
 
     def _drop_legacy(self, backend: Any, key: str) -> bool:
         if not self.legacy_service:
@@ -296,6 +342,20 @@ class KeyringTokenStore:
         except Exception:  # noqa: BLE001 - a stale legacy entry must never block the new one
             return False
         return True
+
+
+KEYRING_CHUNK = 1000
+"""Characters per keyring entry: Windows stores UTF-16, at most 2560 bytes per entry."""
+CHUNKS = "codapact_chunks"
+
+
+def _chunk_count(raw: str | None) -> int:
+    """The number of parts a split value has (0 for a value stored whole)."""
+    data = _decode(raw)
+    if data is None or set(data) != {CHUNKS}:
+        return 0
+    count = data[CHUNKS]
+    return count if isinstance(count, int) and 1 < count <= 1000 else 0
 
 
 def _decode(raw: str | None) -> dict[str, Any] | None:

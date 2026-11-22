@@ -34,7 +34,9 @@ from __future__ import annotations
 import argparse
 import getpass
 import re
+import shutil
 import sys
+import textwrap
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
@@ -69,8 +71,8 @@ from codapact.runtime.oauth import (
 from codapact.runtime.profiles import DEFAULT_PROFILE, ProfileIndex, ProfileStore, username_key
 
 ACTIONS = ("login", "logout", "status", "token", "profiles", "use")
-PLACEHOLDER_HOST = re.compile(r"(^|[.-])(your|my)[-_.]|example\.|\{")
-"""A server URL a person must replace: ``{site}``, ``your-domain.…``, ``example.com``."""
+PLACEHOLDER_HOST = re.compile(r"(^|[.-])(your|my)[-_.]|\{")
+"""A server URL a person must replace: ``{site}``, ``your-domain.…``, ``my-site.…``."""
 
 
 def add_auth_commands(
@@ -172,6 +174,8 @@ class AuthCommands:
     """Where the base URL in effect came from (``env …`` is never overridden or saved)."""
     fallback_base_url: str = ""
     """The base URL without any profile: the settings file's, else the contract's."""
+    base_url: str = ""
+    """The base URL in effect for this command (used when the environment sets it)."""
 
     def run(self, args: argparse.Namespace) -> Any:
         """Return the data to render for ``args.auth_action`` (never a secret)."""
@@ -187,20 +191,24 @@ class AuthCommands:
             return self.status()
         if action == "logout":
             return self.logout(args.scheme)
-        if getattr(args, "new", False):
+        new = bool(getattr(args, "new", False))
+        if new:
             self.store = self._new_profile(getattr(args, "profile", None))
         saved = self.profiles.settings(self.profile_name)
+        destination = self._destination(args, saved, new)
+        scheme = self._choose_scheme(args.scheme, saved)  # validated before anything is dropped
+        self._guard_site_change(saved, destination)
         remember: dict[str, str] = {}
-        base_url = self._base_url(args, saved)
-        if base_url:
-            self._guard_site_change(saved.get("base_url", ""), base_url)
-            remember["base_url"] = base_url
-        scheme = self._choose_scheme(args.scheme, saved)
+        changed = bool(destination) and destination != (
+            saved.get("base_url") or self.fallback_base_url
+        )
+        if changed or (saved.get("base_url") and destination):
+            remember["base_url"] = destination  # the site these credentials belong to
         result = self._scoped(self.login(scheme, args, saved, remember))
         remember["scheme"] = scheme.name
         self.profiles.update_settings(self.profile_name, remember)
-        if base_url:
-            result["base_url"] = base_url
+        if destination and destination != saved.get("base_url"):
+            result["base_url"] = destination
         if self.profile and self.profile != self.profiles.default:
             result["note"] = (
                 f"{self.profile} is not the default profile: pass --profile {self.profile}, "
@@ -218,53 +226,73 @@ class AuthCommands:
         """The profile whose settings this command reads and saves."""
         return self.profile or self.profiles.default
 
-    def _base_url(self, args: argparse.Namespace, saved: Mapping[str, str]) -> str:
-        """Return the base URL to save with the login: given, or asked for on a terminal.
+    def _destination(self, args: argparse.Namespace, saved: Mapping[str, str], new: bool) -> str:
+        """Return the site this login is for (empty when it is still a placeholder).
 
-        ``--base-url`` is saved as given. A person is asked when the contract's server is a
-        placeholder or the profile already has a URL, unless the environment sets one. In
-        every case the browser sign-in page follows the URL this profile will use.
+        ``--base-url`` wins, then ``<PREFIX>_BASE_URL``. On a terminal a person is asked when
+        the contract's server is a placeholder or the profile already has a URL; otherwise
+        it is the profile's URL, else the settings file's, else the contract's. The browser
+        sign-in page follows it, so ``--new`` never opens the previous profile's site.
         """
         flag = getattr(args, "base_url", None)
-        env = self.base_url_source.startswith("env")
         current = saved.get("base_url") or self.fallback_base_url
-        url = ""
         if flag:
             url = _normal_url(str(flag))
-        elif self.interactive and not env:
-            placeholder = _placeholder(self.contract_url)
-            if placeholder or saved.get("base_url"):
-                default = current if not _placeholder(current) else ""
-                hint = f" (like {self.contract_url})" if placeholder and not default else ""
-                shown = f" [{default}]" if default else ""
-                answer = self.prompt(f"Base URL{hint}{shown}: ").strip() or default
-                if not answer:
-                    raise AuthError("a base URL is required: pass --base-url")
-                url = _normal_url(answer)
+        elif self.base_url_source.startswith("env"):
+            url = self.base_url
+        elif self.interactive and (_placeholder(self.contract_url) or saved.get("base_url")):
+            default = "" if _placeholder(current) else current
+            hint = f" (like {self.contract_url})" if not default else ""
+            shown = f" [{default}]" if default else ""
+            answer = self.prompt(f"Base URL{hint}{shown}: ").strip() or default
+            if not answer:
+                raise AuthError("a base URL is required: pass --base-url")
+            url = _normal_url(answer)
+        else:
+            url = current
+        if _placeholder(url):
+            url = ""
         browser = self._browser_auth()
-        if browser is not None and not env and (url or current):
-            # The chain was built for the profile in effect before --new or this login.
-            browser.base_url = url or current
+        if browser is not None and (url or new):
+            browser.base_url = url  # the chain was built before --new or this choice
         return url
 
-    def _guard_site_change(self, previous: str, url: str) -> None:
-        """Refuse to point saved logins at another site unless a person agrees to drop them."""
-        if not previous or previous == url:
+    def _signed_in(self) -> list[str]:
+        """Schemes with anything saved in this profile: a login or a plugin's session."""
+        return [
+            s.name
+            for s in self.api.auth_schemes
+            if self.store.load(s.name) is not None
+            or self.store.load(session_key(s.name)) is not None
+        ]
+
+    def _guard_site_change(self, saved: Mapping[str, str], url: str) -> None:
+        """Refuse to point saved logins at another site unless a person agrees to drop them.
+
+        The previous site is the profile's URL, else the one commands used without it; a
+        placeholder means it is unknown, which counts as different.
+        """
+        previous = saved.get("base_url") or self.fallback_base_url
+        previous = "" if _placeholder(previous) else previous
+        if previous == url:
             return
-        saved = [s.name for s in self.api.auth_schemes if self.store.load(s.name) is not None]
-        if not saved:
+        signed_in = self._signed_in()
+        if not signed_in:
             return
+        where = previous or "an unknown site"
         question = (
-            f"Profile {self.profile_name} signs in to {previous}; its saved logins "
-            f"({', '.join(saved)}) would be sent to {url}. Forget them and switch?"
+            f"Profile {self.profile_name} signs in to {where}; its saved logins "
+            f"({', '.join(signed_in)}) would be sent to {url or 'a new site'}. "
+            "Forget them and switch?"
         )
         if self.interactive and self._confirm(question, False):
-            for name in saved:
+            for name in signed_in:
                 self.logout(name)
             return
         raise AuthError(
-            f"profile {self.profile_name} has saved logins for {previous}: sign in to {url} "
-            f"with auth login --new (or --profile NAME), or run auth logout first"
+            f"profile {self.profile_name} has saved logins for {where}: sign in to "
+            f"{url or 'another site'} with auth login --new (or --profile NAME), or run "
+            "auth logout first"
         )
 
     def _choose_scheme(self, name: str | None, saved: Mapping[str, str]) -> AuthScheme:
@@ -276,9 +304,24 @@ class AuthCommands:
         default = names.index(saved["scheme"]) + 1 if saved.get("scheme") in names else 1
         err = self.err or sys.stderr
         print("Sign-in methods:", file=err)
+        width = max(40, shutil.get_terminal_size((100, 24)).columns - 1)
         for number, scheme in enumerate(schemes, start=1):
-            docs = _first_sentence(str((self.configured.get(scheme.name) or {}).get("docs", "")))
-            print(f"  {number}. {scheme.name}" + (f": {docs}" if docs else ""), file=err)
+            docs = " ".join(str((self.configured.get(scheme.name) or {}).get("docs", "")).split())
+            lead = f"  {number}. {scheme.name}"
+            if not docs:
+                print(lead, file=err)
+                continue
+            print(
+                textwrap.fill(
+                    docs,
+                    width=width,
+                    initial_indent=lead + ": ",
+                    subsequent_indent=" " * (len(f"  {number}. ") + 2),
+                    break_on_hyphens=False,
+                    break_long_words=False,
+                ),
+                file=err,
+            )
         answer = self.prompt(f"Choose 1-{len(schemes)} [{default}]: ").strip()
         if not answer:
             return schemes[default - 1]
@@ -535,13 +578,18 @@ class AuthCommands:
     def _save_secret(self, scheme: AuthScheme, args: argparse.Namespace) -> bool:
         """Whether a basic login saves the password: the flag, a question, or the default."""
         chosen = getattr(args, "save_secret", None)
+        configured = (self.configured.get(scheme.name) or {}).get("save_secret")
         if args.with_token:
             if chosen is False:
                 raise AuthError("--with-token saves the secret it reads; drop --no-save-secret")
+            if configured is False and chosen is not True:
+                raise AuthError(
+                    f"{self.program} does not save {scheme.name} passwords by default: add "
+                    "--save-secret to save the one read from stdin"
+                )
             return True
         if chosen is not None:
             return bool(chosen)
-        configured = (self.configured.get(scheme.name) or {}).get("save_secret")
         if not self.interactive:
             return configured is not False  # scripts keep saving unless the coda says not to
         # A person decides; unless the coda says otherwise, the password stays out of storage
@@ -682,24 +730,17 @@ def _normal_url(text: str) -> str:
     if "://" not in value:
         value = "https://" + value
     try:
-        validate_url(value)
+        parts = validate_url(value)
     except ConfigError as error:
         raise AuthError(f"invalid base URL: {error}") from None
+    if parts.query:
+        raise AuthError("invalid base URL: it must not have a query string")
     return value
 
 
 def _placeholder(url: str) -> bool:
     """Whether ``url`` is a server a person must replace (``your-domain.…``, ``{site}``)."""
     return bool(PLACEHOLDER_HOST.search(urlsplit(url).netloc)) if url else False
-
-
-def _first_sentence(text: str, limit: int = 100) -> str:
-    """The first sentence of ``text``, cut to ``limit`` characters."""
-    sentence = " ".join(text.split()).split(". ", 1)[0].rstrip(".")
-    if len(sentence) <= limit:
-        return sentence
-    cut = sentence[: limit - 1]
-    return (cut.rsplit(" ", 1)[0] if " " in cut else cut).rstrip(" ,;:(") + "…"
 
 
 __all__ = ["ACTIONS", "AuthCommands", "add_auth_commands"]
