@@ -5,8 +5,9 @@ stores scheme ``bearer`` under ``work:bearer`` (keyring entry
 ``codapact:<program>:work:bearer``). The list of profiles and the default live in
 ``$XDG_CONFIG_HOME/<program>/profiles.json``; secrets never do.
 
-Each profile can also keep non-secret settings there (``PROFILE_SETTINGS``): the base
-URL, the scheme it signed in with, and the username. ``auth login`` saves them, and
+Each profile can also keep non-secret settings there (``setting_allowed``): the base
+URL, the scheme it last signed in with, and per scheme the username
+(``username.<scheme>``). ``auth login`` saves them, and
 commands read the base URL after flags and environment, before the settings file.
 
 Selection, first hit wins: ``--profile NAME``, ``<PREFIX>_PROFILE``, the settings
@@ -32,8 +33,21 @@ from codapact.runtime.errors import AuthError
 from codapact.runtime.oauth import TokenStore, store_location
 
 DEFAULT_PROFILE = "default"
-PROFILE_SETTINGS = ("base_url", "scheme", "username")
+PROFILE_SETTINGS = ("base_url", "scheme", "username.<scheme>")
 """Non-secret values a profile keeps next to its saved logins."""
+_USERNAME_KEY = re.compile(r"username\.[A-Za-z0-9_.-]{1,64}")
+
+
+def setting_allowed(key: str) -> bool:
+    """Whether ``key`` is a profile setting: ``base_url``, ``scheme``, ``username.<scheme>``."""
+    return key in {"base_url", "scheme"} or bool(_USERNAME_KEY.fullmatch(key))
+
+
+def username_key(scheme: str) -> str:
+    """The profile setting holding the username for ``scheme``."""
+    return f"username.{scheme}"
+
+
 PROFILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 
 
@@ -78,7 +92,7 @@ class ProfileIndex:
                     str(name): {
                         k: v
                         for k, v in values.items()
-                        if k in PROFILE_SETTINGS and isinstance(v, str)
+                        if setting_allowed(str(k)) and isinstance(v, str)
                     }
                     for name, values in settings.items()
                     if isinstance(values, dict)
@@ -87,6 +101,11 @@ class ProfileIndex:
                 else {},
             }
         return self._data
+
+    def _reload(self) -> None:
+        """Drop the cached index so the next read sees what other processes wrote."""
+        if self.path is not None:
+            self._data = None
 
     def _save(self) -> None:
         if self.path is None:
@@ -128,6 +147,7 @@ class ProfileIndex:
 
     def add(self, name: str) -> bool:
         """Record ``name``; the first profile becomes the default. Return whether it was new."""
+        self._reload()
         data = self._load()
         if name in data["profiles"]:
             return False
@@ -139,6 +159,7 @@ class ProfileIndex:
 
     def use(self, name: str) -> None:
         """Make ``name`` the default profile."""
+        self._reload()
         if not self.known(name):
             raise self.unknown(name)
         data = self._load()
@@ -156,9 +177,10 @@ class ProfileIndex:
 
         An empty value removes that setting.
         """
-        unknown = set(values) - set(PROFILE_SETTINGS)
+        unknown = {k for k in values if not setting_allowed(k)}
         if unknown:
             raise AuthError(f"unknown profile settings: {', '.join(sorted(unknown))}")
+        self._reload()
         data = self._load()
         current = data["settings"].setdefault(check_profile_name(name), {})
         for key, value in values.items():
@@ -176,6 +198,7 @@ class ProfileIndex:
 
     def remove(self, name: str) -> bool:
         """Forget ``name`` and its settings; the default moves to the oldest remaining profile."""
+        self._reload()
         data = self._load()
         if name not in data["profiles"]:
             return False
@@ -265,6 +288,8 @@ def profiles_path(program: str, environ: dict[str, str] | Any) -> Path:
 __all__ = [
     "DEFAULT_PROFILE",
     "PROFILE_SETTINGS",
+    "setting_allowed",
+    "username_key",
     "ProfileIndex",
     "ProfileStore",
     "check_profile_name",

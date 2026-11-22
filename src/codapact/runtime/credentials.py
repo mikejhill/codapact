@@ -10,8 +10,8 @@ Resolution order for a generated CLI (first hit wins):
    credentials, fetched and refreshed automatically (``OAuthClientAuth``).
 5. What ``<program> auth login`` stored in the keyring or credentials file
    (``StoreAuth``), including OAuth tokens that refresh themselves. A basic login
-   saved without its password (``auth login --no-save-secret``) keeps the username in
-   the profile; the password then comes from ``<PREFIX>_<SCHEME>_PASSWORD`` or, on a
+   saved without its password (``auth login --no-save-secret``) keeps only the
+   username; the password then comes from ``<PREFIX>_<SCHEME>_PASSWORD`` or, on a
    terminal, a hidden prompt the first time a request needs it (``AskedPassword``).
 """
 
@@ -198,8 +198,8 @@ class StoredSession:
 class AskedPassword:
     """Basic credentials whose password is asked for, hidden, when a request first needs it.
 
-    The password stays in memory for this process only. Telling where a credential
-    comes from (``auth status``, ``doctor`` without a request) never asks.
+    The password stays in memory for this process only, exactly as typed. Telling where
+    a credential comes from (``auth status``, ``doctor`` without a request) never asks.
     """
 
     username: str
@@ -207,14 +207,18 @@ class AskedPassword:
     label: str = "password"
     _password: str | None = field(default=None, repr=False)
 
-    def authenticate(self, request: HttpRequest, scheme: AuthScheme) -> HttpRequest:
-        """Send ``Authorization: Basic`` with the saved username and the asked password."""
+    def password(self, scheme: AuthScheme) -> str:
+        """Return the password, asking for it the first time."""
         if self._password is None:
-            value = self.ask(f"{self.label}: ").strip()
+            value = self.ask(f"{self.label}: ")
             if not value:
                 raise AuthError(f"no password given for {scheme.name}")
             self._password = value
-        raw = f"{self.username}:{self._password}".encode()
+        return self._password
+
+    def authenticate(self, request: HttpRequest, scheme: AuthScheme) -> HttpRequest:
+        """Send ``Authorization: Basic`` with the saved username and the asked password."""
+        raw = f"{self.username}:{self.password(scheme)}".encode()
         return with_headers(
             request, {"Authorization": "Basic " + base64.b64encode(raw).decode("ascii")}
         )
@@ -225,34 +229,45 @@ class AskedPassword:
         return f"AskedPassword({self.username!r})"
 
 
+def saved_username(data: Mapping[str, Any] | None) -> str:
+    """The username of a basic login saved without its password (else empty)."""
+    if not data or data.get("type") != "basic" or data.get("secret"):
+        return ""
+    username = data.get("username")
+    return username if isinstance(username, str) else ""
+
+
 @dataclass(slots=True)
 class StoreAuth:
     """Credentials that ``<program> auth login`` saved in a ``TokenStore``.
 
-    ``username`` is the profile's saved username: a basic scheme with no saved password
-    pairs it with ``<PREFIX>_<SCHEME>_PASSWORD``, or with ``ask`` (a hidden terminal
-    prompt, ``None`` when there is no terminal).
+    A basic login saved without its password (``{"type": "basic", "username": …}``)
+    pairs that username with ``<PREFIX>_<SCHEME>_PASSWORD``, or with ``ask`` (a hidden
+    terminal prompt; ``None`` when there is no terminal).
     """
 
     store: TokenStore
     http: Transport
     login_hint: str = ""
-    username: str = ""
     ask: Callable[[str], str] | None = field(default=None, repr=False)
     prefix: str = ""
     environ: Mapping[str, str] = field(default_factory=dict, repr=False)
     _cache: dict[str, Secret] = field(default_factory=dict)
 
+    def password_variable(self, scheme: AuthScheme) -> str:
+        """The variable that supplies the password of a username-only login."""
+        return env_variable(self.prefix, scheme.name) + "_PASSWORD"
+
     def hint(self, scheme: AuthScheme) -> str:
         """Point at the login command."""
         if scheme.kind is AuthKind.CUSTOM or not self.login_hint:
             return ""
-        if scheme.kind is AuthKind.BASIC and self.username:
-            variable = env_variable(self.prefix, scheme.name) + "_PASSWORD"
+        username = saved_username(self.store.load(scheme.name))
+        if scheme.kind is AuthKind.BASIC and username:
             return (
-                f"the password for {self.username} is not saved: run on a terminal to be "
-                f"asked for it, set {variable}, or run {self.login_hint} --scheme "
-                f"{scheme.name} --save-secret"
+                f"the password for {username} is not saved: run on a terminal to be asked "
+                f"for it, set {self.password_variable(scheme)}, or run {self.login_hint} "
+                f"--scheme {scheme.name} --save-secret"
             )
         return f"run {self.login_hint} --scheme {scheme.name}"
 
@@ -262,10 +277,7 @@ class StoreAuth:
             return self._cache[scheme.name]
         data = self.store.load(scheme.name)
         if not data:
-            found = self._unsaved_password(scheme)
-            if found is not None:
-                self._cache[scheme.name] = found
-            return found
+            return None
         secret: Secret | None = None
         if data.get("type") == "oauth2" and isinstance(data.get("access_token"), str):
             token_url = str(data.get("token_url") or "")
@@ -280,20 +292,20 @@ class StoreAuth:
         elif isinstance(data.get("secret"), str) and data["secret"]:
             username = data.get("username")
             secret = Credential(data["secret"], username if isinstance(username, str) else None)
+        elif scheme.kind is AuthKind.BASIC and (username := saved_username(data)):
+            secret = self._unsaved_password(scheme, username)
         if secret is not None:
             self._cache[scheme.name] = secret
         return secret
 
-    def _unsaved_password(self, scheme: AuthScheme) -> Secret | None:
-        """Pair the saved username with a password from the environment or a prompt."""
-        if scheme.kind is not AuthKind.BASIC or not self.username:
-            return None
-        password = self.environ.get(env_variable(self.prefix, scheme.name) + "_PASSWORD")
+    def _unsaved_password(self, scheme: AuthScheme, username: str) -> Secret | None:
+        """Pair a saved username with a password from the environment or a prompt."""
+        password = self.environ.get(self.password_variable(scheme))
         if password:
-            return Credential(password, self.username)
+            return Credential(password, username)
         if self.ask is None:
             return None
-        return AskedPassword(self.username, self.ask, f"{scheme.name} password for {self.username}")
+        return AskedPassword(username, self.ask, f"{scheme.name} password for {username}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -408,7 +420,7 @@ def cli_auth(
     plugin: str | None = None,
     configured: Mapping[str, Mapping[str, Any]] | None = None,
     base_url: str = "",
-    username: str = "",
+    usernames: Mapping[str, str] | None = None,
     ask: Callable[[str], str] | None = None,
 ) -> ChainAuth:
     """Build the credential chain every generated CLI uses (see the module docs)."""
@@ -431,12 +443,10 @@ def cli_auth(
                 environ,
                 base_url,
                 str(getattr(store, "profile", "") or ""),
-                username=username,
+                usernames=dict(usernames or {}),
             )
         )
-    providers.append(
-        StoreAuth(store, http, f"{program} auth login", username, ask, prefix, environ)
-    )
+    providers.append(StoreAuth(store, http, f"{program} auth login", ask, prefix, environ))
     return ChainAuth(tuple(providers))
 
 
@@ -461,11 +471,12 @@ def _provider_label(provider: AuthProvider, scheme: AuthScheme) -> str:
         case OAuthClientAuth():
             return "OAuth client credentials"
         case StoreAuth():
-            if provider.store.load(scheme.name) is None and provider.username:
-                variable = env_variable(provider.prefix, scheme.name) + "_PASSWORD"
+            username = saved_username(provider.store.load(scheme.name))
+            if username:
+                variable = provider.password_variable(scheme)
                 if provider.environ.get(variable):
-                    return f"saved username {provider.username} with {variable}"
-                return f"saved username {provider.username} (password asked when needed)"
+                    return f"saved username {username} with {variable}"
+                return f"saved username {username} (password asked when needed)"
             return f"saved login ({store_location(provider.store, scheme.name)})"
         case BrowserAuth():
             return f"browser session ({store_location(provider.store, scheme.name)})"
@@ -485,6 +496,7 @@ __all__ = [
     "cli_auth",
     "describe_source",
     "load_plugin",
+    "saved_username",
     "scheme_settings",
     "split_command",
 ]

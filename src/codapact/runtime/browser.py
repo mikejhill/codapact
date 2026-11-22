@@ -82,7 +82,7 @@ class BrowserLogin:
     signin_hosts: tuple[str, ...] = ()
     """Host globs of the sign-in pages a rejected session redirects to (optional)."""
     username: str = ""
-    """Filled into the first empty username or email field of each sign-in page (optional)."""
+    """Filled into the empty username or email box of trusted sign-in pages (optional)."""
 
     @classmethod
     def from_settings(
@@ -120,6 +120,21 @@ class BrowserLogin:
             domain,
             tuple(hosts),
         )
+
+    def trusted_page(self, url: str) -> bool:
+        """Whether ``url`` is this site or one of its sign-in pages (safe to type a username).
+
+        The login URL's host, the cookie domain, and sign-in hosts (``signin_hosts``, or
+        the sign-in words when none are set), over HTTPS unless the login URL is HTTP.
+        """
+        parts = urlsplit(url)
+        login = urlsplit(self.login_url)
+        if parts.scheme != "https" and parts.scheme != login.scheme:
+            return False
+        host = (parts.hostname or "").lower()
+        if host in {(login.hostname or "").lower(), self.domain.lower()}:
+            return bool(host)
+        return self.sign_in_redirect(url)
 
     def sign_in_redirect(self, location: str) -> bool:
         """Whether a redirect to ``location`` sends the person to sign in again."""
@@ -224,7 +239,7 @@ def playwright_capture(
                     found = session_cookies(context.cookies(), login)
                     if found and _on_host(page.url, login.domain):
                         return found
-                    if login.username and not headless:
+                    if login.username and not headless and login.trusted_page(page.url):
                         prefill_username(page, login.username, filled, playwright_error)
                     page.wait_for_timeout(500)
                 return []
@@ -451,8 +466,8 @@ class BrowserAuth:
     base_url: str = ""
     profile: str = ""
     capture: Capture = field(default_factory=lambda: playwright_capture)  # an instance attribute
-    username: str = ""
-    """Pre-filled on the sign-in page (the profile's saved username)."""
+    usernames: Mapping[str, str] = field(default_factory=dict)
+    """Per scheme, the username pre-filled on the sign-in page (the profile's settings)."""
 
     def uses_browser(self, scheme: AuthScheme) -> bool:
         """Whether ``scheme`` has ``browser`` settings."""
@@ -480,7 +495,7 @@ class BrowserAuth:
         login = BrowserLogin.from_settings(self.configured.get(scheme.name), self.base_url)
         if login is None:
             return None
-        chosen_user = self.username if username is None else username
+        chosen_user = self.usernames.get(scheme.name, "") if username is None else username
         if chosen_user:
             login = replace(login, username=chosen_user)
         browser = self.environ.get(f"{self.prefix}_BROWSER") or None

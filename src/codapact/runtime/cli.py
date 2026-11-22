@@ -676,8 +676,13 @@ class CliRuntime:
         if not plugin and self.auth_plugin:
             plugin, sources["auth_plugin"] = self.auth_plugin, "generated default"
         sources["profile"] = f"{profile} (from {profile_source})"
+        usernames = {
+            key.removeprefix("username."): value
+            for key, value in saved.items()
+            if key.startswith("username.")
+        }
         options["auth"] = self.credentials(
-            options, file_settings, str(plugin or ""), profile, saved.get("username", "")
+            options, file_settings, str(plugin or ""), profile, usernames
         )
         return options, sources
 
@@ -723,12 +728,13 @@ class CliRuntime:
         file_settings: Mapping[str, Any],
         plugin: str = "",
         profile: str | None = None,
-        username: str = "",
+        usernames: Mapping[str, str] | None = None,
     ) -> ChainAuth:
         """Build the credential chain: plugin, env, command, OAuth client, saved login.
 
-        ``username`` is the profile's saved one; on a terminal, a basic scheme saved
-        without its password asks for it when a request needs it.
+        ``usernames`` are the profile's per-scheme usernames (pre-filled on browser
+        sign-in pages). On a terminal, a basic login saved without its password asks for
+        it when a request needs it.
         """
         configured: dict[str, Mapping[str, Any]] = dict(self.auth_config or {})
         file_auth = file_settings.get("auth") or {}
@@ -753,7 +759,7 @@ class CliRuntime:
             base_url=str(
                 options.get("base_url") or (api.servers[0].url if api.servers else "") or ""
             ),
-            username=username,
+            usernames=usernames,
             ask=self.secret_prompt if _interactive() else None,
         )
 
@@ -1069,8 +1075,10 @@ class CliRuntime:
     def _auth(self, args: argparse.Namespace, api: Api, fmt: str, out: TextIO, err: TextIO) -> int:
         options, sources = self.resolve(args)
         chain = options["auth"]
-        profile, _ = self.profile(args, self._file_settings(getattr(args, "config", None)))
+        file_settings = self._file_settings(getattr(args, "config", None))
+        profile, _ = self.profile(args, file_settings)
         interactive = _interactive()
+        contract = api.servers[0].url if api.servers else ""
         commands = cli_auth.AuthCommands(
             program=self.program,
             prefix=self.env_prefix,
@@ -1085,8 +1093,9 @@ class CliRuntime:
             prompt=self.prompt if interactive else input,
             secret_prompt=self.secret_prompt,
             interactive=interactive,
-            contract_url=api.servers[0].url if api.servers else "",
+            contract_url=contract,
             base_url_source=sources.get("base_url", ""),
+            fallback_base_url=str(file_settings.get("base_url") or contract),
         )
         try:
             if args.auth_action == "token":

@@ -516,7 +516,8 @@ before a profile's saved login. `auth status` and `doctor` show the profile in u
 exact keyring entry or file key a saved login came from.
 
 Each profile also keeps non-secret settings in `profiles.json`: `base_url`, the `scheme` it
-signed in with, and `username`. `auth login` saves them. Commands read the base URL in this
+last signed in with, and per scheme the username (`username.<scheme>`). `auth login` saves
+them, merging into the file as it is on disk so a login in another terminal is not lost. Commands read the base URL in this
 order: `--base-url`, `<PREFIX>_BASE_URL`, the profile, the settings file, the contract
 (`doctor` names the source, e.g. `profile work`).
 
@@ -526,7 +527,11 @@ With stdin and stderr both terminals, `auth login` asks for what the command lin
 
 1. **Base URL**, when the contract's server is a placeholder (`{site}`, `your-domain.…`,
    `example.…`) or the profile already has one. `site.example` becomes
-   `https://site.example`. Skipped when `--base-url` or `<PREFIX>_BASE_URL` is set.
+   `https://site.example`; a URL with a user name, password or fragment is refused. The
+   default is the profile's URL, else the settings file's. Skipped when `--base-url` or
+   `<PREFIX>_BASE_URL` is set. Moving a profile with saved logins to another site asks first
+   and forgets them (without a terminal it refuses): use `auth login --new` for a second
+   site.
 2. **Scheme**, from a numbered list showing the first sentence of each
    `cli.auth.<scheme>.docs`. Skipped with `--scheme` or when there is only one.
 3. **The scheme's own prompts.** Basic asks for the username, then whether to save the
@@ -541,17 +546,20 @@ On a terminal, a basic login asks whether to save the password, and the default 
 (it may be a directory or identity-provider password); `cli.auth.<scheme>.save_secret: true`
 in `codapact.yaml` makes Yes the default, for schemes whose secret is an API token. Scripts
 (no terminal, or `--with-token`) save it unless `save_secret: false`. `auth login
---no-save-secret` (or answering `n`) saves only the username for a basic scheme; any password
-saved before is deleted. Later commands then take the password from
+--no-save-secret` (or answering `n`) saves only the username for a basic scheme, replacing
+any password saved before; the username belongs to that scheme alone. Later commands then take the password from
 `<PREFIX>_<SCHEME>_PASSWORD` or, on a terminal, ask for it (hidden) the first time a request
-needs it, and keep it in memory for that process only. Without a terminal or the variable the
+needs it, and keep it in memory for that process only, exactly as typed. `auth token
+--scheme NAME` asks too. Without a terminal or the variable the
 command exits 3 and says so. `auth status` shows `saved username NAME (password asked when
-needed)`. `auth logout --scheme NAME` forgets the username too.
+needed)`. `auth logout --scheme NAME` forgets that scheme's username too. Declared `fields` are always
+saved; `--save-secret` does not apply to them.
 
 Browser schemes never store a password: the identity provider's own session lives in the
-per-profile browser directory. The saved username is typed into the first empty username or
-email box of each sign-in page (Atlassian, Okta, Entra ID and similar), never over what you
-typed.
+per-profile browser directory. The scheme's saved username is typed into the first empty
+username or email box of each sign-in page, never over what you typed, and only on trusted
+pages: the site itself, its `signin_hosts`, or (without `signin_hosts`) hosts that look like
+sign-in pages, over HTTPS.
 
 Libraries take the same objects directly:
 

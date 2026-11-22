@@ -153,6 +153,8 @@ def _auth_config(request: GenerationRequest) -> dict[str, dict[str, object]]:
             raise PluginError(f"cli.auth.{name}.docs must be a string")
         if not isinstance(value.get("save_secret", True), bool):
             raise PluginError(f"cli.auth.{name}.save_secret must be true or false")
+        if "save_secret" in value and "fields" in value:
+            raise PluginError(f"cli.auth.{name}: save_secret does not apply to declared fields")
         config[str(name)] = dict(value)
         if "fields" in value:
             config[str(name)]["fields"] = _fields(str(name), value["fields"])

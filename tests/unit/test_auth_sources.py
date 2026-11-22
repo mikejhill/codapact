@@ -529,6 +529,10 @@ def test_cli_target_validates_baked_auth_settings() -> None:
         ({"sso": "c"}, "allows client_id"),
         ({"sso": {"docs": 1}}, "docs must be a string"),
         ({"login": {"save_secret": "no"}}, "save_secret must be true or false"),
+        (
+            {"login": {"save_secret": False, "fields": {"pin": {}}}},
+            "save_secret does not apply to declared fields",
+        ),
     ]:
         with pytest.raises(PluginError, match=message):
             _auth_config(request(bad))

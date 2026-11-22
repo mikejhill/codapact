@@ -43,11 +43,13 @@ from urllib.parse import urlsplit
 
 from codapact.core.errors import ConfigError
 from codapact.core.naming import env_variable
+from codapact.core.net import validate_url
 from codapact.model.api import Api, AuthKind, AuthScheme, OAuthFlowKind
 from codapact.runtime.abstractions import Credential, Transport
 from codapact.runtime.auth import ChainAuth
 from codapact.runtime.browser import BrowserAuth
 from codapact.runtime.credentials import (
+    AskedPassword,
     credential_fields,
     describe_source,
     field_specs,
@@ -64,7 +66,7 @@ from codapact.runtime.oauth import (
     grant_for_scheme,
     store_location,
 )
-from codapact.runtime.profiles import DEFAULT_PROFILE, ProfileIndex, ProfileStore
+from codapact.runtime.profiles import DEFAULT_PROFILE, ProfileIndex, ProfileStore, username_key
 
 ACTIONS = ("login", "logout", "status", "token", "profiles", "use")
 PLACEHOLDER_HOST = re.compile(r"(^|[.-])(your|my)[-_.]|example\.|\{")
@@ -168,6 +170,8 @@ class AuthCommands:
     """The contract's first server URL (asked for when it is a placeholder)."""
     base_url_source: str = ""
     """Where the base URL in effect came from (``env …`` is never overridden or saved)."""
+    fallback_base_url: str = ""
+    """The base URL without any profile: the settings file's, else the contract's."""
 
     def run(self, args: argparse.Namespace) -> Any:
         """Return the data to render for ``args.auth_action`` (never a secret)."""
@@ -189,6 +193,7 @@ class AuthCommands:
         remember: dict[str, str] = {}
         base_url = self._base_url(args, saved)
         if base_url:
+            self._guard_site_change(saved.get("base_url", ""), base_url)
             remember["base_url"] = base_url
         scheme = self._choose_scheme(args.scheme, saved)
         result = self._scoped(self.login(scheme, args, saved, remember))
@@ -217,27 +222,50 @@ class AuthCommands:
         """Return the base URL to save with the login: given, or asked for on a terminal.
 
         ``--base-url`` is saved as given. A person is asked when the contract's server is a
-        placeholder or the profile already has a URL, unless the environment sets one.
+        placeholder or the profile already has a URL, unless the environment sets one. In
+        every case the browser sign-in page follows the URL this profile will use.
         """
         flag = getattr(args, "base_url", None)
+        env = self.base_url_source.startswith("env")
+        current = saved.get("base_url") or self.fallback_base_url
+        url = ""
         if flag:
             url = _normal_url(str(flag))
-        else:
-            placeholder = bool(PLACEHOLDER_HOST.search(urlsplit(self.contract_url).netloc))
-            asked = placeholder or bool(saved.get("base_url"))
-            if not self.interactive or not asked or self.base_url_source.startswith("env"):
-                return ""
-            default = saved.get("base_url", "")
-            hint = f" (like {self.contract_url})" if placeholder and not default else ""
-            shown = f" [{default}]" if default else ""
-            answer = self.prompt(f"Base URL{hint}{shown}: ").strip() or default
-            if not answer:
-                raise AuthError("a base URL is required: pass --base-url")
-            url = _normal_url(answer)
+        elif self.interactive and not env:
+            placeholder = _placeholder(self.contract_url)
+            if placeholder or saved.get("base_url"):
+                default = current if not _placeholder(current) else ""
+                hint = f" (like {self.contract_url})" if placeholder and not default else ""
+                shown = f" [{default}]" if default else ""
+                answer = self.prompt(f"Base URL{hint}{shown}: ").strip() or default
+                if not answer:
+                    raise AuthError("a base URL is required: pass --base-url")
+                url = _normal_url(answer)
         browser = self._browser_auth()
-        if browser is not None:
-            browser.base_url = url  # the browser sign-in page hangs off the new site
+        if browser is not None and not env and (url or current):
+            # The chain was built for the profile in effect before --new or this login.
+            browser.base_url = url or current
         return url
+
+    def _guard_site_change(self, previous: str, url: str) -> None:
+        """Refuse to point saved logins at another site unless a person agrees to drop them."""
+        if not previous or previous == url:
+            return
+        saved = [s.name for s in self.api.auth_schemes if self.store.load(s.name) is not None]
+        if not saved:
+            return
+        question = (
+            f"Profile {self.profile_name} signs in to {previous}; its saved logins "
+            f"({', '.join(saved)}) would be sent to {url}. Forget them and switch?"
+        )
+        if self.interactive and self._confirm(question, False):
+            for name in saved:
+                self.logout(name)
+            return
+        raise AuthError(
+            f"profile {self.profile_name} has saved logins for {previous}: sign in to {url} "
+            f"with auth login --new (or --profile NAME), or run auth logout first"
+        )
 
     def _choose_scheme(self, name: str | None, saved: Mapping[str, str]) -> AuthScheme:
         """Return the named scheme, the only one, or the one a person picks from a list."""
@@ -309,16 +337,21 @@ class AuthCommands:
             )
             saved = [s.name for s in self.api.auth_schemes if view.load(s.name) is not None]
             settings = self.profiles.settings(name)
-            if settings.get("username") and not saved:
-                saved = [f"username for {settings.get('scheme') or 'basic'}"]
-            rows.append(
-                {
-                    "profile": name,
-                    "default": name == self.profiles.default,
-                    "saved": ", ".join(saved) or "nothing",
-                    **{k: settings[k] for k in ("base_url", "username") if k in settings},
-                }
+            users = ", ".join(
+                f"{k.removeprefix('username.')}: {v}"
+                for k, v in settings.items()
+                if k.startswith("username.")
             )
+            row: dict[str, Any] = {
+                "profile": name,
+                "default": name == self.profiles.default,
+                "saved": ", ".join(saved) or "nothing",
+            }
+            if settings.get("base_url"):
+                row["base_url"] = settings["base_url"]
+            if users:
+                row["usernames"] = users
+            rows.append(row)
         return rows
 
     def secret(self, args: argparse.Namespace) -> str:
@@ -394,14 +427,9 @@ class AuthCommands:
             saved = self.store.delete(scheme.name)  # before the browser cleanup, which can fail
             browser = self._browser_auth()
             profile = browser.forget(scheme, self.profile or None) if browser is not None else False
-            username = (
-                scheme.kind is AuthKind.BASIC
-                and bool(settings.get("username"))
-                and settings.get("scheme", scheme.name) == scheme.name
-            )
+            username = bool(settings.get(username_key(scheme.name)))
             if username and name:
-                # The saved username alone still asks for a password: forget it too.
-                self.profiles.update_settings(self.profile_name, {"username": ""})
+                self.profiles.update_settings(self.profile_name, {username_key(scheme.name): ""})
             if saved or session or profile or username:
                 removed.append(scheme.name)
         result = self._scoped({"removed": removed})
@@ -420,6 +448,8 @@ class AuthCommands:
             return secret.secret
         if isinstance(secret, OAuth2):
             return secret.token().access_token
+        if isinstance(secret, AskedPassword):
+            return secret.password(scheme)
         raise AuthError(f"{scheme.name} is handled by {type(secret).__name__}; it has no token")
 
     def login(
@@ -441,13 +471,19 @@ class AuthCommands:
             raise AuthError("--save-secret and --no-save-secret apply to basic auth only")
         spec = field_specs(self.configured.get(scheme.name))
         if spec:
+            if save_secret is not None:
+                raise AuthError(
+                    f"{scheme.name} saves declared fields; --save-secret and "
+                    "--no-save-secret do not apply"
+                )
             return self._fields_login(scheme, spec, getattr(args, "field", None) or [])
+        key = username_key(scheme.name)
         provider = self._browser_auth()
+        username: str | None = None
         if provider is not None and provider.uses_browser(scheme):
-            username = self._sign_in_username(args, saved)
-            if username:
-                remember["username"] = username
-        browser = self._browser(scheme, remember.get("username"))
+            username = self._sign_in_username(args, saved.get(key, ""))
+            remember[key] = username
+        browser = self._browser(scheme, username)
         if browser is not None:
             if self.err is not None:
                 print(
@@ -471,16 +507,17 @@ class AuthCommands:
             if not args.with_token:
                 return self._oauth_login(scheme, args.flow)
         if scheme.kind is AuthKind.BASIC:
-            default = saved.get("username", "")
+            default = saved.get(key, "")
             shown = f" [{default}]" if default else ""
             username = (
                 args.username or self.prompt(f"{scheme.name} username{shown}: ").strip() or default
             )
             if not username:
                 raise AuthError("a username is required")
-            remember["username"] = username
+            remember[key] = username
             if not self._save_secret(scheme, args):
-                self.store.delete(scheme.name)  # a password saved earlier would still be used
+                # Replaces any saved password, which would otherwise still be sent.
+                self.store.save(scheme.name, {"type": "basic", "username": username})
                 return {
                     "scheme": scheme.name,
                     "username": username,
@@ -512,11 +549,10 @@ class AuthCommands:
         where = _location(self.store, scheme.name)
         return self._confirm(f"Save the password ({where})?", configured is True)
 
-    def _sign_in_username(self, args: argparse.Namespace, saved: Mapping[str, str]) -> str:
+    def _sign_in_username(self, args: argparse.Namespace, default: str) -> str:
         """The username to fill in on the browser sign-in page (optional)."""
         if args.username:
             return str(args.username)
-        default = saved.get("username", "")
         if not self.interactive:
             return default
         shown = f" [{default}]" if default else ""
@@ -638,14 +674,23 @@ def _location(store: TokenStore, key: str | None = None) -> str:
 
 
 def _normal_url(text: str) -> str:
-    """``site.example`` → ``https://site.example``; refuse anything but an http(s) URL."""
+    """``site.example`` → ``https://site.example``; refuse anything but a plain http(s) URL.
+
+    The message never repeats the input, which may hold a password.
+    """
     value = text.strip().rstrip("/")
     if "://" not in value:
         value = "https://" + value
-    parts = urlsplit(value)
-    if parts.scheme not in {"http", "https"} or not parts.hostname:
-        raise AuthError(f"not an http(s) URL: {text!r}")
+    try:
+        validate_url(value)
+    except ConfigError as error:
+        raise AuthError(f"invalid base URL: {error}") from None
     return value
+
+
+def _placeholder(url: str) -> bool:
+    """Whether ``url`` is a server a person must replace (``your-domain.…``, ``{site}``)."""
+    return bool(PLACEHOLDER_HOST.search(urlsplit(url).netloc)) if url else False
 
 
 def _first_sentence(text: str, limit: int = 100) -> str:

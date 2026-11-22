@@ -20,7 +20,13 @@ from codapact.runtime.abstractions import Credential, HttpRequest
 from codapact.runtime.browser import BrowserAuth, BrowserLogin, prefill_username
 from codapact.runtime.cli import CliRuntime
 from codapact.runtime.cli_auth import AuthCommands, _first_sentence, _normal_url
-from codapact.runtime.credentials import AskedPassword, StoreAuth, cli_auth, describe_source
+from codapact.runtime.credentials import (
+    AskedPassword,
+    StoreAuth,
+    cli_auth,
+    describe_source,
+    saved_username,
+)
 from codapact.runtime.errors import AuthError
 from codapact.runtime.oauth import MemoryTokenStore
 from codapact.runtime.profiles import ProfileIndex, ProfileStore
@@ -121,19 +127,23 @@ def test_profile_settings_are_saved_merged_and_removed(tmp_path: Path) -> None:
     path = tmp_path / "profiles.json"
     index = ProfileIndex(path)
     assert index.settings("default") == {}
-    index.update_settings("work", {"base_url": "https://a.test", "username": "amy"})
+    index.update_settings("work", {"base_url": "https://a.test", "username.basic": "amy"})
     assert index.names == ["work"] and index.default == "work"
-    index.update_settings("work", {"username": ""})
+    index.update_settings("work", {"username.basic": ""})
     assert ProfileIndex(path).settings("work") == {"base_url": "https://a.test"}
     with pytest.raises(AuthError, match="unknown profile settings: password"):
         index.update_settings("work", {"password": "x"})
     index.update_settings("work", {"base_url": ""})
     assert "settings" not in json.loads(path.read_text())
     index.update_settings("ops", {"scheme": "basic"})
-    assert index.remove("ops") and index.settings("ops") == {}
+    removed = index.remove("ops")
+    assert removed and index.settings("ops") == {}
     path.write_text(
         json.dumps(
-            {"profiles": ["x"], "settings": {"x": {"base_url": "u", "junk": 1, "username": 2}}}
+            {
+                "profiles": ["x"],
+                "settings": {"x": {"base_url": "u", "junk": "1", "username.b": 2, "username": "z"}},
+            }
         )
     )
     assert ProfileIndex(path).settings("x") == {"base_url": "u"}
@@ -153,7 +163,8 @@ def runtime(tmp_path: Path, **env: str) -> CliRuntime:
 
 def test_commands_use_the_profile_base_url_after_flags_and_environment(tmp_path: Path) -> None:
     rt = runtime(tmp_path)
-    rt.profiles().update_settings("default", {"base_url": "https://saved.test", "username": "amy"})
+    rt.profiles().update_settings("default", {"base_url": "https://saved.test"})
+    rt.credential_store("default").save("basic", {"type": "basic", "username": "amy"})
     options, sources = rt.resolve(argparse.Namespace())
     assert options["base_url"] == "https://saved.test"
     assert sources["base_url"] == "profile default"
@@ -225,11 +236,11 @@ def test_wizard_asks_for_the_site_scheme_and_username(tmp_path: Path) -> None:
     assert auth.err.getvalue() == (
         "Sign-in methods:\n  1. basic: Your email and an API token\n  2. token\n"
     )
-    assert inner.items == {}
+    assert inner.items == {"default:basic": {"type": "basic", "username": "amy@x.test"}}
     assert index.settings("default") == {
         "base_url": "https://mysite.atlassian.net",
         "scheme": "basic",
-        "username": "amy@x.test",
+        "username.basic": "amy@x.test",
     }
     again, labels, inner, _ = wizard(["", "", "", "y", "pw"], index=index, inner=inner)
     again.run(login())
@@ -273,8 +284,11 @@ def test_wizard_skips_what_the_command_line_or_environment_gives() -> None:
 def test_wizard_rejects_bad_answers() -> None:
     with pytest.raises(AuthError, match="a base URL is required: pass --base-url"):
         wizard([""])[0].run(login())
-    with pytest.raises(AuthError, match="not an http.s. URL: 'ftp://x'"):
+    with pytest.raises(AuthError, match="^invalid base URL: URL must be HTTP.S. with a host"):
         wizard(["ftp://x"])[0].run(login())
+    with pytest.raises(AuthError, match="no credentials") as caught:
+        wizard(["https://amy:hunter2@a.test"])[0].run(login())
+    assert "hunter2" not in str(caught.value)
     with pytest.raises(AuthError, match="answer y or n"):
         wizard(["https://a.test", "1", "amy", "maybe"])[0].run(login())
 
@@ -286,12 +300,12 @@ def test_without_a_terminal_login_keeps_its_old_behaviour() -> None:
     auth.run(login(scheme="basic"))
     assert labels == ["basic username: ", "basic password: "]
     assert inner.items["default:basic"]["secret"] == "pw"
-    assert index.settings("default") == {"scheme": "basic", "username": "amy"}
+    assert index.settings("default") == {"scheme": "basic", "username.basic": "amy"}
     unsaved, _, inner, _ = wizard(
         ["amy"], interactive=False, configured={"basic": {"save_secret": False}}
     )
     assert unsaved.run(login(scheme="basic"))["password"].startswith("not saved")
-    assert inner.items == {}
+    assert inner.items == {"default:basic": {"type": "basic", "username": "amy"}}
 
 
 def test_save_secret_options() -> None:
@@ -308,7 +322,13 @@ def test_save_secret_options() -> None:
     quiet, labels, inner, _ = wizard(["amy"], interactive=False)
     inner.save("default:basic", {"type": "basic", "username": "amy", "secret": "old"})
     quiet.run(login(scheme="basic", save_secret=False))
-    assert inner.items == {}  # the old password would otherwise still be sent
+    # the old password would otherwise still be sent
+    assert inner.items == {"default:basic": {"type": "basic", "username": "amy"}}
+    fields, _, _, _ = wizard(
+        [], interactive=False, configured={"basic": {"fields": {"pin": {"secret": True}}}}
+    )
+    with pytest.raises(AuthError, match="saves declared fields"):
+        fields.run(login(scheme="basic", save_secret=False))
 
 
 def test_profiles_list_and_logout_cover_the_saved_username() -> None:
@@ -319,9 +339,9 @@ def test_profiles_list_and_logout_cover_the_saved_username() -> None:
         {
             "profile": "default",
             "default": True,
-            "saved": "username for basic",
+            "saved": "basic",
             "base_url": "https://a.test",
-            "username": "amy",
+            "usernames": "basic: amy",
         }
     ]
     out = auth.run(argparse.Namespace(auth_action="logout", scheme="basic"))
@@ -350,7 +370,7 @@ def test_browser_login_fills_in_the_username(tmp_path: Path) -> None:
     assert captured[0].username == "amy@corp.test"
     assert captured[0].login_url == "https://mysite.test/login"
     assert labels[2] == "Username to fill in on the sign-in page (optional): "
-    assert index.settings("default")["username"] == "amy@corp.test"
+    assert index.settings("default")["username.session"] == "amy@corp.test"
     flag, labels, _, _ = wizard(
         [],
         api=BROWSER_API,
@@ -365,7 +385,10 @@ def test_browser_login_fills_in_the_username(tmp_path: Path) -> None:
     flag.run(login(scheme="session", username="bob"))
     assert captured[-1].username == "bob" and labels == []
     quiet, _, _, _ = wizard([], api=BROWSER_API, configured=BROWSER, index=index, interactive=False)
-    assert quiet._sign_in_username(login(), index.settings("default")) == "bob"
+    assert quiet._sign_in_username(login(), "bob") == "bob"
+    out = flag.run(argparse.Namespace(auth_action="logout", scheme="session"))
+    assert out["removed"] == ["session"]
+    assert "username.session" not in index.settings("default")
 
 
 class FakeBox:
@@ -421,43 +444,47 @@ def test_store_auth_pairs_the_saved_username_with_a_password() -> None:
 
     def ask(label: str) -> str:
         asked.append(label)
-        return " pw "
+        return " pw "  # spaces are part of a password
 
-    auth = StoreAuth(store, http(), "acme auth login", "amy", ask, "ACME", {})
+    store.save("basic", {"type": "basic", "username": "amy"})
+    auth = StoreAuth(store, http(), "acme auth login", ask, "ACME", {})
     secret = auth.credential(BASIC)
     assert isinstance(secret, AskedPassword) and repr(secret) == "AskedPassword('amy')"
     assert asked == []  # nothing asked until a request needs it
     signed = secret.authenticate(REQUEST, BASIC)
     secret.authenticate(REQUEST, BASIC)
     assert asked == ["basic password for amy: "]
-    assert signed.headers["Authorization"] == "Basic " + base64.b64encode(b"amy:pw").decode()
+    assert signed.headers["Authorization"] == "Basic " + base64.b64encode(b"amy: pw ").decode()
     assert auth.credential(BASIC) is secret
     assert auth.credential(TOKEN) is None
-    empty = AskedPassword("amy", lambda label: "  ")
+    empty = AskedPassword("amy", lambda label: "")
     with pytest.raises(AuthError, match="no password given for basic"):
         empty.authenticate(REQUEST, BASIC)
-    env = StoreAuth(
-        store, http(), "acme auth login", "amy", None, "ACME", {"ACME_BASIC_PASSWORD": "e"}
-    )
+    env = StoreAuth(store, http(), "acme auth login", None, "ACME", {"ACME_BASIC_PASSWORD": "e"})
     assert env.credential(BASIC) == Credential("e", "amy")
-    none = StoreAuth(store, http(), "acme auth login", "amy", None, "ACME", {})
+    none = StoreAuth(store, http(), "acme auth login", None, "ACME", {})
     assert none.credential(BASIC) is None
     assert none.hint(BASIC) == (
         "the password for amy is not saved: run on a terminal to be asked for it, set "
         "ACME_BASIC_PASSWORD, or run acme auth login --scheme basic --save-secret"
     )
-    assert StoreAuth(store, http(), "acme auth login").credential(BASIC) is None
+    other = AuthScheme("admin", AuthKind.BASIC)  # a username belongs to its own scheme
+    assert none.credential(other) is None
+    assert none.hint(other) == "run acme auth login --scheme admin"
+    assert saved_username({"type": "basic", "username": "amy", "secret": "x"}) == ""
+    assert saved_username({"type": "basic", "username": 3}) == ""
 
 
 def test_status_names_the_asked_password() -> None:
+    store = MemoryTokenStore()
+    store.save("basic", {"type": "basic", "username": "amy"})
     chain = cli_auth(
         API,
         program="acme",
         prefix="ACME",
         environ={},
-        store=MemoryTokenStore(),
+        store=store,
         http=http(),
-        username="amy",
         ask=lambda label: "pw",
     )
     assert describe_source(chain, BASIC) == "saved username amy (password asked when needed)"
@@ -495,10 +522,90 @@ def test_capture_fills_the_username_only_in_a_window(
 def test_empty_answer_takes_the_default() -> None:
     auth, _, inner, _ = wizard(["https://a.test", "1", "amy", ""])
     auth.run(login())
-    assert inner.items == {}  # No unless the CLI says otherwise
+    # No unless the CLI says otherwise
+    assert inner.items == {"default:basic": {"type": "basic", "username": "amy"}}
     saving, labels, inner, _ = wizard(
         ["https://a.test", "1", "amy", "", "pw"], configured={"basic": {"save_secret": True}}
     )
     saving.run(login())
     assert labels[3] == "Save the password (memory)? [Y/n]: "
     assert inner.items["default:basic"]["secret"] == "pw"
+
+
+def test_changing_site_needs_consent_to_drop_saved_logins() -> None:
+    index = ProfileIndex(None)
+    inner = MemoryTokenStore()
+    first, _, _, _ = wizard(["https://a.test", "2", "tok"], index=index, inner=inner)
+    first.run(login())
+    empty, _, _, other = wizard(["https://z.test", "2", "t"])
+    other.update_settings("default", {"base_url": "https://y.test"})
+    empty.run(login())  # nothing saved yet: switching sites needs no question
+    same, _, _, _ = wizard(["", "2", "tok2"], index=index, inner=inner)
+    same.run(login())  # same site: no question
+    refused, labels, _, _ = wizard(["https://b.test", "n"], index=index, inner=inner)
+    with pytest.raises(AuthError, match="has saved logins for https://a.test"):
+        refused.run(login())
+    assert labels[1] == (
+        "Profile default signs in to https://a.test; its saved logins (token) would be sent "
+        "to https://b.test. Forget them and switch? [y/N]: "
+    )
+    with pytest.raises(AuthError, match="auth login --new"):
+        wizard([], index=index, inner=inner, interactive=False)[0].run(
+            login(scheme="token", base_url="https://b.test")
+        )
+    agreed, _, _, _ = wizard(["https://b.test", "y", "2", "tok3"], index=index, inner=inner)
+    agreed.run(login())
+    assert inner.items == {"default:token": {"type": "token", "secret": "tok3"}}
+    assert index.settings("default")["base_url"] == "https://b.test"
+
+
+def test_wizard_offers_the_settings_file_url_and_follows_the_new_profile() -> None:
+    auth, labels, _, index = wizard(["", "1", "amy", "n"])
+    auth.fallback_base_url = "https://file.test"
+    assert auth.run(login())["base_url"] == "https://file.test"
+    assert labels[0] == "Base URL [https://file.test]: "
+    browser, _, _, _ = wizard(
+        [], api=BROWSER_API, configured=BROWSER, interactive=False, contract="https://c.test"
+    )
+    provider = next(p for p in browser.chain.providers if isinstance(p, BrowserAuth))
+    provider.base_url = "https://previous-profile.test"
+    browser.fallback_base_url = "https://c.test"
+    assert browser._base_url(login(), {}) == ""
+    assert provider.base_url == "https://c.test"
+
+
+def test_auth_token_asks_for_an_unsaved_password() -> None:
+    auth, _, inner, _ = wizard(["s3cret"], interactive=False)
+    inner.save("default:basic", {"type": "basic", "username": "amy"})
+    store_auth = next(p for p in auth.chain.providers if isinstance(p, StoreAuth))
+    store_auth.ask = lambda label: "s3cret"
+    assert auth.secret(argparse.Namespace(scheme="basic")) == "s3cret"
+
+
+def test_sign_in_pages_trusted_for_the_username() -> None:
+    login_ = BrowserLogin(
+        "https://mysite.test/login", ("sid",), signin_hosts=("id.atlassian.com", "*.okta.com")
+    )
+    named = replace(login_, domain="mysite.test")
+    assert named.trusted_page("https://mysite.test/x")
+    assert named.trusted_page("https://id.atlassian.com/login")
+    assert named.trusted_page("https://corp.okta.com/")
+    assert not named.trusted_page("https://evil.test/login")
+    assert not named.trusted_page("http://id.atlassian.com/login")
+    assert not named.trusted_page("about:blank")
+    plain = BrowserLogin("http://localhost:8080/", ("sid",), domain="localhost")
+    assert plain.trusted_page("http://localhost:8080/sign-in")
+    words = BrowserLogin("https://app.test/", ("sid",), domain="app.test")
+    assert words.trusted_page("https://login.idp.test/")
+    assert not words.trusted_page("https://news.test/")
+
+
+def test_profile_updates_merge_with_other_processes(tmp_path: Path) -> None:
+    path = tmp_path / "profiles.json"
+    mine, theirs = ProfileIndex(path), ProfileIndex(path)
+    assert mine.names == []  # cached before the other process writes
+    theirs.add("work")
+    theirs.use("work")
+    mine.update_settings("default", {"scheme": "basic"})
+    fresh = ProfileIndex(path)
+    assert fresh.names == ["work", "default"] and fresh.default == "work"
