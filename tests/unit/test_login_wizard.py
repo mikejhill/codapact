@@ -238,7 +238,13 @@ def test_wizard_asks_for_the_site_scheme_and_username(tmp_path: Path) -> None:
         "Sign-in methods:\n  1. basic: Your email and an API token. Create one in settings.\n"
         "  2. token\n"
     )
-    assert inner.items == {"default:basic": {"type": "basic", "username": "amy@x.test"}}
+    assert inner.items == {
+        "default:basic": {
+            "type": "basic",
+            "username": "amy@x.test",
+            "codapact_site": "https://mysite.atlassian.net",
+        }
+    }
     assert index.settings("default") == {
         "base_url": "https://mysite.atlassian.net",
         "scheme": "basic",
@@ -254,14 +260,21 @@ def test_wizard_asks_for_the_site_scheme_and_username(tmp_path: Path) -> None:
         "basic password: ",
     ]
     assert inner.items == {
-        "default:basic": {"type": "basic", "username": "amy@x.test", "secret": "pw"}
+        "default:basic": {
+            "type": "basic",
+            "username": "amy@x.test",
+            "secret": "pw",
+            "codapact_site": "https://mysite.atlassian.net",
+        }
     }
 
 
 def test_wizard_choices_by_number_name_and_default() -> None:
     auth, _, inner, index = wizard(["https://a.test", "2", "tok"])
     assert auth.run(login())["scheme"] == "token"
-    assert inner.items == {"default:token": {"type": "token", "secret": "tok"}}
+    assert inner.items == {
+        "default:token": {"type": "token", "secret": "tok", "codapact_site": "https://a.test"}
+    }
     assert index.settings("default")["scheme"] == "token"
     by_name, labels, _, _ = wizard(["", "basic", "bob", "n"], index=index)
     assert by_name.run(login())["scheme"] == "basic"
@@ -276,7 +289,8 @@ def test_wizard_skips_what_the_command_line_or_environment_gives() -> None:
     assert result["base_url"] == "https://site.test" and labels == ["basic password: "]
     assert index.settings("default")["base_url"] == "https://site.test"
     env, labels, _, _ = wizard(["", "amy", "n"], source="env ACME_BASE_URL")
-    assert "base_url" not in env.run(login())
+    env.base_url = "e.test/"
+    assert env.run(login())["base_url"] == "https://e.test"  # checked and normalised
     assert labels[0] == "Choose 1-2 [1]: "
     fixed, labels, _, _ = wizard(["", "amy", "n"], contract="https://api.fixed.test")
     fixed.run(login())
@@ -407,18 +421,21 @@ class FakeBox:
     def count(self) -> int:
         return int(self.selector in self.page.boxes)
 
-    def input_value(self) -> str:
-        return self.page.boxes[self.selector]
-
-    def fill(self, value: str) -> None:
+    def evaluate(self, script: str, arg: list[str], timeout: float) -> bool:
+        assert "location.href !== href" in script and timeout > 0
         if self.page.broken:
             raise RuntimeError("detached")
-        self.page.boxes[self.selector] = value
+        name, href = arg
+        if href != self.page.document or self.page.boxes[self.selector]:
+            return False  # navigated away, or the person typed
+        self.page.boxes[self.selector] = name
+        return True
 
 
 class FakePage:
     def __init__(self, url: str, boxes: dict[str, str], broken: bool = False) -> None:
         self.url = url
+        self.document = url
         self.boxes = boxes
         self.broken = broken
 
@@ -437,6 +454,10 @@ def test_prefill_username_fills_one_empty_box_per_page() -> None:
     assert typed.boxes["input[name='username']"] == "bob"  # never overwrite the person
     broken = FakePage("https://x.test/", {"input[id='username']": ""}, broken=True)
     assert prefill_username(broken, "amy", filled, RuntimeError) is False
+    moved = FakePage("https://id2.test/", {"input[type='email']": ""})
+    moved.document = "https://evil.test/"  # navigated after the trust check
+    assert prefill_username(moved, "amy", filled, RuntimeError) is False
+    assert moved.boxes["input[type='email']"] == ""
 
 
 # ---------------------------------------------------------------- asked passwords
@@ -524,7 +545,9 @@ def test_empty_answer_takes_the_default() -> None:
     auth, _, inner, _ = wizard(["https://a.test", "1", "amy", ""])
     auth.run(login())
     # No unless the CLI says otherwise
-    assert inner.items == {"default:basic": {"type": "basic", "username": "amy"}}
+    assert inner.items == {
+        "default:basic": {"type": "basic", "username": "amy", "codapact_site": "https://a.test"}
+    }
     saving, labels, inner, _ = wizard(
         ["https://a.test", "1", "amy", "", "pw"], configured={"basic": {"save_secret": True}}
     )
@@ -560,7 +583,9 @@ def test_changing_site_needs_consent_to_drop_saved_logins() -> None:
     assert inner.items  # a typo never drops the working logins
     agreed, _, _, _ = wizard(["https://b.test", "2", "y", "tok3"], index=index, inner=inner)
     agreed.run(login())
-    assert inner.items == {"default:token": {"type": "token", "secret": "tok3"}}
+    assert inner.items == {
+        "default:token": {"type": "token", "secret": "tok3", "codapact_site": "https://b.test"}
+    }
     assert index.settings("default")["base_url"] == "https://b.test"
 
 
@@ -643,18 +668,67 @@ def test_keyring_values_too_big_for_one_entry_are_split() -> None:
     big = {"type": "browser", "cookies": [{"name": "t", "value": "x" * (KEYRING_CHUNK * 2)}]}
     store.save("session", big)
     assert all(len(v) <= KEYRING_CHUNK for v in backend.items.values())
-    assert backend.items[("codapact:acme:session", "session")] == '{"codapact_chunks":3}'
+    manifest = json.loads(backend.items[("codapact:acme:session", "session")])
+    assert manifest["codapact_chunks"] == 3
+    generation = manifest["codapact_generation"]
     assert store.load("session") == big
     store.save("session", {"type": "browser", "cookies": []})
     assert sorted(k for _, k in backend.items) == ["session"]  # stale parts removed
     store.save("session", big)
-    del backend.items[("codapact:acme:session#2", "session#2")]
+    first = sorted(backend.items)
+    store.save("session", big)  # a refresh writes a new generation, then drops the old
+    assert len(backend.items) == 4 and sorted(backend.items) != first
+    generation = json.loads(backend.items[("codapact:acme:session", "session")])[
+        "codapact_generation"
+    ]
+    del backend.items[(f"codapact:acme:session#{generation}.2", f"session#{generation}.2")]
     assert store.load("session") is None  # half-written: no credential
     deleted = store.delete("session")
     assert deleted is True
     assert backend.items == {}
     backend.items[("codapact:acme:x", "x")] = '{"codapact_chunks": 1}'
     assert store.load("x") == {"codapact_chunks": 1}  # one part is never a split value
+    backend.items[("codapact:acme:v", "v")] = '{"codapact_chunks": 2}'  # before generations
+    backend.items[("codapact:acme:v#1", "v#1")] = '{"a":'
+    backend.items[("codapact:acme:v#2", "v#2")] = '"b"}'
+    assert store.load("v") == {"a": "b"}
+    removed = store.delete("v")
+    assert removed is True
+    assert backend.items == {("codapact:acme:x", "x"): '{"codapact_chunks": 1}'}
+
+    class Flaky(FakeKeyring):
+        writes = 0
+
+        @override
+        def set_password(self, service: str, key: str, value: str) -> None:
+            Flaky.writes += 1
+            if Flaky.writes == 6:
+                raise OSError("disk full")
+            super().set_password(service, key, value)
+
+    flaky = Flaky()
+    keep = KeyringTokenStore("codapact:acme", flaky)
+    keep.save("session", big)  # writes 1-4
+    before = dict(flaky.items)
+    with pytest.raises(AuthError, match="could not save"):
+        keep.save("session", big)  # fails on its second part
+    assert flaky.items == before and keep.load("session") == big  # old value intact
+    odd = '{"codapact_chunks": 2, "codapact_generation": "../x"}'
+    backend.items[("codapact:acme:g", "g")] = odd
+    assert store.load("g") == json.loads(odd)  # not a manifest this code wrote
+
+    class Stuck(Flaky):
+        @override
+        def delete_password(self, service: str, key: str) -> None:
+            raise OSError("locked")
+
+    Flaky.writes = 2  # the next save fails on its fourth write: the manifest
+    stuck = KeyringTokenStore("codapact:acme", Stuck())
+    with pytest.raises(AuthError, match="could not save"):
+        stuck.save("session", big)  # its cleanup fails too, and never hides the error
+    with pytest.raises(AuthError, match="too large"):
+        store.save("huge", {"v": "x" * (KEYRING_CHUNK * 1001)})
+    assert ("codapact:acme:huge", "huge") not in backend.items
 
     class Refusing(FakeKeyring):
         @override
@@ -694,3 +768,47 @@ def test_scheme_docs_wrap_instead_of_truncating(monkeypatch: pytest.MonkeyPatch)
     assert all(len(line) <= 49 for line in lines)
     assert " ".join(line.strip() for line in lines[1:-1]).endswith("as the password.")
     assert lines[2].startswith("       ")
+
+
+def test_saved_logins_only_reach_the_site_they_were_entered_for() -> None:
+    from codapact.runtime.profiles import ProfileStore, same_site
+
+    inner = MemoryTokenStore()
+    a = ProfileStore(inner, "default", site="https://a.test")
+    a.save("token", {"type": "token", "secret": "s"})
+    assert a.load("token") == {"type": "token", "secret": "s"}
+    assert ProfileStore(inner, "default", site="HTTPS://A.test/").load("token") is not None
+    other = ProfileStore(inner, "default", site="https://b.test")
+    assert other.load("token") is None  # never sent to another site
+    assert other.stored("token") is not None  # but still counts as saved
+    assert ProfileStore(inner, "default").load("token") == {"type": "token", "secret": "s"}
+    inner.save("default:old", {"type": "token", "secret": "o"})  # before site binding
+    assert other.load("old") == {"type": "token", "secret": "o"}
+    assert not same_site("https://a.test/x", "https://a.test/y")
+
+
+def test_first_login_pins_the_site_even_when_it_is_the_default() -> None:
+    auth, _, inner, index = wizard(["tok"], interactive=False, contract="https://api.fixed.test")
+    auth.fallback_base_url = "https://api.fixed.test"  # the settings file's or contract's
+    auth.run(login(scheme="token"))
+    assert index.settings("default")["base_url"] == "https://api.fixed.test"
+    assert inner.items["default:token"]["codapact_site"] == "https://api.fixed.test"
+
+
+def test_explicit_sites_are_kept_and_compared_loosely() -> None:
+    auth, _, _, index = wizard(["tok"], interactive=False)
+    result = auth.run(login(scheme="token", base_url="https://my-team.atlassian.net"))
+    assert result["base_url"] == "https://my-team.atlassian.net"  # a real tenant, kept
+    inner = MemoryTokenStore()
+    first, _, _, _ = wizard(["https://a.test", "2", "tok"], index=index, inner=inner)
+    first.run(login())
+    env, _, _, _ = wizard(
+        ["tok2"], index=index, inner=inner, interactive=False, source="env ACME_BASE_URL"
+    )
+    env.base_url = "https://a.test/"  # the same site: no question, nothing dropped
+    assert "base_url" not in env.run(login(scheme="token"))
+    leaky, _, _, _ = wizard([], interactive=False, source="env ACME_BASE_URL")
+    leaky.base_url = "https://user:secret@a.test"
+    with pytest.raises(AuthError, match="invalid base URL") as caught:
+        leaky.run(login(scheme="token"))
+    assert "secret" not in str(caught.value)

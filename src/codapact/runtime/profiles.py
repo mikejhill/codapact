@@ -30,6 +30,7 @@ from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from codapact.runtime.errors import AuthError
 from codapact.runtime.oauth import TokenStore, store_location
@@ -234,11 +235,17 @@ class ProfileStore:
     For the ``default`` profile, data under the unscoped key (saved before profiles
     existed) is moved to the scoped key when first read, and removed on save and
     delete. Saving registers the profile through ``on_save``.
+
+    With a ``site``, each saved record names the site it was saved for, and a record
+    saved for another site loads as nothing: a credential is never sent to a site it
+    was not entered for, whichever backend or settings file is in use. Records from
+    before this (no site) load anywhere.
     """
 
     inner: TokenStore
     profile: str
     on_save: Callable[[str], Any] | None = field(default=None, repr=False)
+    site: str = ""
 
     @property
     def location(self) -> str:
@@ -259,7 +266,18 @@ class ProfileStore:
         return store_location(self.inner, self.scoped(key))
 
     def load(self, key: str) -> dict[str, Any] | None:
-        """Return the stored data for ``key`` in this profile."""
+        """Return the stored data for ``key`` in this profile, if saved for this site."""
+        data = self.stored(key)
+        if data is None or SITE not in data:
+            return data
+        data = dict(data)
+        site = data.pop(SITE)
+        if self.site and not same_site(str(site), self.site):
+            return None
+        return data
+
+    def stored(self, key: str) -> dict[str, Any] | None:
+        """Return the stored record for ``key`` whatever site it belongs to."""
         data = self.inner.load(self.scoped(key))
         if data is not None or not self.legacy:
             return data
@@ -271,7 +289,9 @@ class ProfileStore:
         return data
 
     def save(self, key: str, data: dict[str, Any]) -> None:
-        """Store ``data`` under ``key`` in this profile."""
+        """Store ``data`` under ``key`` in this profile, bound to the site when known."""
+        if self.site:
+            data = {**data, SITE: self.site}
         self.inner.save(self.scoped(key), data)
         if self.legacy:
             self.inner.delete(key)
@@ -287,6 +307,20 @@ class ProfileStore:
     def _registered(self) -> None:
         if self.on_save is not None:
             self.on_save(self.profile)
+
+
+SITE = "codapact_site"
+"""The record field naming the site a saved credential belongs to."""
+
+
+def same_site(first: str, second: str) -> bool:
+    """Whether two base URLs reach the same place (case of scheme and host, trailing ``/``)."""
+
+    def key(url: str) -> tuple[str, str, str]:
+        parts = urlsplit(url.strip())
+        return parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/")
+
+    return key(first) == key(second)
 
 
 LOCK_TIMEOUT = 10.0
@@ -336,6 +370,7 @@ __all__ = [
     "setting_allowed",
     "username_key",
     "ProfileIndex",
+    "same_site",
     "ProfileStore",
     "check_profile_name",
     "profiles_path",

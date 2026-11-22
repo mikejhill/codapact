@@ -266,22 +266,36 @@ USERNAME_FIELDS = (
 """Selectors for the username box of common sign-in pages (Atlassian, Okta, Entra ID…)."""
 
 
+PREFILL_SCRIPT = """(box, [name, href]) => {
+  if (location.href !== href || box.value) return false;
+  const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+  set.call(box, name);
+  box.dispatchEvent(new Event("input", { bubbles: true }));
+  box.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
+}"""
+"""Fill ``box`` only if its document is still the checked page and the box is still empty."""
+
+
 def prefill_username(page: Any, username: str, filled: set[str], error: type[Exception]) -> bool:
     """Type ``username`` into the page's empty, visible username field, once per URL.
 
-    Best effort: a page without such a field, or one that changes while it is filled,
-    is left for the person. Return whether a field was filled.
+    The caller has checked that ``page.url`` is trusted; the fill itself re-checks, in
+    the same step, that the field's document is still at that URL and the field is
+    still empty, so a navigation or the person's typing in between wins. Best effort: a
+    page without such a field is left for the person. Return whether a field was filled.
     """
-    url = str(page.url).split("?", 1)[0]
+    href = str(page.url)
+    url = href.split("?", 1)[0]
     if url in filled:
         return False
     try:
         for selector in USERNAME_FIELDS:
             box = page.locator(selector + ":visible").first
-            if box.count() and not box.input_value():
-                box.fill(username)
+            if box.count():
+                done = bool(box.evaluate(PREFILL_SCRIPT, [username, href], timeout=2000))
                 filled.add(url)
-                return True
+                return done
     except error:
         return False
     return False

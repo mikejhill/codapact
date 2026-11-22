@@ -68,11 +68,19 @@ from codapact.runtime.oauth import (
     grant_for_scheme,
     store_location,
 )
-from codapact.runtime.profiles import DEFAULT_PROFILE, ProfileIndex, ProfileStore, username_key
+from codapact.runtime.profiles import (
+    DEFAULT_PROFILE,
+    ProfileIndex,
+    ProfileStore,
+    same_site,
+    username_key,
+)
 
 ACTIONS = ("login", "logout", "status", "token", "profiles", "use")
-PLACEHOLDER_HOST = re.compile(r"(^|[.-])(your|my)[-_.]|\{")
-"""A server URL a person must replace: ``{site}``, ``your-domain.…``, ``my-site.…``."""
+PLACEHOLDER_HOST = re.compile(r"\{|(^|[.-])your[-_.]")
+"""A server URL a person must replace: ``{site}``, ``your-domain.…``.
+
+A real tenant such as ``my-team.atlassian.net`` or ``mysite.…`` is not one."""
 
 
 def add_auth_commands(
@@ -198,16 +206,15 @@ class AuthCommands:
         destination = self._destination(args, saved, new)
         scheme = self._choose_scheme(args.scheme, saved)  # validated before anything is dropped
         self._guard_site_change(saved, destination)
+        if isinstance(self.store, ProfileStore):
+            self.store.site = destination  # each saved record names its site
         remember: dict[str, str] = {}
-        changed = bool(destination) and destination != (
-            saved.get("base_url") or self.fallback_base_url
-        )
-        if changed or (saved.get("base_url") and destination):
-            remember["base_url"] = destination  # the site these credentials belong to
+        if destination:
+            remember["base_url"] = destination  # pinned: a settings-file change never moves it
         result = self._scoped(self.login(scheme, args, saved, remember))
         remember["scheme"] = scheme.name
         self.profiles.update_settings(self.profile_name, remember)
-        if destination and destination != saved.get("base_url"):
+        if destination and not same_site(destination, saved.get("base_url", "")):
             result["base_url"] = destination
         if self.profile and self.profile != self.profiles.default:
             result["note"] = (
@@ -239,7 +246,7 @@ class AuthCommands:
         if flag:
             url = _normal_url(str(flag))
         elif self.base_url_source.startswith("env"):
-            url = self.base_url
+            url = _normal_url(self.base_url)
         elif self.interactive and (_placeholder(self.contract_url) or saved.get("base_url")):
             default = "" if _placeholder(current) else current
             hint = f" (like {self.contract_url})" if not default else ""
@@ -249,9 +256,7 @@ class AuthCommands:
                 raise AuthError("a base URL is required: pass --base-url")
             url = _normal_url(answer)
         else:
-            url = current
-        if _placeholder(url):
-            url = ""
+            url = "" if _placeholder(current) else current  # a placeholder: site unknown
         browser = self._browser_auth()
         if browser is not None and (url or new):
             browser.base_url = url  # the chain was built before --new or this choice
@@ -262,9 +267,13 @@ class AuthCommands:
         return [
             s.name
             for s in self.api.auth_schemes
-            if self.store.load(s.name) is not None
-            or self.store.load(session_key(s.name)) is not None
+            if self._held(s.name) or self._held(session_key(s.name))
         ]
+
+    def _held(self, key: str) -> bool:
+        """Whether anything is saved under ``key``, for any site."""
+        stored = getattr(self.store, "stored", self.store.load)
+        return stored(key) is not None
 
     def _guard_site_change(self, saved: Mapping[str, str], url: str) -> None:
         """Refuse to point saved logins at another site unless a person agrees to drop them.
@@ -274,7 +283,7 @@ class AuthCommands:
         """
         previous = saved.get("base_url") or self.fallback_base_url
         previous = "" if _placeholder(previous) else previous
-        if previous == url:
+        if previous == url or (previous and url and same_site(previous, url)):
             return
         signed_in = self._signed_in()
         if not signed_in:

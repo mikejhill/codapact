@@ -24,6 +24,7 @@ import hashlib
 import http.server
 import json
 import os
+import re
 import secrets
 import sys
 import tempfile
@@ -293,44 +294,66 @@ class KeyringTokenStore:
         removed = self._drop_legacy(backend, key)
         raw = backend.get_password(self.entry(key), key)
         if raw is not None:
-            self._drop_chunks(backend, key, _chunk_count(raw))
+            self._drop_parts(backend, key, _manifest(raw))
             backend.delete_password(self.entry(key), key)
             removed = True
         return removed
 
+    def _part(self, key: str, generation: str, n: int) -> tuple[str, str]:
+        name = f"{key}#{generation}.{n}" if generation else f"{key}#{n}"
+        return self.entry(name), name
+
     def _read(self, backend: Any, key: str) -> dict[str, Any] | None:
         raw = backend.get_password(self.entry(key), key)
-        count = _chunk_count(raw)
-        if not count:
+        manifest = _manifest(raw)
+        if manifest is None:
             return _decode(raw)
-        parts = [
-            backend.get_password(self.entry(f"{key}#{n}"), f"{key}#{n}")
-            for n in range(1, count + 1)
-        ]
+        count, generation = manifest
+        parts = [backend.get_password(*self._part(key, generation, n)) for n in range(1, count + 1)]
         if any(part is None for part in parts):
             return None  # a half-written value is no credential
         return _decode("".join(str(part) for part in parts))
 
     def _write(self, backend: Any, key: str, data: dict[str, Any]) -> None:
-        old = _chunk_count(backend.get_password(self.entry(key), key))
+        """Write ``data``; a split value's parts go under a new generation, published last.
+
+        Until the new manifest replaces the old one, readers see the previous value whole;
+        a failed write removes the parts it wrote.
+        """
+        old = _manifest(backend.get_password(self.entry(key), key))
         text = json.dumps(data, sort_keys=True)
         if len(text) > KEYRING_CHUNK:
             text = json.dumps(data, sort_keys=True, separators=(",", ":"))
         parts = [text[i : i + KEYRING_CHUNK] for i in range(0, len(text), KEYRING_CHUNK)]
+        if len(parts) > MAX_CHUNKS:
+            raise ValueError(f"the value is too large ({len(text)} characters)")
         if len(parts) <= 1:
             backend.set_password(self.entry(key), key, text)
         else:
-            for n, part in enumerate(parts, start=1):
-                backend.set_password(self.entry(f"{key}#{n}"), f"{key}#{n}", part)
-            backend.set_password(
-                self.entry(key), key, json.dumps({CHUNKS: len(parts)}, separators=(",", ":"))
-            )
-        self._drop_chunks(backend, key, old, keep=len(parts) if len(parts) > 1 else 0)
+            generation = secrets.token_hex(4)
+            try:
+                for n, part in enumerate(parts, start=1):
+                    backend.set_password(*self._part(key, generation, n), part)
+                manifest = {CHUNKS: len(parts), GENERATION: generation}
+                backend.set_password(
+                    self.entry(key), key, json.dumps(manifest, separators=(",", ":"))
+                )
+            except Exception:
+                self._drop_parts(backend, key, (len(parts), generation))
+                raise
+        self._drop_parts(backend, key, old)
 
-    def _drop_chunks(self, backend: Any, key: str, count: int, keep: int = 0) -> None:
-        for n in range(keep + 1, count + 1):
-            if backend.get_password(self.entry(f"{key}#{n}"), f"{key}#{n}") is not None:
-                backend.delete_password(self.entry(f"{key}#{n}"), f"{key}#{n}")
+    def _drop_parts(self, backend: Any, key: str, manifest: tuple[int, str] | None) -> None:
+        if manifest is None:
+            return
+        count, generation = manifest
+        for n in range(1, count + 1):
+            where = self._part(key, generation, n)
+            try:
+                if backend.get_password(*where) is not None:
+                    backend.delete_password(*where)
+            except Exception:  # noqa: BLE001, S112 - cleanup never hides the real outcome
+                continue
 
     def _drop_legacy(self, backend: Any, key: str) -> bool:
         if not self.legacy_service:
@@ -347,15 +370,22 @@ class KeyringTokenStore:
 KEYRING_CHUNK = 1000
 """Characters per keyring entry: Windows stores UTF-16, at most 2560 bytes per entry."""
 CHUNKS = "codapact_chunks"
+GENERATION = "codapact_generation"
+MAX_CHUNKS = 1000
+"""At most this many parts: a larger value is refused before any part is written."""
 
 
-def _chunk_count(raw: str | None) -> int:
-    """The number of parts a split value has (0 for a value stored whole)."""
+def _manifest(raw: str | None) -> tuple[int, str] | None:
+    """A split value's part count and generation (``None`` for a value stored whole)."""
     data = _decode(raw)
-    if data is None or set(data) != {CHUNKS}:
-        return 0
-    count = data[CHUNKS]
-    return count if isinstance(count, int) and 1 < count <= 1000 else 0
+    if data is None or not {CHUNKS} <= set(data) <= {CHUNKS, GENERATION}:
+        return None
+    count, generation = data[CHUNKS], data.get(GENERATION, "")
+    if not isinstance(count, int) or not 1 < count <= MAX_CHUNKS:
+        return None
+    if not isinstance(generation, str) or not re.fullmatch(r"[0-9a-f]{0,16}", generation):
+        return None
+    return count, generation
 
 
 def _decode(raw: str | None) -> dict[str, Any] | None:

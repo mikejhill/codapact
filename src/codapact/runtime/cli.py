@@ -705,14 +705,15 @@ class CliRuntime:
             raise index.unknown(name)
         return name, source
 
-    def credential_store(self, profile: str | None = None) -> TokenStore:
+    def credential_store(self, profile: str | None = None, site: str = "") -> TokenStore:
         """Return where ``auth login`` saves secrets for ``profile`` (default: the default).
 
-        The OS keyring or a 0600 file, with keys scoped to the profile.
+        The OS keyring or a 0600 file, with keys scoped to the profile; with a ``site``,
+        only records saved for that site load.
         """
         index = self.profiles()
         inner = default_store(self.program, self.env, self.env_prefix, self.previous_programs)
-        return ProfileStore(inner, profile or index.default, on_save=index.add)
+        return ProfileStore(inner, profile or index.default, on_save=index.add, site=site)
 
     @staticmethod
     def _auth_http(options: Mapping[str, Any]) -> SafeHttpClient:
@@ -747,18 +748,17 @@ class CliRuntime:
         if self.model is None and plugin:
             raise CodapactError("auth plugins need the generated model; regenerate the CLI")
         api = self.model() if self.model is not None else Api(self.api_name, "", ())
+        site = str(options.get("base_url") or (api.servers[0].url if api.servers else "") or "")
         return build_cli_auth(
             api,
             program=self.program,
             prefix=self.env_prefix,
             environ=self.env,
-            store=self.credential_store(profile),
+            store=self.credential_store(profile, site),
             http=self._auth_http(options),
             plugin=plugin or None,
             configured=configured,
-            base_url=str(
-                options.get("base_url") or (api.servers[0].url if api.servers else "") or ""
-            ),
+            base_url=site,
             usernames=usernames,
             ask=self.secret_prompt if _interactive() else None,
         )
@@ -1084,7 +1084,7 @@ class CliRuntime:
             prefix=self.env_prefix,
             api=api,
             chain=chain,
-            store=self.credential_store(profile),
+            store=self.credential_store(profile, str(options.get("base_url") or contract)),
             profiles=self.profiles(),
             http=self._auth_http(options),
             environ=self.env,

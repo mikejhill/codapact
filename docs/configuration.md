@@ -494,6 +494,16 @@ example `codapact:ynab:default:bearer` in Windows Credential Manager), otherwise
 existed (keyring service `<program>` before 0.6.1, `codapact:<program>:<scheme>` in 0.6.1)
 belong to the `default` profile and move to its name the first time they are read.
 
+Each saved login records the site (base URL) it was entered for, and a command for another
+site does not use it, whichever store or settings file is in effect: changing `base_url`
+in the settings file, or switching between the keyring and the file, never sends a saved
+credential to a site it was not entered for. Sites compare without case in the scheme and
+host and without a trailing `/`; a different path is a different site. Logins saved before
+0.14 have no site and are used as before until the next `auth login`. A value too large for
+one keyring entry (Windows allows 2,560 bytes, which browser session cookies exceed) is
+split across entries `<key>#<generation>.<n>`; the previous value stays readable until the
+new one is complete.
+
 ### Profiles
 
 Several saved logins per CLI: different accounts, or tokens with different access levels.
@@ -525,15 +535,16 @@ order: `--base-url`, `<PREFIX>_BASE_URL`, the profile, the settings file, the co
 
 With stdin and stderr both terminals, `auth login` asks for what the command line leaves out:
 
-1. **Base URL**, when the contract's server is a placeholder (`{site}`, `your-domain.…`,
-   `example.…`) or the profile already has one. `site.example` becomes
-   `https://site.example`; a URL with a user name, password or fragment is refused. The
-   default is the profile's URL, else the settings file's. Skipped when `--base-url` or
-   `<PREFIX>_BASE_URL` is set. Moving a profile with saved logins to another site asks first
+1. **Base URL**, when the contract's server is a placeholder (`{site}`, `your-domain.…`)
+   or the profile already has one. `site.example` becomes `https://site.example`; a URL
+   with a user name, password, query or fragment is refused, from the prompt, `--base-url`
+   or `<PREFIX>_BASE_URL` alike. The default is the profile's URL, else the settings file's.
+   Skipped when `--base-url` or `<PREFIX>_BASE_URL` is set. The site a login used is saved
+   in the profile, so a later change to the settings file does not move it. Moving a profile with saved logins to another site asks first
    and forgets them (without a terminal it refuses): use `auth login --new` for a second
    site.
-2. **Scheme**, from a numbered list showing the first sentence of each
-   `cli.auth.<scheme>.docs`. Skipped with `--scheme` or when there is only one.
+2. **Scheme**, from a numbered list showing each `cli.auth.<scheme>.docs` in full,
+   wrapped to the terminal. Skipped with `--scheme` or when there is only one.
 3. **The scheme's own prompts.** Basic asks for the username, then whether to save the
    password; a browser scheme asks for a username to fill in on the sign-in page (optional).
 
@@ -558,8 +569,9 @@ saved; `--save-secret` does not apply to them.
 Browser schemes never store a password: the identity provider's own session lives in the
 per-profile browser directory. The scheme's saved username is typed into the first empty
 username or email box of each sign-in page, never over what you typed, and only on trusted
-pages: the site itself, its `signin_hosts`, or (without `signin_hosts`) hosts that look like
-sign-in pages, over HTTPS.
+pages: the login page's host, the cookie domain, and the scheme's `signin_hosts`, over
+HTTPS. Nothing else is trusted, so for an external identity provider (Okta, Entra ID…) add
+its host to `signin_hosts` to have the username filled there.
 
 Libraries take the same objects directly:
 
