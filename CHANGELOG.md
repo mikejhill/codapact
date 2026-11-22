@@ -2,6 +2,18 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.14.0](https://github.com/mikejhill/codapact/compare/v0.13.0...v0.14.0) (2026-11-22)
+
+
+### Features
+
+* **cli:** profile settings, guided auth login, and passwords asked when needed ([#75](https://github.com/mikejhill/codapact/issues/75)) ([0e9d099](https://github.com/mikejhill/codapact/commit/0e9d099af90960de60c845ebc5c8fe68f69258a7))
+
+
+### Bug Fixes
+
+* **python:** allow uv_build 0.13 in generated packages ([#73](https://github.com/mikejhill/codapact/issues/73)) ([44b1235](https://github.com/mikejhill/codapact/commit/44b123508c2549c657e3913358548a15ddeceab0))
+
 ## [0.13.0](https://github.com/mikejhill/codapact/compare/v0.12.0...v0.13.0) (2026-11-21)
 
 
