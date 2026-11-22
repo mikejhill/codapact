@@ -2,6 +2,13 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.16.0](https://github.com/mikejhill/codapact/compare/v0.15.0...v0.16.0) (2026-11-22)
+
+
+### Features
+
+* **auth:** auth renew shows each renewal step; pause a password that failed ([#81](https://github.com/mikejhill/codapact/issues/81)) ([5fa263f](https://github.com/mikejhill/codapact/commit/5fa263f59d3fe420eff82f4b079e8533314fc7d7))
+
 ## [0.15.0](https://github.com/mikejhill/codapact/compare/v0.14.0...v0.15.0) (2026-11-22)
 
 
