@@ -1096,10 +1096,14 @@ def test_seventh_review(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     scheme = API.auth_schemes[0]
     directory.mkdir()
     (directory / "old").write_text("cookie")
-    with pytest.raises(RuntimeError), auth._fresh_browser(scheme, True):
-        assert not directory.exists()
-        directory.mkdir()
-        raise RuntimeError("sign-in failed")
+    def failed_sign_in() -> None:
+        with auth._fresh_browser(scheme, True):
+            assert not directory.exists()
+            directory.mkdir()
+            raise RuntimeError("sign-in failed")
+
+    with pytest.raises(RuntimeError):
+        failed_sign_in()
     assert (directory / "old").exists()
     with auth._fresh_browser(scheme, True):
         directory.mkdir()
