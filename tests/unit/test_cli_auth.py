@@ -99,7 +99,8 @@ def test_auth_action_options() -> None:
     login = actions["login"]
     assert login.description == "Save a credential for later commands."
     assert login.epilog == (
-        "examples:\n  acme auth login\n  echo $TOKEN | acme auth login --with-token\n"
+        "examples:\n  acme auth login                     (asks for each choice)\n"
+        "  echo $TOKEN | acme auth login --with-token\n"
         "  acme auth login --flow device_code\n"
         "  acme auth login --new              (another account, auto-named)\n"
         "  acme auth login --profile work"
@@ -127,7 +128,22 @@ def test_auth_action_options() -> None:
             False,
             "_StoreTrueAction",
         ),
-        "--username": ("username", "username for basic auth", None, None, "_StoreAction"),
+        "--username": (
+            "username",
+            "username for basic auth, or to fill in on a browser sign-in page",
+            None,
+            None,
+            "_StoreAction",
+        ),
+        "--save-secret": (
+            "save_secret",
+            "basic auth: save the password too (default: ask on a terminal, answer No "
+            "unless the CLI sets otherwise); without it, commands ask for the password when "
+            "they need it",
+            None,
+            None,
+            "BooleanOptionalAction",
+        ),
         "--field": (
             "field",
             "set a non-secret declared field without prompting (repeatable)",

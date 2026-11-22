@@ -5,6 +5,11 @@ stores scheme ``bearer`` under ``work:bearer`` (keyring entry
 ``codapact:<program>:work:bearer``). The list of profiles and the default live in
 ``$XDG_CONFIG_HOME/<program>/profiles.json``; secrets never do.
 
+Each profile can also keep non-secret settings there (``setting_allowed``): the base
+URL, the scheme it last signed in with, and per scheme the username
+(``username.<scheme>``). ``auth login`` saves them, and
+commands read the base URL after flags and environment, before the settings file.
+
 Selection, first hit wins: ``--profile NAME``, ``<PREFIX>_PROFILE``, the settings
 file's ``profile``, the default in ``profiles.json``, then ``default``.
 
@@ -15,19 +20,37 @@ existed (unscoped keys) belong to ``default`` and move there when first read.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from codapact.runtime.errors import AuthError
+from codapact.runtime.locking import locked
 from codapact.runtime.oauth import TokenStore, store_location
 
 DEFAULT_PROFILE = "default"
+PROFILE_SETTINGS = ("base_url", "scheme", "username.<scheme>")
+"""Non-secret values a profile keeps next to its saved logins."""
+_USERNAME_KEY = re.compile(r"username\..+", re.DOTALL)
+
+
+def setting_allowed(key: str) -> bool:
+    """Whether ``key`` is a profile setting: ``base_url``, ``scheme``, ``username.<scheme>``."""
+    return key in {"base_url", "scheme"} or bool(_USERNAME_KEY.fullmatch(key))
+
+
+def username_key(scheme: str) -> str:
+    """The profile setting holding the username for ``scheme``."""
+    return f"username.{scheme}"
+
+
 PROFILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 
 
@@ -62,13 +85,41 @@ class ProfileIndex:
             data = data if isinstance(data, dict) else {}
             names = data.get("profiles")
             default = data.get("default")
+            settings = data.get("settings")
             self._data = {
                 "default": default if isinstance(default, str) else None,
                 "profiles": [n for n in names if isinstance(n, str)]
                 if isinstance(names, list)
                 else [],
+                "settings": {
+                    str(name): {
+                        k: v
+                        for k, v in values.items()
+                        if setting_allowed(str(k)) and isinstance(v, str)
+                    }
+                    for name, values in settings.items()
+                    if isinstance(values, dict)
+                }
+                if isinstance(settings, dict)
+                else {},
             }
         return self._data
+
+    def _reload(self) -> None:
+        """Drop the cached index so the next read sees what other processes wrote."""
+        if self.path is not None:
+            self._data = None
+
+    @contextlib.contextmanager
+    def _changing(self) -> Generator[dict[str, Any]]:
+        """Read, change and write the index under a lock shared with other processes."""
+        if self.path is None:
+            yield self._load()
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with locked(self.path.with_name(self.path.name + ".lock")):
+            self._data = None
+            yield self._load()
 
     def _save(self) -> None:
         if self.path is None:
@@ -77,7 +128,8 @@ class ProfileIndex:
         fd, temp = tempfile.mkstemp(dir=self.path.parent, prefix=".profiles-")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(self._load(), handle, indent=2)
+                data = self._load()
+                json.dump({k: v for k, v in data.items() if k != "settings" or v}, handle, indent=2)
             os.replace(temp, self.path)
         except BaseException:
             Path(temp).unlink(missing_ok=True)
@@ -109,34 +161,63 @@ class ProfileIndex:
 
     def add(self, name: str) -> bool:
         """Record ``name``; the first profile becomes the default. Return whether it was new."""
-        data = self._load()
-        if name in data["profiles"]:
-            return False
-        data["profiles"].append(check_profile_name(name))
-        if data["default"] not in data["profiles"]:
-            data["default"] = name
-        self._save()
+        with self._changing() as data:
+            if name in data["profiles"]:
+                return False
+            data["profiles"].append(check_profile_name(name))
+            if data["default"] not in data["profiles"]:
+                data["default"] = name
+            self._save()
         return True
 
     def use(self, name: str) -> None:
         """Make ``name`` the default profile."""
-        if not self.known(name):
-            raise self.unknown(name)
-        data = self._load()
-        if name not in data["profiles"]:
-            data["profiles"].append(name)
-        data["default"] = name
-        self._save()
+        with self._changing() as data:
+            if not self.known(name):
+                raise self.unknown(name)
+            if name not in data["profiles"]:
+                data["profiles"].append(name)
+            data["default"] = name
+            self._save()
+
+    def settings(self, name: str) -> dict[str, str]:
+        """The non-secret settings saved for profile ``name`` (empty when none)."""
+        self._reload()
+        return dict(self._load()["settings"].get(name, {}))
+
+    def update_settings(self, name: str, values: dict[str, str]) -> None:
+        """Merge ``values`` into the settings of ``name`` and register the profile.
+
+        An empty value removes that setting.
+        """
+        unknown = {k for k in values if not setting_allowed(k)}
+        if unknown:
+            raise AuthError(f"unknown profile settings: {', '.join(sorted(unknown))}")
+        with self._changing() as data:
+            current = data["settings"].setdefault(check_profile_name(name), {})
+            for key, value in values.items():
+                if value:
+                    current[key] = value
+                else:
+                    current.pop(key, None)
+            if not current:
+                del data["settings"][name]
+            if name not in data["profiles"]:
+                data["profiles"].append(name)
+                if data["default"] not in data["profiles"]:
+                    data["default"] = name
+            self._save()
 
     def remove(self, name: str) -> bool:
-        """Forget ``name``; the default moves to the oldest remaining profile."""
-        data = self._load()
-        if name not in data["profiles"]:
-            return False
-        data["profiles"].remove(name)
-        if data["default"] == name:
-            data["default"] = data["profiles"][0] if data["profiles"] else None
-        self._save()
+        """Forget ``name`` and its settings; the default moves to the oldest remaining profile."""
+        with self._changing() as data:
+            if name not in data["profiles"]:
+                return False
+            data["profiles"].remove(name)
+            data["settings"].pop(name, None)
+            if data["default"] == name:
+                data["default"] = data["profiles"][0] if data["profiles"] else None
+            self._save()
         return True
 
     def unknown(self, name: str) -> AuthError:
@@ -154,11 +235,18 @@ class ProfileStore:
     For the ``default`` profile, data under the unscoped key (saved before profiles
     existed) is moved to the scoped key when first read, and removed on save and
     delete. Saving registers the profile through ``on_save``.
+
+    With a ``site`` (``""`` when none was chosen), each saved record names the site it
+    was saved for, and a record saved for another site loads as nothing: a credential
+    is never sent to a site it was not entered for, whichever backend or settings file
+    is in use. A record saved with no site chosen loads only where none is configured
+    either. Records from before sites were recorded load anywhere.
     """
 
     inner: TokenStore
     profile: str
     on_save: Callable[[str], Any] | None = field(default=None, repr=False)
+    site: str | None = None
 
     @property
     def location(self) -> str:
@@ -179,7 +267,18 @@ class ProfileStore:
         return store_location(self.inner, self.scoped(key))
 
     def load(self, key: str) -> dict[str, Any] | None:
-        """Return the stored data for ``key`` in this profile."""
+        """Return the stored data for ``key`` in this profile, if saved for this site."""
+        data = self.stored(key)
+        if data is None or SITE not in data:
+            return data
+        data = dict(data)
+        site = data.pop(SITE)
+        if self.site is not None and not same_site(str(site), self.site):
+            return None
+        return data
+
+    def stored(self, key: str) -> dict[str, Any] | None:
+        """Return the stored record for ``key`` whatever site it belongs to."""
         data = self.inner.load(self.scoped(key))
         if data is not None or not self.legacy:
             return data
@@ -191,7 +290,9 @@ class ProfileStore:
         return data
 
     def save(self, key: str, data: dict[str, Any]) -> None:
-        """Store ``data`` under ``key`` in this profile."""
+        """Store ``data`` under ``key`` in this profile, bound to the site when known."""
+        if self.site is not None:
+            data = {**data, SITE: self.site}
         self.inner.save(self.scoped(key), data)
         if self.legacy:
             self.inner.delete(key)
@@ -209,6 +310,23 @@ class ProfileStore:
             self.on_save(self.profile)
 
 
+SITE = "codapact_site"
+"""The record field naming the site a saved credential belongs to."""
+
+
+def same_site(first: str, second: str) -> bool:
+    """Whether two base URLs reach the same place (case of scheme and host, trailing ``/``).
+
+    A query (a GraphQL endpoint's tenant, say) is part of the site.
+    """
+
+    def key(url: str) -> tuple[str, str, str, str]:
+        parts = urlsplit(url.strip())
+        return parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), parts.query
+
+    return key(first) == key(second)
+
+
 def profiles_path(program: str, environ: dict[str, str] | Any) -> Path:
     """``$XDG_CONFIG_HOME/<program>/profiles.json``."""
     root = environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
@@ -217,7 +335,12 @@ def profiles_path(program: str, environ: dict[str, str] | Any) -> Path:
 
 __all__ = [
     "DEFAULT_PROFILE",
+    "PROFILE_SETTINGS",
+    "setting_allowed",
+    "username_key",
     "ProfileIndex",
+    "SITE",
+    "same_site",
     "ProfileStore",
     "check_profile_name",
     "profiles_path",

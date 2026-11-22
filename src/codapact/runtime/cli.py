@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import getpass
 import importlib.metadata
 import io
 import json
@@ -326,6 +327,24 @@ class CliRuntime:
     """``package.module:factory`` CLI extensions (``cli.extensions``): extra global options,
     call hooks, and ``describe`` notes; see ``codapact.runtime.extensions``."""
 
+    @staticmethod
+    def secret_prompt(label: str) -> str:
+        """Ask for a secret on the terminal without echoing it."""
+        try:
+            return getpass.getpass(label, stream=sys.stderr)
+        except EOFError:
+            raise AuthError("input ended before an answer; nothing was changed") from None
+
+    @staticmethod
+    def prompt(label: str) -> str:
+        """Ask for a value on the terminal (the label goes to stderr, like ``getpass``)."""
+        sys.stderr.write(label)
+        sys.stderr.flush()
+        line = sys.stdin.readline()
+        if not line:  # end of input is no answer: change nothing
+            raise AuthError("input ended before an answer; nothing was changed")
+        return line.rstrip("\n")
+
     def loaded_extensions(self) -> list[Any]:
         """Return the CLI extension objects (built afresh on each call)."""
         return [load_extension(spec, self) for spec in self.extensions]
@@ -626,9 +645,13 @@ class CliRuntime:
         file_settings = self._file_settings(getattr(args, "config", None))
         options: dict[str, Any] = {}
         sources: dict[str, str] = {}
+        profile, profile_source = self.profile(args, file_settings)
+        saved = self.profiles().settings(profile)
         base_url, sources["base_url"] = self._setting(args, file_settings, "base_url")
+        if sources["base_url"] in ("settings file", "default") and saved.get("base_url"):
+            base_url, sources["base_url"] = saved["base_url"], f"profile {profile}"
         if base_url:
-            options["base_url"] = str(base_url)
+            options["base_url"] = _site_url(str(base_url))
         else:
             sources["base_url"] = "contract"
         timeout, sources["timeout"] = self._setting(args, file_settings, "timeout")
@@ -658,9 +681,15 @@ class CliRuntime:
         plugin, sources["auth_plugin"] = self._setting(args, file_settings, "auth_plugin")
         if not plugin and self.auth_plugin:
             plugin, sources["auth_plugin"] = self.auth_plugin, "generated default"
-        profile, source = self.profile(args, file_settings)
-        sources["profile"] = f"{profile} (from {source})"
-        options["auth"] = self.credentials(options, file_settings, str(plugin or ""), profile)
+        sources["profile"] = f"{profile} (from {profile_source})"
+        usernames = {
+            key.removeprefix("username."): value
+            for key, value in saved.items()
+            if key.startswith("username.")
+        }
+        options["auth"] = self.credentials(
+            options, file_settings, str(plugin or ""), profile, usernames
+        )
         return options, sources
 
     def profiles(self) -> ProfileIndex:
@@ -682,14 +711,15 @@ class CliRuntime:
             raise index.unknown(name)
         return name, source
 
-    def credential_store(self, profile: str | None = None) -> TokenStore:
+    def credential_store(self, profile: str | None = None, site: str | None = None) -> TokenStore:
         """Return where ``auth login`` saves secrets for ``profile`` (default: the default).
 
-        The OS keyring or a 0600 file, with keys scoped to the profile.
+        The OS keyring or a 0600 file, with keys scoped to the profile; with a ``site``
+        (``""``: none configured), only records saved for that site load.
         """
         index = self.profiles()
         inner = default_store(self.program, self.env, self.env_prefix, self.previous_programs)
-        return ProfileStore(inner, profile or index.default, on_save=index.add)
+        return ProfileStore(inner, profile or index.default, on_save=index.add, site=site)
 
     @staticmethod
     def _auth_http(options: Mapping[str, Any]) -> SafeHttpClient:
@@ -705,8 +735,14 @@ class CliRuntime:
         file_settings: Mapping[str, Any],
         plugin: str = "",
         profile: str | None = None,
+        usernames: Mapping[str, str] | None = None,
     ) -> ChainAuth:
-        """Build the credential chain: plugin, env, command, OAuth client, saved login."""
+        """Build the credential chain: plugin, env, command, OAuth client, saved login.
+
+        ``usernames`` are the profile's per-scheme usernames (pre-filled on browser
+        sign-in pages). On a terminal, a basic login saved without its password asks for
+        it when a request needs it.
+        """
         configured: dict[str, Mapping[str, Any]] = dict(self.auth_config or {})
         file_auth = file_settings.get("auth") or {}
         if not isinstance(file_auth, Mapping):
@@ -718,18 +754,20 @@ class CliRuntime:
         if self.model is None and plugin:
             raise CodapactError("auth plugins need the generated model; regenerate the CLI")
         api = self.model() if self.model is not None else Api(self.api_name, "", ())
+        contract = api.servers[0].url if api.servers else ""
+        transport = str(options.get("base_url") or contract or "")
         return build_cli_auth(
             api,
             program=self.program,
             prefix=self.env_prefix,
             environ=self.env,
-            store=self.credential_store(profile),
+            store=self.credential_store(profile, transport),  # bound to where requests go
             http=self._auth_http(options),
             plugin=plugin or None,
             configured=configured,
-            base_url=str(
-                options.get("base_url") or (api.servers[0].url if api.servers else "") or ""
-            ),
+            base_url=transport,
+            usernames=usernames,
+            ask=self.secret_prompt if _interactive() else None,
         )
 
     def settings(self, args: argparse.Namespace) -> dict[str, Any]:
@@ -1042,20 +1080,30 @@ class CliRuntime:
             _error_format.reset(token)
 
     def _auth(self, args: argparse.Namespace, api: Api, fmt: str, out: TextIO, err: TextIO) -> int:
-        options, _ = self.resolve(args)
+        options, sources = self.resolve(args)
         chain = options["auth"]
-        profile, _ = self.profile(args, self._file_settings(getattr(args, "config", None)))
+        file_settings = self._file_settings(getattr(args, "config", None))
+        profile, _ = self.profile(args, file_settings)
+        interactive = _interactive()
+        contract = api.servers[0].url if api.servers else ""
         commands = cli_auth.AuthCommands(
             program=self.program,
             prefix=self.env_prefix,
             api=api,
             chain=chain,
-            store=self.credential_store(profile),
+            store=self.credential_store(profile, str(options.get("base_url") or contract)),
             profiles=self.profiles(),
             http=self._auth_http(options),
             environ=self.env,
             configured=self.auth_config or {},
             err=err,
+            prompt=self.prompt if interactive else input,
+            secret_prompt=self.secret_prompt,
+            interactive=interactive,
+            contract_url=contract,
+            base_url_source=sources.get("base_url", ""),
+            fallback_base_url=str(file_settings.get("base_url") or contract),
+            base_url=str(options.get("base_url") or contract),
         )
         try:
             if args.auth_action == "token":
@@ -1122,7 +1170,9 @@ class CliRuntime:
             elif scheme.kind is AuthKind.BASIC:
                 entry["environment"] = [f"{variable}_USERNAME", f"{variable}_PASSWORD"]
                 entry["login"] = login
-                entry["login_stdin"] = f"{login} --username USER --with-token"
+                keeps = (self.auth_config or {}).get(scheme.name, {}).get("save_secret")
+                opt_in = " --save-secret" if keeps is False else ""
+                entry["login_stdin"] = f"{login} --username USER --with-token{opt_in}"
             else:
                 entry["environment"] = [variable, f"{variable}_COMMAND"]
                 entry["login"] = login
@@ -1454,6 +1504,20 @@ class Trace:
         size = len(response.body)
         print(f"< {response.status} ({size} bytes, {elapsed:.0f} ms)", file=self.stream)
         return response
+
+
+def _site_url(url: str) -> str:
+    """``site.example/`` → ``https://site.example``, as ``auth login`` saves it."""
+    url = url.strip().rstrip("/")
+    return url if "://" in url else "https://" + url
+
+
+def _interactive() -> bool:
+    """Whether a person can answer prompts: stdin and stderr are both terminals."""
+    try:
+        return sys.stdin.isatty() and sys.stderr.isatty()
+    except (AttributeError, ValueError):  # replaced or closed streams
+        return False
 
 
 def _global_options(parser: argparse.ArgumentParser) -> list[dict[str, Any]]:

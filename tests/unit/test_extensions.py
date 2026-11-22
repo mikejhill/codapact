@@ -568,7 +568,16 @@ def _commands(tmp_path: Path, store: Any, fake: FakeBrowser) -> tuple[AuthComman
             provider.capture = fake
     err = io.StringIO()
     commands = AuthCommands(
-        "acme", "ACME", api, chain, store, FakeTransport(_echo), environ, SETTINGS, err=err
+        "acme",
+        "ACME",
+        api,
+        chain,
+        store,
+        FakeTransport(_echo),
+        environ,
+        SETTINGS,
+        err=err,
+        fallback_base_url=SITE,  # what the CLI resolves without a profile
     )
     return commands, environ
 

@@ -494,6 +494,24 @@ example `codapact:ynab:default:bearer` in Windows Credential Manager), otherwise
 existed (keyring service `<program>` before 0.6.1, `codapact:<program>:<scheme>` in 0.6.1)
 belong to the `default` profile and move to its name the first time they are read.
 
+Each saved login records the site (base URL) it was entered for, and a command for another
+site does not use it, whichever store or settings file is in effect: changing `base_url`
+in the settings file, or switching between the keyring and the file, never sends a saved
+credential to a site it was not entered for. Sites compare without case in the scheme and
+host and without a trailing `/`; a different path is a different site. A login saved while
+no site was chosen (a placeholder server and no `--base-url`) is bound to the URL requests
+actually went to. A site change asks before replacing logins saved for another site (by the
+site each records) and forgets them only once the new login has worked. Logins saved before 0.14 have no site and are used as before until the next
+`auth login`. A value too large for
+one keyring entry (Windows allows 2,560 bytes, which browser session cookies exceed) is
+split across entries `<key>#<generation>.<n>`; the previous value stays readable until the
+new one is complete, old parts that cannot be removed stay listed until a later save or
+`auth logout` removes them, and commands take `~/.cache/codapact/locks/<service>.lock` while
+they read or write (without one if that folder cannot be written). The Windows backend keeps an overwritten value as `<user>@<service>`;
+that copy is removed once the new value is written (so opting out of a saved password really
+removes it). Logins written by earlier versions may have left such copies: `auth logout`
+removes them.
+
 ### Profiles
 
 Several saved logins per CLI: different accounts, or tokens with different access levels.
@@ -503,7 +521,7 @@ Several saved logins per CLI: different accounts, or tokens with different acces
 | First login | `auth login` saves to profile `default`, which becomes the default |
 | Another login, named automatically | `auth login --new` (`profile-2`, `profile-3`, …) |
 | Another login, named by you | `auth login --profile work` (creates `work`, or replaces its login) |
-| List | `auth profiles`: name, whether it is the default, which schemes are saved |
+| List | `auth profiles`: name, whether it is the default, which schemes are saved, base URL, username |
 | Change the default | `auth use work` |
 | Use one for a single command | `--profile work` on any command, or `<PREFIX>_PROFILE=work` |
 | Remove | `auth logout --profile work` (without `--scheme` it also forgets the profile) |
@@ -511,9 +529,57 @@ Several saved logins per CLI: different accounts, or tokens with different acces
 Selection order: `--profile`, `<PREFIX>_PROFILE`, the settings file's `profile`, the default
 set by `auth use` (stored in `$XDG_CONFIG_HOME/<program>/profiles.json`, no secrets), then
 `default`. Naming a profile that does not exist fails, except for `auth login`, which creates
-it. Profiles scope saved logins only: `<PREFIX>_<SCHEME>` variables, credential commands and
-OAuth client settings still come first. `auth status` and `doctor` show the profile in use and
-the exact keyring entry or file key a saved login came from.
+it. `<PREFIX>_<SCHEME>` variables, credential commands and OAuth client settings still come
+before a profile's saved login. `auth status` and `doctor` show the profile in use and the
+exact keyring entry or file key a saved login came from.
+
+Each profile also keeps non-secret settings in `profiles.json`: `base_url`, the `scheme` it
+last signed in with, and per scheme the username (`username.<scheme>`). `auth login` saves
+them, merging into the file as it is on disk so a login in another terminal is not lost. Commands read the base URL in this
+order: `--base-url`, `<PREFIX>_BASE_URL`, the profile, the settings file, the contract
+(`doctor` names the source, e.g. `profile work`).
+
+#### `auth login` on a terminal
+
+With stdin and stderr both terminals, `auth login` asks for what the command line leaves out:
+
+1. **Base URL**, when the contract's server is a placeholder (`{site}`, `your-domain.…`),
+   relative or missing and no URL is configured, or the profile already has one. `site.example` becomes `https://site.example`; a URL
+   with a user name, password, query or fragment is refused, from the prompt, `--base-url`
+   or `<PREFIX>_BASE_URL` alike. The default is the profile's URL, else the settings file's.
+   Skipped when `--base-url` or `<PREFIX>_BASE_URL` is set. The site a login used is saved
+   in the profile, so a later change to the settings file does not move it. Moving a profile with saved logins to another site asks first
+   and forgets them (without a terminal it refuses): use `auth login --new` for a second
+   site.
+2. **Scheme**, from a numbered list showing each `cli.auth.<scheme>.docs` in full,
+   wrapped to the terminal. Skipped with `--scheme` or when there is only one.
+3. **The scheme's own prompts.** Basic asks for the username, then whether to save the
+   password; a browser scheme asks for a username to fill in on the sign-in page (optional).
+
+Saved values are the defaults next time (`[shown in brackets]`; press Enter to keep). Without
+a terminal, `auth login` behaves as before: `--scheme` is required when there are several.
+
+#### Keeping a password out of the keyring
+
+On a terminal, a basic login asks whether to save the password, and the default answer is No
+(it may be a directory or identity-provider password); `cli.auth.<scheme>.save_secret: true`
+in `codapact.yaml` makes Yes the default, for schemes whose secret is an API token. Scripts
+(no terminal, or `--with-token`) save it unless `save_secret: false`. `auth login
+--no-save-secret` (or answering `n`) saves only the username for a basic scheme, replacing
+any password saved before; the username belongs to that scheme alone. Later commands then take the password from
+`<PREFIX>_<SCHEME>_PASSWORD` or, on a terminal, ask for it (hidden) the first time a request
+needs it, and keep it in memory for that process only, exactly as typed. `auth token
+--scheme NAME` asks too. Without a terminal or the variable the
+command exits 3 and says so. `auth status` shows `saved username NAME (password asked when
+needed)`. `auth logout --scheme NAME` forgets that scheme's username too. Declared `fields` are always
+saved; `--save-secret` does not apply to them.
+
+Browser schemes never store a password: the identity provider's own session lives in the
+per-profile browser directory. The scheme's saved username is typed into the first empty
+username or email box of each sign-in page, never over what you typed, and only on trusted
+pages: the login page's host, the cookie domain, and the scheme's `signin_hosts`, over
+HTTPS (plain HTTP only for the login URL's own origin, for a local app). Nothing else is trusted, so for an external identity provider (Okta, Entra ID…) add
+its host to `signin_hosts` to have the username filled there.
 
 Libraries take the same objects directly:
 

@@ -20,10 +20,12 @@ from ``OAuth2.login()`` unless ``interactive=True``; a CLI runs them from
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import http.server
 import json
 import os
+import re
 import secrets
 import sys
 import tempfile
@@ -42,6 +44,7 @@ from codapact.model.api import AuthScheme, OAuthFlowKind
 from codapact.runtime.abstractions import Transport
 from codapact.runtime.auth import with_headers
 from codapact.runtime.errors import AuthError
+from codapact.runtime.locking import locked
 
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
 Notify = Callable[[str], None]
@@ -230,12 +233,21 @@ class KeyringTokenStore:
     user name ``<key>``): an entry found only there is moved to the new name the
     first time it is read, and ``save``/``delete`` remove the old entry too.
 
+    Windows Credential Manager holds at most 2560 bytes per entry, so a value longer
+    than ``KEYRING_CHUNK`` characters (a browser session's cookies) is split over
+    entries ``<key>#<generation>.1``, ``.2``, … with a manifest under ``<key>``.
+
+    The Windows backend keeps an overwritten value as ``<user>@<service>``; that copy is
+    removed once the new value is written. With ``lock_path``, reads and writes hold
+    that file's lock, so commands refreshing the same login never interleave.
+
     Needs the optional ``keyring`` package.
     """
 
     service: str
     backend: Any = None
     legacy_service: str | None = None
+    lock_path: Path | None = None
 
     @property
     def location(self) -> str:
@@ -259,32 +271,157 @@ class KeyringTokenStore:
             raise AuthError("the keyring credential store needs the 'keyring' package") from None
         return keyring
 
+    def _guard(self) -> contextlib.AbstractContextManager[Any]:
+        return locked(self.lock_path) if self.lock_path else contextlib.nullcontext()
+
     def load(self, key: str) -> dict[str, Any] | None:
         """Return the stored data for ``key``, moving a legacy entry to its new name."""
+        with self._guard():
+            return self._load(key)
+
+    def _load(self, key: str) -> dict[str, Any] | None:
         backend = self._keyring()
-        data = _decode(backend.get_password(self.entry(key), key))
+        data = self._read(backend, key)
         if data is not None or not self.legacy_service:
             return data
         data = _decode(backend.get_password(self.legacy_service, key))
         if data is not None:
-            backend.set_password(self.entry(key), key, json.dumps(data, sort_keys=True))
+            self._write(backend, key, data)
             self._drop_legacy(backend, key)
         return data
 
     def save(self, key: str, data: dict[str, Any]) -> None:
         """Store ``data`` under ``key``."""
         backend = self._keyring()
-        backend.set_password(self.entry(key), key, json.dumps(data, sort_keys=True))
+        try:
+            with self._guard():
+                self._write(backend, key, data)
+        except Exception as error:  # noqa: BLE001 - every backend raises its own types
+            raise AuthError(
+                f"could not save {key!r} in the keyring ({type(error).__name__}: {error}); "
+                "set the CLI's <PREFIX>_CREDENTIAL_STORE=file to use a file instead"
+            ) from None
         self._drop_legacy(backend, key)
 
     def delete(self, key: str) -> bool:
-        """Remove ``key`` (and any legacy entry for it)."""
-        backend = self._keyring()
-        removed = self._drop_legacy(backend, key)
-        if backend.get_password(self.entry(key), key) is not None:
-            backend.delete_password(self.entry(key), key)
-            removed = True
-        return removed
+        """Remove ``key`` (and any legacy entry for it).
+
+        A part that cannot be removed fails the call and keeps the manifest, so a retry
+        still finds every part.
+        """
+        with self._guard():
+            backend = self._keyring()
+            removed = self._drop_legacy(backend, key)
+            raw = backend.get_password(self.entry(key), key)
+            if raw is not None:
+                manifest = _manifest(raw)
+                try:
+                    for generation in manifest.generations if manifest else ():
+                        self._drop_parts(backend, key, generation, strict=True)
+                except Exception as error:  # noqa: BLE001 - every backend raises its own types
+                    raise AuthError(
+                        f"could not remove every part of {key!r} from the keyring "
+                        f"({type(error).__name__}: {error}); run the command again"
+                    ) from None
+                backend.delete_password(self.entry(key), key)
+                removed = True
+            return removed
+
+    def _put(self, backend: Any, service: str, user: str, value: str) -> None:
+        """Write one entry, then remove the copy of its old value some backends keep.
+
+        Windows' backend first saves the previous value as ``<user>@<service>``; it is
+        removed only once the new value is written, so a failed write loses nothing.
+        """
+        backend.set_password(service, user, value)
+        copy = f"{user}@{service}"
+        try:
+            found = backend.get_password(copy, user) is not None
+        except Exception:  # noqa: BLE001 - other backends never make such a copy
+            found = False
+        if found:
+            try:
+                backend.delete_password(copy, user)
+            except Exception as error:  # noqa: BLE001 - every backend raises its own types
+                raise CopyLeftError(
+                    f"saved, but could not remove the previous value's copy {copy!r} from the "
+                    f"keyring ({type(error).__name__}); delete it in the credential manager"
+                ) from None
+
+    def _part(self, key: str, generation: str, n: int) -> tuple[str, str]:
+        name = f"{key}#{generation}.{n}" if generation else f"{key}#{n}"
+        return self.entry(name), name
+
+    def _read(self, backend: Any, key: str) -> dict[str, Any] | None:
+        raw = backend.get_password(self.entry(key), key)
+        manifest = _manifest(raw)
+        if manifest is None:
+            return _decode(raw)
+        count, generation = manifest.current
+        parts = [backend.get_password(*self._part(key, generation, n)) for n in range(1, count + 1)]
+        if any(part is None for part in parts):
+            return None  # a half-written value is no credential
+        return _decode("".join(str(part) for part in parts))
+
+    def _write(self, backend: Any, key: str, data: dict[str, Any]) -> None:
+        """Write ``data``; a split value's parts go under a new generation, published last.
+
+        Until the new manifest replaces the old one, readers see the previous value whole;
+        a failed write removes the parts it wrote. Old parts that cannot be removed stay
+        listed in the manifest, so a later save or ``delete`` removes them.
+        """
+        old = _manifest(backend.get_password(self.entry(key), key))
+        text = json.dumps(data, sort_keys=True)
+        if len(text) > KEYRING_CHUNK:
+            text = json.dumps(data, sort_keys=True, separators=(",", ":"))
+        parts = [text[i : i + KEYRING_CHUNK] for i in range(0, len(text), KEYRING_CHUNK)]
+        if len(parts) > MAX_CHUNKS:
+            raise ValueError(f"the value is too large ({len(text)} characters)")
+        current: tuple[int, str] | None = None
+        if len(parts) <= 1 and old is None:
+            self._put(backend, self.entry(key), key, text)
+        else:
+            current = (len(parts), secrets.token_hex(4))
+            try:
+                for n, part in enumerate(parts, start=1):
+                    self._put(backend, *self._part(key, current[1], n), part)
+                self._publish(backend, key, current, old.generations if old else ())
+            except CopyLeftError:
+                raise  # the manifest was written: its parts are live, old ones listed
+            except BaseException:  # Ctrl-C too: never leave unlisted parts behind
+                self._drop_parts(backend, key, current)
+                raise
+        stuck = []
+        for generation in old.generations if old else ():
+            try:
+                self._drop_parts(backend, key, generation, strict=True)
+            except Exception:  # noqa: BLE001 - kept in the manifest for the next attempt
+                stuck.append(generation)
+        if current is not None and old is not None and stuck != list(old.generations):
+            with contextlib.suppress(Exception):  # the new value is already readable
+                self._publish(backend, key, current, stuck)
+
+    def _publish(
+        self, backend: Any, key: str, current: tuple[int, str], retired: Sequence[tuple[int, str]]
+    ) -> None:
+        manifest: dict[str, Any] = {CHUNKS: current[0], GENERATION: current[1]}
+        if retired:
+            manifest[RETIRED] = [list(item) for item in retired]
+        self._put(backend, self.entry(key), key, json.dumps(manifest, separators=(",", ":")))
+
+    def _drop_parts(
+        self, backend: Any, key: str, generation: tuple[int, str], strict: bool = False
+    ) -> None:
+        count, name = generation
+        for n in range(1, count + 1):
+            where = self._part(key, name, n)
+            try:
+                if backend.get_password(*where) is not None:
+                    backend.delete_password(*where)
+            except Exception:
+                if strict:
+                    raise
+                continue  # rolling back: never hide the real outcome
 
     def _drop_legacy(self, backend: Any, key: str) -> bool:
         if not self.legacy_service:
@@ -296,6 +433,58 @@ class KeyringTokenStore:
         except Exception:  # noqa: BLE001 - a stale legacy entry must never block the new one
             return False
         return True
+
+
+KEYRING_CHUNK = 1000
+"""Characters per keyring entry: Windows stores UTF-16, at most 2560 bytes per entry."""
+CHUNKS = "codapact_chunks"
+GENERATION = "codapact_generation"
+RETIRED = "codapact_retired"
+MAX_CHUNKS = 1000
+"""At most this many parts: a larger value is refused before any part is written."""
+
+
+class CopyLeftError(AuthError):
+    """A value was saved, but the backup copy of the previous value could not be removed."""
+
+
+@dataclass(frozen=True, slots=True)
+class _Manifest:
+    """Where a split value's parts are: the current generation and any not yet removed."""
+
+    current: tuple[int, str]
+    retired: tuple[tuple[int, str], ...] = ()
+
+    @property
+    def generations(self) -> tuple[tuple[int, str], ...]:
+        return (self.current, *self.retired)
+
+
+def _generation(count: Any, name: Any, minimum: int) -> tuple[int, str] | None:
+    if not isinstance(count, int) or isinstance(count, bool) or not minimum <= count <= MAX_CHUNKS:
+        return None
+    if not isinstance(name, str) or not re.fullmatch(r"[0-9a-f]{0,16}", name):
+        return None
+    return count, name
+
+
+def _manifest(raw: str | None) -> _Manifest | None:
+    """A split value's manifest (``None`` for a value stored whole)."""
+    data = _decode(raw)
+    if data is None or not {CHUNKS} <= set(data) <= {CHUNKS, GENERATION, RETIRED}:
+        return None
+    name = data.get(GENERATION, "")
+    current = _generation(data[CHUNKS], name, 1 if name else 2)
+    retired = data.get(RETIRED, [])
+    if current is None or not isinstance(retired, list):
+        return None
+    old = [
+        _generation(*item, 1) if isinstance(item, list) and len(item) == 2 else None
+        for item in retired
+    ]
+    if any(item is None for item in old):
+        return None
+    return _Manifest(current, tuple(item for item in old if item is not None))
 
 
 def _decode(raw: str | None) -> dict[str, Any] | None:
@@ -382,6 +571,12 @@ def default_store(
     return RenamedStore(current, tuple(_named_store(name, env, choice) for name in previous))
 
 
+def keyring_lock(service: str) -> Path:
+    """The lock file for ``service``: one per user, whatever ``XDG_CONFIG_HOME`` says."""
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", service)
+    return Path.home() / ".cache" / "codapact" / "locks" / f"{name}.lock"
+
+
 def _named_store(program: str, env: Mapping[str, str], choice: str) -> TokenStore:
     root = env.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
     file_store = FileTokenStore(Path(root) / program / "credentials.json")
@@ -389,7 +584,12 @@ def _named_store(program: str, env: Mapping[str, str], choice: str) -> TokenStor
         return file_store
     keyring = _usable_keyring()
     if keyring is not None:
-        return KeyringTokenStore(keyring_service(program), keyring, legacy_service=program)
+        return KeyringTokenStore(
+            keyring_service(program),
+            keyring,
+            legacy_service=program,
+            lock_path=keyring_lock(keyring_service(program)),
+        )
     if choice == "keyring":
         raise AuthError("the keyring credential store needs the 'keyring' package")
     return file_store

@@ -216,6 +216,7 @@ def test_schemes_without_a_browser_are_ignored(tmp_path: Path) -> None:
 
 def test_login_without_a_base_url_is_an_auth_error(tmp_path: Path) -> None:
     commands, _ = _commands(tmp_path, DiskLikeStore(), FakeBrowser())
+    commands.fallback_base_url = ""  # no contract server and no settings file
     for provider in commands.chain.providers:
         if isinstance(provider, BrowserAuth):
             provider.base_url = ""
