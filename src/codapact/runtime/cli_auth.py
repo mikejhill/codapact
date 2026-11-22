@@ -82,7 +82,7 @@ from codapact.runtime.profiles import (
     username_key,
 )
 
-ACTIONS = ("login", "logout", "status", "token", "profiles", "use")
+ACTIONS = ("login", "logout", "status", "token", "renew", "profiles", "use")
 PLACEHOLDER_HOST = re.compile(r"\{|(^|[.-])your[-_.]")
 """A server URL a person must replace: ``{site}``, ``your-domain.…``.
 
@@ -150,6 +150,14 @@ def add_auth_commands(
     status = actions.add_parser("status", help="show where each credential comes from")
     token = actions.add_parser("token", help="print the credential a command would send")
     token.add_argument("--scheme", help="credential scheme (default: the only one)")
+    renew = actions.add_parser(
+        "renew",
+        help="renew a browser session now, without a window, showing each step",
+        description="Run the headless renewal a command runs when its browser session has "
+        "expired, and print each step to stderr: the pages visited, what was typed, and "
+        "why it stopped (a 2FA page, a wrong password, a timeout).",
+    )
+    renew.add_argument("--scheme", help="credential scheme (default: the only one)")
     profiles = actions.add_parser(
         "profiles",
         help="list saved-login profiles and the default",
@@ -158,7 +166,7 @@ def add_auth_commands(
     )
     use = actions.add_parser("use", help="make a profile the default")
     use.add_argument("name", metavar="NAME", help="profile name")
-    for parser in (login, logout, status, token, profiles, use):
+    for parser in (login, logout, status, token, renew, profiles, use):
         add_global_options(parser)
         parser.set_defaults(builtin="auth")
 
@@ -205,6 +213,8 @@ class AuthCommands:
             return self.status()
         if action == "logout":
             return self.logout(args.scheme)
+        if action == "renew":
+            return self.renew(args.scheme)
         new = bool(getattr(args, "new", False))
         if new:
             self.store = self._new_profile(getattr(args, "profile", None))
@@ -543,6 +553,35 @@ class AuthCommands:
             rows.append(row)
         return rows
 
+    def renew(self, name: str | None) -> dict[str, Any]:
+        """Renew a browser session now, telling ``err`` each step; fail if it did not work."""
+        saved = self.profiles.settings(self.profile_name)
+        scheme = self._choose_scheme(name, saved)
+        provider = self._browser_auth()
+        if provider is None or not provider.uses_browser(scheme):
+            raise AuthError(f"{scheme.name} does not sign in with a browser")
+        browser = self._browser(scheme, saved.get(username_key(scheme.name)) or None)
+        if browser is None:  # pragma: no cover - uses_browser implies browser settings
+            raise AuthError(f"{scheme.name} has no browser settings")
+        err = self.err
+
+        def show(text: str) -> None:
+            if err is not None:
+                print(f"  {text}", file=err)
+
+        password = browser.paused() or ("saved" if browser.password() else "")
+        show(f"renewing {scheme.name} at {browser.login.login_url}")
+        show(f"saved password: {password or 'none'}")
+        outcome = replace(browser, login=replace(browser.login, trace=show)).renew()
+        if outcome == "unavailable":
+            raise AuthError(
+                f"nothing to renew from: no browser profile or saved password; run "
+                f"{self.program} auth login --scheme {scheme.name}"
+            )
+        if outcome.startswith("failed"):
+            raise AuthError(f"renewal {outcome}")
+        return self._scoped({"scheme": scheme.name, "renewal": outcome})
+
     def _renewal_status(self, scheme: AuthScheme) -> str:
         """Whether the saved password still renews this scheme's session."""
         username = self.profiles.settings(self.profile_name).get(username_key(scheme.name))
@@ -550,6 +589,10 @@ class AuthCommands:
             browser = self._browser(scheme, username or None)
         except AuthError:
             browser = None
+        if browser is not None and browser.paused():
+            return (
+                f"saved password paused after a failed sign-in ({browser.paused()}): run auth login"
+            )
         if browser is not None and browser.password():
             return "saved password, no window needed"
         return "saved password not used (another username or sign-in page): run auth login"

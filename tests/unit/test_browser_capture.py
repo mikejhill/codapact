@@ -668,3 +668,97 @@ def test_password_pages_and_scope(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         sign_in_headless(FormPage("http://acme.example.net/x", "raise"), named, set(), FakeError)
         == "unsafe"
     )
+
+
+def test_capture_traces_each_step(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from codapact.runtime import browser as module
+
+    told: list[str] = []
+    outcomes = iter(["username", "username", "password", "challenge", "bogus"])
+    monkeypatch.setattr(module, "sign_in_headless", lambda *_: next(outcomes, "challenge"))
+    named = replace(LOGIN, username="amy", password="pw", trace=told.append)
+    fake_playwright(monkeypatch, [jar(other="1")], land_on="https://acme.example.net/login?x=1")
+    assert playwright_capture(named, tmp_path / "p", True, 3.2, "chromium") == []
+    assert told[0] == "page https://acme.example.net/login"  # the query is left out
+    assert told[1:4] == [
+        "typed the username and submitted",
+        "typed the password and submitted",
+        "stopped: a one-time-code (2FA) page; run auth login to enter the code",
+    ]
+    assert told[-1] == "gave up after 3 s without the session cookies"
+    told.clear()
+    fake_playwright(monkeypatch, [jar(other="1")], land_on="https://elsewhere.test/")
+    playwright_capture(named, tmp_path / "p", True, 0.6, "chromium")
+    assert "not a trusted sign-in page: nothing typed (see signin_hosts)" in told
+    told.clear()
+    fake_playwright(monkeypatch, [jar(tenant_session_token="abc")])
+    playwright_capture(named, tmp_path / "p", True, 3.0, "chromium")
+    assert told[-1] == "signed in: got the session cookies"
+    playwright_capture(LOGIN, tmp_path / "p", True, 3.0, "chromium")  # no trace: silent
+
+
+def test_guard_tells_the_trace_what_it_blocked() -> None:
+    told: list[str] = []
+    login = replace(
+        BrowserLogin(SITE + "/", ("t",), domain="acme.example.net", username="amy"),
+        password="pw",
+        trace=told.append,
+    )
+    context = FakeContext([[]], SITE, False)
+    guard_password(context, login)
+    (handle,) = context.routes
+    handle(FakeRoute("https://evil.test/x?p=pw", None, "GET"))
+    handle(FakeRoute("https://evil.test/x", b"p=pw"))
+    handle(FakeRoute(SITE + "/s", b"p=pw", status=307, location="https://evil.test/y"))
+    assert told == [
+        "blocked a request carrying the password to evil.test",
+        "blocked a request carrying the password to evil.test",
+        "blocked a redirect resending the password to evil.test",
+    ]
+
+
+def test_renew_reports_and_pauses_a_failed_password(tmp_path: Path) -> None:
+    store = DiskLikeStore()
+    script: list[Any] = []
+    told: list[str] = []
+
+    def capture(login: BrowserLogin, *args: Any) -> list[dict[str, Any]]:
+        step = script.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        for text in step[0]:
+            if login.trace is not None:
+                login.trace(text)
+        return step[1]
+
+    auth = _browser_auth(store, tmp_path, FakeBrowser())
+    auth.capture = capture
+    auth.usernames = {"session": "amy"}
+    session = auth.session(SESSION)
+    assert session is not None
+    assert session.renew() == "unavailable"
+    session.save(jar(tenant_session_token="old"))
+    session.save_password("pw")
+    session.login = replace(session.login, trace=told.append)
+    script.append(([], jar(tenant_session_token="old")))
+    assert session.renew() == "unchanged"
+    script.append(AuthError("could not start a browser (x)"))
+    assert session.renew() == "failed: could not start a browser (x)"
+    script.append(([], []))
+    assert session.renew() == "failed: no session cookies"
+    script.append((["typed the username and submitted"], []))
+    assert session.renew() == "failed: typed the username and submitted"
+    assert session.paused() == ""  # no password went out: nothing to pause
+    stop = "stopped: a one-time-code (2FA) page; run auth login to enter the code"
+    script.append((["typed the password and submitted", stop], []))
+    assert session.renew() == f"failed: {stop}"
+    assert told[-1] == stop  # the caller's trace saw every step
+    assert session.paused() == stop and session.password() == ""
+    assert session.renew() == "unavailable" or script == []  # not typed again
+    session.save_password("new")  # the next auth login saves a new one
+    assert session.paused() == "" and session.password() == "new"
+    script.append((["typed the password and submitted"], jar(tenant_session_token="new")))
+    assert session.renew() == "renewed"
+    session.save_password(None)
+    session._pause_password("x")  # nothing saved: nothing to pause
+    assert session.paused() == ""
