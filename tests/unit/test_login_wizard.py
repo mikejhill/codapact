@@ -670,7 +670,7 @@ def test_keyring_values_too_big_for_one_entry_are_split() -> None:
     assert all(len(v) <= KEYRING_CHUNK for v in backend.items.values())
     manifest = json.loads(backend.items[("codapact:acme:session", "session")])
     assert manifest["codapact_chunks"] == 3
-    generation = manifest["codapact_generation"]
+    assert len(manifest["codapact_generation"]) == 8
     assert store.load("session") == big
     store.save("session", {"type": "browser", "cookies": []})
     assert sorted(k for _, k in backend.items) == ["session"]  # stale parts removed
