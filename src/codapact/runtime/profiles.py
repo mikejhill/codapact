@@ -317,7 +317,8 @@ SITE = "codapact_site"
 def same_site(first: str, second: str) -> bool:
     """Whether two base URLs reach the same place (case of scheme and host, trailing ``/``).
 
-    A query (a GraphQL endpoint's tenant, say) is part of the site."""
+    A query (a GraphQL endpoint's tenant, say) is part of the site.
+    """
 
     def key(url: str) -> tuple[str, str, str, str]:
         parts = urlsplit(url.strip())
