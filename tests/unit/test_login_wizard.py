@@ -650,7 +650,8 @@ def test_keyring_values_too_big_for_one_entry_are_split() -> None:
     store.save("session", big)
     del backend.items[("codapact:acme:session#2", "session#2")]
     assert store.load("session") is None  # half-written: no credential
-    assert store.delete("session") is True
+    deleted = store.delete("session")
+    assert deleted is True
     assert backend.items == {}
     backend.items[("codapact:acme:x", "x")] = '{"codapact_chunks": 1}'
     assert store.load("x") == {"codapact_chunks": 1}  # one part is never a split value
