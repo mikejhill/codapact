@@ -1337,3 +1337,32 @@ def test_auth_renew_shows_each_step(tmp_path: Path) -> None:
     other.base_url = "https://a.test"
     with pytest.raises(AuthError, match="nothing to renew from"):
         empty.run(argparse.Namespace(auth_action="renew", scheme="session"))
+
+
+def test_auth_renew_stays_on_the_profile_site_and_quiet_for_json(tmp_path: Path) -> None:
+    from tests.unit.test_extensions import DiskLikeStore
+
+    auth, _, inner, index = browser_wizard(
+        ["https://a.test", "2", "amy", "y", "pw"], tmp_path, inner=DiskLikeStore()
+    )
+    auth.run(login())
+    provider = next(p for p in auth.chain.providers if isinstance(p, BrowserAuth))
+    provider.capture = lambda *_: []
+    provider.base_url = "https://b.test"  # --base-url another tenant
+    renew = argparse.Namespace(auth_action="renew", scheme="session")
+    with pytest.raises(AuthError, match="signs in to https://a.test, not https://b.test"):
+        auth.run(renew)
+    provider.base_url = "https://a.test"
+    auth.show_steps = False  # --error-format json
+    auth.err = io.StringIO()
+    with pytest.raises(AuthError, match="renewal failed"):
+        auth.run(renew)
+    assert auth.err.getvalue() == ""
+    # a same-user login without a terminal or flag keeps the saved password
+    quiet, _, _, _ = browser_wizard([], tmp_path, index=index, inner=inner, interactive=False)
+    quiet_provider = next(p for p in quiet.chain.providers if isinstance(p, BrowserAuth))
+    quiet_provider.capture = lambda *_: [
+        {"name": "sid", "value": "v2", "domain": "a.test", "path": "/"}
+    ]
+    quiet.run(login(scheme="session", base_url="https://a.test"))
+    assert inner.items["default:session"]["renewal_password"] == "pw"

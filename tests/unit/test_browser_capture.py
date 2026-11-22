@@ -518,7 +518,7 @@ def test_headless_sign_in_submits_each_page_step_once() -> None:
     assert sign_in_headless(get_user, login, filled, FakeError) == "username"
     assert len(filled) == 3
     blocked = FormPage("https://id.example.com/9", step("password"))
-    assert sign_in_headless(blocked, login, filled, FakeError) == "done"  # default 3
+    assert sign_in_headless(blocked, login, filled, FakeError) == "limit"  # default 3
     assert blocked.calls == []
     roomy = replace(login, sign_in_attempts=5)
     for n in range(10):
@@ -762,3 +762,60 @@ def test_renew_reports_and_pauses_a_failed_password(tmp_path: Path) -> None:
     session.save_password(None)
     session._pause_password("x")  # nothing saved: nothing to pause
     assert session.paused() == ""
+
+
+def test_shown_urls_leave_out_secrets() -> None:
+    from codapact.runtime.browser import shown_url
+
+    assert shown_url("https://u:p@id.example.com:8443/login?ticket=t#frag") == (
+        "https://id.example.com:8443/login"
+    )
+    assert shown_url("https://id.example.com/") == "https://id.example.com/"
+
+
+def test_renew_keeps_reasons_and_paused_passwords(tmp_path: Path) -> None:
+    store = DiskLikeStore()
+    script: list[Any] = []
+
+    def capture(login: BrowserLogin, *args: Any) -> list[dict[str, Any]]:
+        steps, result = script.pop(0)
+        for text in steps:
+            assert login.trace is not None
+            login.trace(text)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    auth = _browser_auth(store, tmp_path, FakeBrowser())
+    auth.capture = capture
+    auth.usernames = {"session": "amy"}
+    session = auth.session(SESSION)
+    assert session is not None
+    session.save(jar(tenant_session_token="old"))
+    session.save_password("pw")
+    typed = "typed the password and submitted"
+    # the browser failed after the password went out: paused all the same
+    script.append(([typed], AuthError("browser sign-in failed: page closed")))
+    assert session.renew() == "failed: browser sign-in failed: page closed"
+    assert session.paused() == "browser sign-in failed: page closed"
+    # fresh cookies through the identity provider keep the paused password and its reason
+    session.directory.mkdir(parents=True)  # the identity provider's login lives here
+    script.append(([], jar(tenant_session_token="new")))
+    assert session.renew() == "renewed"
+    assert session.paused() == "browser sign-in failed: page closed"
+    # another username: neither its password nor its pause applies
+    auth.usernames = {"session": "bob"}
+    bob = auth.session(SESSION)
+    assert bob is not None and bob.paused() == "" and bob.password() == ""
+    bob.save(jar(tenant_session_token="bob"))  # bob's cookies do not carry amy's password
+    assert "renewal_password" not in (store.load("session") or {})
+    # the specific stop wins over the timeout that follows it
+    session.save(jar(tenant_session_token="old"))
+    session.save_password("pw")
+    stop = "stopped: a one-time-code (2FA) page; run auth login to enter the code"
+    script.append(([typed, stop, "gave up after 45 s without the session cookies"], []))
+    assert session.renew() == f"failed: {stop}"
+    assert session.paused() == stop
+    script.append((["page https://x.test/"], []))
+    session.save_password("pw")
+    assert session.renew() == "failed: page https://x.test/"

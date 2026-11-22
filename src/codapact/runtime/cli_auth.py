@@ -54,7 +54,7 @@ from codapact.core.net import validate_url
 from codapact.model.api import Api, AuthKind, AuthScheme, OAuthFlowKind
 from codapact.runtime.abstractions import Credential, Transport
 from codapact.runtime.auth import ChainAuth
-from codapact.runtime.browser import RENEWAL_PASSWORD, BrowserAuth
+from codapact.runtime.browser import RENEWAL_PASSWORD, BrowserAuth, shown_url
 from codapact.runtime.credentials import (
     AskedPassword,
     credential_fields,
@@ -198,6 +198,8 @@ class AuthCommands:
     """The base URL without any profile: the settings file's, else the contract's."""
     base_url: str = ""
     """The base URL in effect for this command (used when the environment sets it)."""
+    show_steps: bool = True
+    """Whether ``auth renew`` prints each step to ``err`` (not with JSON errors)."""
 
     def run(self, args: argparse.Namespace) -> Any:
         """Return the data to render for ``args.auth_action`` (never a secret)."""
@@ -560,10 +562,18 @@ class AuthCommands:
         provider = self._browser_auth()
         if provider is None or not provider.uses_browser(scheme):
             raise AuthError(f"{scheme.name} does not sign in with a browser")
+        previous = self._known_site(saved)
+        if previous and provider.base_url and not same_site(previous, provider.base_url):
+            # the browser profile belongs to the profile's site: renewing it for another
+            # would replace that site's login
+            raise AuthError(
+                f"profile {self.profile_name} signs in to {previous}, not "
+                f"{provider.base_url}: renew without --base-url, or use --profile"
+            )
         browser = self._browser(scheme, saved.get(username_key(scheme.name)) or None)
         if browser is None:  # pragma: no cover - uses_browser implies browser settings
             raise AuthError(f"{scheme.name} has no browser settings")
-        err = self.err
+        err = self.err if self.show_steps else None
 
         def show(text: str) -> None:
             if err is not None:
@@ -571,7 +581,7 @@ class AuthCommands:
 
         has_secret = bool(browser.password())  # only whether one is saved, never its value
         state = browser.paused() or ("saved" if has_secret else "none")
-        show(f"renewing {scheme.name} at {browser.login.login_url}")
+        show(f"renewing {scheme.name} at {shown_url(browser.login.login_url)}")
         show(f"saved password: {state}")
         outcome = replace(browser, login=replace(browser.login, trace=show)).renew()
         if outcome == "unavailable":

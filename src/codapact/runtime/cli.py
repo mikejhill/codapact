@@ -1104,6 +1104,7 @@ class CliRuntime:
             base_url_source=sources.get("base_url", ""),
             fallback_base_url=str(file_settings.get("base_url") or contract),
             base_url=str(options.get("base_url") or contract),
+            show_steps=_error_format.get() != "json",  # a JSON error stays parseable
         )
         try:
             if args.auth_action == "token":
