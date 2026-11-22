@@ -205,9 +205,10 @@ class AuthCommands:
         saved = self.profiles.settings(self.profile_name)
         destination = self._destination(args, saved, new)
         scheme = self._choose_scheme(args.scheme, saved)  # validated before anything is dropped
+        self._check_options(scheme, args)
         self._guard_site_change(saved, destination)
         if isinstance(self.store, ProfileStore):
-            self.store.site = destination  # each saved record names its site
+            self.store.site = destination  # each record names its site ("" = not chosen)
         remember: dict[str, str] = {}
         if destination:
             remember["base_url"] = destination  # pinned: a settings-file change never moves it
@@ -243,12 +244,13 @@ class AuthCommands:
         """
         flag = getattr(args, "base_url", None)
         current = saved.get("base_url") or self.fallback_base_url
+        current = "" if not current or _placeholder(current) else _normal_url(current)
         if flag:
             url = _normal_url(str(flag))
         elif self.base_url_source.startswith("env"):
             url = _normal_url(self.base_url)
         elif self.interactive and (_placeholder(self.contract_url) or saved.get("base_url")):
-            default = "" if _placeholder(current) else current
+            default = current
             hint = f" (like {self.contract_url})" if not default else ""
             shown = f" [{default}]" if default else ""
             answer = self.prompt(f"Base URL{hint}{shown}: ").strip() or default
@@ -256,7 +258,7 @@ class AuthCommands:
                 raise AuthError("a base URL is required: pass --base-url")
             url = _normal_url(answer)
         else:
-            url = "" if _placeholder(current) else current  # a placeholder: site unknown
+            url = current  # empty when it is still a placeholder: the site is unknown
         browser = self._browser_auth()
         if browser is not None and (url or new):
             browser.base_url = url  # the chain was built before --new or this choice
@@ -281,8 +283,7 @@ class AuthCommands:
         The previous site is the profile's URL, else the one commands used without it; a
         placeholder means it is unknown, which counts as different.
         """
-        previous = saved.get("base_url") or self.fallback_base_url
-        previous = "" if _placeholder(previous) else previous
+        previous = _known(saved.get("base_url") or self.fallback_base_url)
         if previous == url or (previous and url and same_site(previous, url)):
             return
         signed_in = self._signed_in()
@@ -518,16 +519,9 @@ class AuthCommands:
         """
         saved = saved or {}
         remember = remember if remember is not None else {}
-        save_secret = getattr(args, "save_secret", None)
-        if save_secret is not None and scheme.kind is not AuthKind.BASIC:
-            raise AuthError("--save-secret and --no-save-secret apply to basic auth only")
+        self._check_options(scheme, args)
         spec = field_specs(self.configured.get(scheme.name))
         if spec:
-            if save_secret is not None:
-                raise AuthError(
-                    f"{scheme.name} saves declared fields; --save-secret and "
-                    "--no-save-secret do not apply"
-                )
             return self._fields_login(scheme, spec, getattr(args, "field", None) or [])
         key = username_key(scheme.name)
         provider = self._browser_auth()
@@ -584,13 +578,26 @@ class AuthCommands:
             self.store.save(scheme.name, {"type": "token", "secret": secret})
         return {"scheme": scheme.name, "saved": _location(self.store, scheme.name)}
 
+    def _check_options(self, scheme: AuthScheme, args: argparse.Namespace) -> None:
+        """Refuse flags that do not fit ``scheme`` before anything saved is touched."""
+        save_secret = getattr(args, "save_secret", None)
+        spec = field_specs(self.configured.get(scheme.name))
+        if save_secret is not None and scheme.kind is not AuthKind.BASIC:
+            raise AuthError("--save-secret and --no-save-secret apply to basic auth only")
+        if spec and save_secret is not None:
+            raise AuthError(
+                f"{scheme.name} saves declared fields; --save-secret and "
+                "--no-save-secret do not apply"
+            )
+        if getattr(args, "with_token", False) and save_secret is False:
+            raise AuthError("--with-token saves the secret it reads; drop --no-save-secret")
+        _preset_fields(spec, getattr(args, "field", None) or [])
+
     def _save_secret(self, scheme: AuthScheme, args: argparse.Namespace) -> bool:
         """Whether a basic login saves the password: the flag, a question, or the default."""
         chosen = getattr(args, "save_secret", None)
         configured = (self.configured.get(scheme.name) or {}).get("save_secret")
         if args.with_token:
-            if chosen is False:
-                raise AuthError("--with-token saves the secret it reads; drop --no-save-secret")
             if configured is False and chosen is not True:
                 raise AuthError(
                     f"{self.program} does not save {scheme.name} passwords by default: add "
@@ -637,16 +644,7 @@ class AuthCommands:
         self, scheme: AuthScheme, spec: Mapping[str, Mapping[str, Any]], given: list[str]
     ) -> dict[str, Any]:
         """Prompt for every declared field and save them as one credential."""
-        preset: dict[str, str] = {}
-        for item in given:
-            name, sep, value = item.partition("=")
-            if not sep or name not in spec:
-                raise AuthError(f"--field takes NAME=VALUE with NAME one of {', '.join(spec)}")
-            if spec[name].get("secret"):
-                raise AuthError(
-                    f"{name} is secret: enter it at the prompt, not on the command line"
-                )
-            preset[name] = value
+        preset = _preset_fields(spec, given)
         current = credential_fields(scheme.name, spec, self.prefix, {}, self.store)
         values: dict[str, str] = {}
         for name, options in spec.items():
@@ -745,6 +743,24 @@ def _normal_url(text: str) -> str:
     if parts.query:
         raise AuthError("invalid base URL: it must not have a query string")
     return value
+
+
+def _preset_fields(spec: Mapping[str, Mapping[str, Any]], given: list[str]) -> dict[str, str]:
+    """Parse ``--field NAME=VALUE`` options; secret fields are only ever prompted for."""
+    preset: dict[str, str] = {}
+    for item in given:
+        name, sep, value = item.partition("=")
+        if not sep or name not in spec:
+            raise AuthError(f"--field takes NAME=VALUE with NAME one of {', '.join(spec)}")
+        if spec[name].get("secret"):
+            raise AuthError(f"{name} is secret: enter it at the prompt, not on the command line")
+        preset[name] = value
+    return preset
+
+
+def _known(url: str) -> str:
+    """``url`` normalised, or empty when it is missing or a placeholder."""
+    return "" if not url or _placeholder(url) else _normal_url(url)
 
 
 def _placeholder(url: str) -> bool:

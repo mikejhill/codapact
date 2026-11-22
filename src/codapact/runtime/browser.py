@@ -125,15 +125,21 @@ class BrowserLogin:
         """Whether ``url`` is safe to type the username into.
 
         Only the login URL's host, the cookie domain, and the configured ``signin_hosts``
-        (never a guess from the host or path), over HTTPS unless the login URL is HTTP.
+        (never a guess from the host or path), over HTTPS; plain HTTP only for the login
+        URL's own origin when it is HTTP.
         """
         parts = urlsplit(url)
         login = urlsplit(self.login_url)
-        if parts.scheme != "https" and parts.scheme != login.scheme:
-            return False
         host = (parts.hostname or "").lower()
         if not host:
             return False
+        if parts.scheme != "https":
+            # plain HTTP only for the configured login origin itself (a local app)
+            return (
+                parts.scheme == login.scheme == "http"
+                and host == (login.hostname or "").lower()
+                and parts.port == login.port
+            )
         if host in {(login.hostname or "").lower(), self.domain.lower()}:
             return True
         return any(fnmatch.fnmatch(host, pattern.lower()) for pattern in self.signin_hosts)

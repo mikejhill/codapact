@@ -498,11 +498,17 @@ Each saved login records the site (base URL) it was entered for, and a command f
 site does not use it, whichever store or settings file is in effect: changing `base_url`
 in the settings file, or switching between the keyring and the file, never sends a saved
 credential to a site it was not entered for. Sites compare without case in the scheme and
-host and without a trailing `/`; a different path is a different site. Logins saved before
-0.14 have no site and are used as before until the next `auth login`. A value too large for
+host and without a trailing `/`; a different path is a different site. A login saved while
+no site was chosen (a placeholder server and no `--base-url`) is used only while none is
+configured. Logins saved before 0.14 have no site and are used as before until the next
+`auth login`. A value too large for
 one keyring entry (Windows allows 2,560 bytes, which browser session cookies exceed) is
 split across entries `<key>#<generation>.<n>`; the previous value stays readable until the
-new one is complete.
+new one is complete, and commands take `$XDG_CONFIG_HOME/<program>/keyring.lock` while they
+read or write. An entry is deleted before it is written again, because the Windows backend
+otherwise keeps the old value as `<user>@<service>` (so opting out of a saved password really
+removes it). Logins written by earlier versions may have left such copies: `auth logout`
+removes them.
 
 ### Profiles
 
@@ -570,7 +576,7 @@ Browser schemes never store a password: the identity provider's own session live
 per-profile browser directory. The scheme's saved username is typed into the first empty
 username or email box of each sign-in page, never over what you typed, and only on trusted
 pages: the login page's host, the cookie domain, and the scheme's `signin_hosts`, over
-HTTPS. Nothing else is trusted, so for an external identity provider (Okta, Entra ID…) add
+HTTPS (plain HTTP only for the login URL's own origin, for a local app). Nothing else is trusted, so for an external identity provider (Okta, Entra ID…) add
 its host to `signin_hosts` to have the username filled there.
 
 Libraries take the same objects directly:

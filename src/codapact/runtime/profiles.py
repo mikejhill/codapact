@@ -25,7 +25,6 @@ import json
 import os
 import re
 import tempfile
-import time
 from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,6 +32,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from codapact.runtime.errors import AuthError
+from codapact.runtime.locking import locked
 from codapact.runtime.oauth import TokenStore, store_location
 
 DEFAULT_PROFILE = "default"
@@ -117,7 +117,7 @@ class ProfileIndex:
             yield self._load()
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with _locked(self.path.with_name(self.path.name + ".lock")):
+        with locked(self.path.with_name(self.path.name + ".lock")):
             self._data = None
             yield self._load()
 
@@ -236,16 +236,17 @@ class ProfileStore:
     existed) is moved to the scoped key when first read, and removed on save and
     delete. Saving registers the profile through ``on_save``.
 
-    With a ``site``, each saved record names the site it was saved for, and a record
-    saved for another site loads as nothing: a credential is never sent to a site it
-    was not entered for, whichever backend or settings file is in use. Records from
-    before this (no site) load anywhere.
+    With a ``site`` (``""`` when none was chosen), each saved record names the site it
+    was saved for, and a record saved for another site loads as nothing: a credential
+    is never sent to a site it was not entered for, whichever backend or settings file
+    is in use. A record saved with no site chosen loads only where none is configured
+    either. Records from before sites were recorded load anywhere.
     """
 
     inner: TokenStore
     profile: str
     on_save: Callable[[str], Any] | None = field(default=None, repr=False)
-    site: str = ""
+    site: str | None = None
 
     @property
     def location(self) -> str:
@@ -272,7 +273,7 @@ class ProfileStore:
             return data
         data = dict(data)
         site = data.pop(SITE)
-        if self.site and not same_site(str(site), self.site):
+        if self.site is not None and not same_site(str(site), self.site):
             return None
         return data
 
@@ -290,7 +291,7 @@ class ProfileStore:
 
     def save(self, key: str, data: dict[str, Any]) -> None:
         """Store ``data`` under ``key`` in this profile, bound to the site when known."""
-        if self.site:
+        if self.site is not None:
             data = {**data, SITE: self.site}
         self.inner.save(self.scoped(key), data)
         if self.legacy:
@@ -321,41 +322,6 @@ def same_site(first: str, second: str) -> bool:
         return parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/")
 
     return key(first) == key(second)
-
-
-LOCK_TIMEOUT = 10.0
-
-
-@contextlib.contextmanager
-def _locked(path: Path) -> Generator[None]:
-    """Hold an exclusive lock on ``path`` (created if missing) across processes."""
-    with path.open("a+b") as handle:
-        if os.name == "nt":  # pragma: no cover - exercised by the Windows CI job
-            import msvcrt  # noqa: PLC0415
-
-            deadline = time.monotonic() + LOCK_TIMEOUT
-            while True:
-                try:
-                    handle.seek(0)
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                    break
-                except OSError:
-                    if time.monotonic() > deadline:
-                        raise AuthError(f"profiles file is locked: {path}") from None
-                    time.sleep(0.05)
-            try:
-                yield
-            finally:
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl  # noqa: PLC0415
-
-            fcntl.flock(handle, fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def profiles_path(program: str, environ: dict[str, str] | Any) -> Path:

@@ -20,6 +20,7 @@ from ``OAuth2.login()`` unless ``interactive=True``; a CLI runs them from
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import http.server
 import json
@@ -43,6 +44,7 @@ from codapact.model.api import AuthScheme, OAuthFlowKind
 from codapact.runtime.abstractions import Transport
 from codapact.runtime.auth import with_headers
 from codapact.runtime.errors import AuthError
+from codapact.runtime.locking import locked
 
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
 Notify = Callable[[str], None]
@@ -233,7 +235,12 @@ class KeyringTokenStore:
 
     Windows Credential Manager holds at most 2560 bytes per entry, so a value longer
     than ``KEYRING_CHUNK`` characters (a browser session's cookies) is split over
-    entries ``<key>#1``, ``<key>#2``, … with ``{"codapact_chunks": N}`` under ``<key>``.
+    entries ``<key>#<generation>.1``, ``.2``, … with a manifest under ``<key>``.
+
+    An existing entry is deleted before it is written again: the Windows backend
+    otherwise keeps the old value under ``<user>@<service>``. With ``lock_path``,
+    reads and writes hold that file's lock, so commands refreshing the same login never
+    interleave.
 
     Needs the optional ``keyring`` package.
     """
@@ -241,6 +248,7 @@ class KeyringTokenStore:
     service: str
     backend: Any = None
     legacy_service: str | None = None
+    lock_path: Path | None = None
 
     @property
     def location(self) -> str:
@@ -264,8 +272,15 @@ class KeyringTokenStore:
             raise AuthError("the keyring credential store needs the 'keyring' package") from None
         return keyring
 
+    def _guard(self) -> contextlib.AbstractContextManager[Any]:
+        return locked(self.lock_path) if self.lock_path else contextlib.nullcontext()
+
     def load(self, key: str) -> dict[str, Any] | None:
         """Return the stored data for ``key``, moving a legacy entry to its new name."""
+        with self._guard():
+            return self._load(key)
+
+    def _load(self, key: str) -> dict[str, Any] | None:
         backend = self._keyring()
         data = self._read(backend, key)
         if data is not None or not self.legacy_service:
@@ -280,7 +295,8 @@ class KeyringTokenStore:
         """Store ``data`` under ``key``."""
         backend = self._keyring()
         try:
-            self._write(backend, key, data)
+            with self._guard():
+                self._write(backend, key, data)
         except Exception as error:  # noqa: BLE001 - every backend raises its own types
             raise AuthError(
                 f"could not save {key!r} in the keyring ({type(error).__name__}: {error}); "
@@ -289,15 +305,32 @@ class KeyringTokenStore:
         self._drop_legacy(backend, key)
 
     def delete(self, key: str) -> bool:
-        """Remove ``key`` (and any legacy entry for it)."""
-        backend = self._keyring()
-        removed = self._drop_legacy(backend, key)
-        raw = backend.get_password(self.entry(key), key)
-        if raw is not None:
-            self._drop_parts(backend, key, _manifest(raw))
-            backend.delete_password(self.entry(key), key)
-            removed = True
-        return removed
+        """Remove ``key`` (and any legacy entry for it).
+
+        A part that cannot be removed fails the call and keeps the manifest, so a retry
+        still finds every part.
+        """
+        with self._guard():
+            backend = self._keyring()
+            removed = self._drop_legacy(backend, key)
+            raw = backend.get_password(self.entry(key), key)
+            if raw is not None:
+                try:
+                    self._drop_parts(backend, key, _manifest(raw), strict=True)
+                except Exception as error:  # noqa: BLE001 - every backend raises its own types
+                    raise AuthError(
+                        f"could not remove every part of {key!r} from the keyring "
+                        f"({type(error).__name__}: {error}); run the command again"
+                    ) from None
+                backend.delete_password(self.entry(key), key)
+                removed = True
+            return removed
+
+    def _put(self, backend: Any, service: str, user: str, value: str) -> None:
+        """Write one entry, removing any previous value first (see the class notes)."""
+        if backend.get_password(service, user) is not None:
+            backend.delete_password(service, user)
+        backend.set_password(service, user, value)
 
     def _part(self, key: str, generation: str, n: int) -> tuple[str, str]:
         name = f"{key}#{generation}.{n}" if generation else f"{key}#{n}"
@@ -328,22 +361,24 @@ class KeyringTokenStore:
         if len(parts) > MAX_CHUNKS:
             raise ValueError(f"the value is too large ({len(text)} characters)")
         if len(parts) <= 1:
-            backend.set_password(self.entry(key), key, text)
+            self._put(backend, self.entry(key), key, text)
         else:
             generation = secrets.token_hex(4)
             try:
                 for n, part in enumerate(parts, start=1):
-                    backend.set_password(*self._part(key, generation, n), part)
+                    self._put(backend, *self._part(key, generation, n), part)
                 manifest = {CHUNKS: len(parts), GENERATION: generation}
-                backend.set_password(
-                    self.entry(key), key, json.dumps(manifest, separators=(",", ":"))
+                self._put(
+                    backend, self.entry(key), key, json.dumps(manifest, separators=(",", ":"))
                 )
             except Exception:
                 self._drop_parts(backend, key, (len(parts), generation))
                 raise
         self._drop_parts(backend, key, old)
 
-    def _drop_parts(self, backend: Any, key: str, manifest: tuple[int, str] | None) -> None:
+    def _drop_parts(
+        self, backend: Any, key: str, manifest: tuple[int, str] | None, strict: bool = False
+    ) -> None:
         if manifest is None:
             return
         count, generation = manifest
@@ -352,8 +387,10 @@ class KeyringTokenStore:
             try:
                 if backend.get_password(*where) is not None:
                     backend.delete_password(*where)
-            except Exception:  # noqa: BLE001, S112 - cleanup never hides the real outcome
-                continue
+            except Exception:
+                if strict:
+                    raise
+                continue  # rolling back: never hide the real outcome
 
     def _drop_legacy(self, backend: Any, key: str) -> bool:
         if not self.legacy_service:
@@ -479,7 +516,12 @@ def _named_store(program: str, env: Mapping[str, str], choice: str) -> TokenStor
         return file_store
     keyring = _usable_keyring()
     if keyring is not None:
-        return KeyringTokenStore(keyring_service(program), keyring, legacy_service=program)
+        return KeyringTokenStore(
+            keyring_service(program),
+            keyring,
+            legacy_service=program,
+            lock_path=Path(root) / program / "keyring.lock",
+        )
     if choice == "keyring":
         raise AuthError("the keyring credential store needs the 'keyring' package")
     return file_store

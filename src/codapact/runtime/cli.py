@@ -645,7 +645,7 @@ class CliRuntime:
         if sources["base_url"] in ("settings file", "default") and saved.get("base_url"):
             base_url, sources["base_url"] = saved["base_url"], f"profile {profile}"
         if base_url:
-            options["base_url"] = str(base_url)
+            options["base_url"] = _site_url(str(base_url))
         else:
             sources["base_url"] = "contract"
         timeout, sources["timeout"] = self._setting(args, file_settings, "timeout")
@@ -705,11 +705,11 @@ class CliRuntime:
             raise index.unknown(name)
         return name, source
 
-    def credential_store(self, profile: str | None = None, site: str = "") -> TokenStore:
+    def credential_store(self, profile: str | None = None, site: str | None = None) -> TokenStore:
         """Return where ``auth login`` saves secrets for ``profile`` (default: the default).
 
-        The OS keyring or a 0600 file, with keys scoped to the profile; with a ``site``,
-        only records saved for that site load.
+        The OS keyring or a 0600 file, with keys scoped to the profile; with a ``site``
+        (``""``: none configured), only records saved for that site load.
         """
         index = self.profiles()
         inner = default_store(self.program, self.env, self.env_prefix, self.previous_programs)
@@ -1495,6 +1495,12 @@ class Trace:
         size = len(response.body)
         print(f"< {response.status} ({size} bytes, {elapsed:.0f} ms)", file=self.stream)
         return response
+
+
+def _site_url(url: str) -> str:
+    """``site.example/`` → ``https://site.example``, as ``auth login`` saves it."""
+    url = url.strip().rstrip("/")
+    return url if "://" in url else "https://" + url
 
 
 def _interactive() -> bool:

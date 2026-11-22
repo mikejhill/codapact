@@ -321,7 +321,9 @@ def test_without_a_terminal_login_keeps_its_old_behaviour() -> None:
         ["amy"], interactive=False, configured={"basic": {"save_secret": False}}
     )
     assert unsaved.run(login(scheme="basic"))["password"].startswith("not saved")
-    assert inner.items == {"default:basic": {"type": "basic", "username": "amy"}}
+    assert inner.items == {
+        "default:basic": {"type": "basic", "username": "amy", "codapact_site": ""}
+    }
 
 
 def test_save_secret_options() -> None:
@@ -341,7 +343,9 @@ def test_save_secret_options() -> None:
     inner.save("default:basic", {"type": "basic", "username": "amy", "secret": "old"})
     quiet.run(login(scheme="basic", save_secret=False))
     # the old password would otherwise still be sent
-    assert inner.items == {"default:basic": {"type": "basic", "username": "amy"}}
+    assert inner.items == {
+        "default:basic": {"type": "basic", "username": "amy", "codapact_site": ""}
+    }
     fields, _, _, _ = wizard(
         [], interactive=False, configured={"basic": {"fields": {"pin": {"secret": True}}}}
     )
@@ -629,6 +633,10 @@ def test_sign_in_pages_trusted_for_the_username() -> None:
     assert not named.trusted_page("https:///no-host")
     plain = BrowserLogin("http://localhost:8080/", ("sid",), domain="localhost")
     assert plain.trusted_page("http://localhost:8080/sign-in")
+    local = replace(plain, signin_hosts=("idp.test",))
+    assert not local.trusted_page("http://idp.test/")  # an identity provider needs HTTPS
+    assert not local.trusted_page("http://localhost:9090/")  # another origin
+    assert local.trusted_page("https://idp.test/")
     guessed = BrowserLogin("https://app.test/", ("sid",), domain="app.test")
     assert not guessed.trusted_page("https://login.idp.test/")  # only configured hosts
     assert not guessed.trusted_page("https://news.test/login")
@@ -815,3 +823,67 @@ def test_explicit_sites_are_kept_and_compared_loosely() -> None:
     with pytest.raises(AuthError, match="invalid base URL") as caught:
         leaky.run(login(scheme="token"))
     assert "secret" not in str(caught.value)
+
+
+def test_unbound_logins_and_bad_settings_urls() -> None:
+    inner = MemoryTokenStore()
+    ProfileStore(inner, "default", site="").save("token", {"type": "token", "secret": "s"})
+    assert ProfileStore(inner, "default", site="").load("token") is not None
+    assert ProfileStore(inner, "default", site="https://x.test").load("token") is None
+    auth, _, _, _ = wizard(["tok"], interactive=False)
+    auth.fallback_base_url = "https://user:pw@a.test"
+    with pytest.raises(AuthError, match="invalid base URL") as caught:
+        auth.run(login(scheme="token"))
+    assert "pw" not in str(caught.value)
+
+
+def test_flags_are_checked_before_saved_logins_are_dropped() -> None:
+    index = ProfileIndex(None)
+    inner = MemoryTokenStore()
+    wizard(["https://a.test", "2", "tok"], index=index, inner=inner)[0].run(login())
+    moved, _, _, _ = wizard(["y"], index=index, inner=inner)
+    with pytest.raises(AuthError, match="apply to basic auth only"):
+        moved.run(login(scheme="token", base_url="https://b.test", save_secret=False))
+    assert "default:token" in inner.items  # nothing was dropped
+
+
+def test_keyring_rewrites_leave_no_copies_and_logout_is_complete(tmp_path: Path) -> None:
+    from codapact.runtime.oauth import KEYRING_CHUNK, KeyringTokenStore
+    from tests.unit.test_oauth import FakeKeyring
+
+    class WinVault(FakeKeyring):
+        """Like keyring's Windows backend: an overwrite keeps the old value as user@service."""
+
+        @override
+        def set_password(self, service: str, key: str, value: str) -> None:
+            if (service, key) in self.items:
+                self.items[(f"{key}@{service}", key)] = self.items[(service, key)]
+            super().set_password(service, key, value)
+
+        @override
+        def delete_password(self, service: str, key: str) -> None:
+            self.items.pop((f"{key}@{service}", key), None)
+            super().delete_password(service, key)
+
+    vault = WinVault()
+    lock = tmp_path / "acme" / "keyring.lock"
+    store = KeyringTokenStore("codapact:acme", vault, lock_path=lock)
+    store.save("basic", {"type": "basic", "username": "amy", "secret": "pw"})
+    store.save("basic", {"type": "basic", "username": "amy"})  # opting out of the password
+    assert not any("@" in service for service, _ in vault.items)
+    assert "pw" not in json.dumps(list(vault.items.values()))
+    assert store.load("basic") == {"type": "basic", "username": "amy"} and lock.exists()
+
+    class Stubborn(FakeKeyring):
+        @override
+        def delete_password(self, service: str, key: str) -> None:
+            if "#" in key:
+                raise OSError("locked")
+            super().delete_password(service, key)
+
+    stubborn = Stubborn()
+    kept = KeyringTokenStore("codapact:acme", stubborn)
+    kept.save("session", {"v": "x" * (KEYRING_CHUNK * 2)})
+    with pytest.raises(AuthError, match="could not remove every part of 'session'"):
+        kept.delete("session")
+    assert ("codapact:acme:session", "session") in stubborn.items  # a retry finds the parts

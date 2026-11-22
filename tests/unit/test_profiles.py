@@ -228,9 +228,9 @@ def test_login_new_profiles_list_use_and_logout() -> None:
     with pytest.raises(AuthError, match="profile 'ops' already exists"):
         profiled(store, index, ["s4"]).run(args("login", scheme="token", new=True, profile="ops"))
     assert inner.items == {
-        "default:token": {"type": "token", "secret": "s1"},
-        "profile-2:token": {"type": "token", "secret": "s2"},
-        "ops:token": {"type": "token", "secret": "s3"},
+        "default:token": {"type": "token", "secret": "s1", "codapact_site": ""},
+        "profile-2:token": {"type": "token", "secret": "s2", "codapact_site": ""},
+        "ops:token": {"type": "token", "secret": "s3", "codapact_site": ""},
     }
     rows = profiled(store, index).run(args("profiles"))
     assert rows == [
@@ -285,7 +285,7 @@ def test_upgrade_keeps_the_existing_login_as_default() -> None:
     assert added["profile"] == "profile-2"
     assert inner.items == {
         "default:token": {"type": "token", "secret": "old"},
-        "profile-2:token": {"type": "token", "secret": "new"},
+        "profile-2:token": {"type": "token", "secret": "new", "codapact_site": ""},
     }
     assert (index.names, index.default) == (["default", "profile-2"], "default")
 
