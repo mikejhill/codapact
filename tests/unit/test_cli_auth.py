@@ -137,8 +137,9 @@ def test_auth_action_options() -> None:
         ),
         "--save-secret": (
             "save_secret",
-            "basic auth: save the password too (default: ask on a terminal); without it, "
-            "commands ask for the password when they need it",
+            "basic auth: save the password too (default: ask on a terminal, answer No "
+            "unless the CLI sets otherwise); without it, commands ask for the password when "
+            "they need it",
             None,
             None,
             "BooleanOptionalAction",

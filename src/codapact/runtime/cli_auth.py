@@ -109,8 +109,9 @@ def add_auth_commands(
         "--save-secret",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="basic auth: save the password too (default: ask on a terminal); without it, "
-        "commands ask for the password when they need it",
+        help="basic auth: save the password too (default: ask on a terminal, answer No "
+        "unless the CLI sets otherwise); without it, commands ask for the password when "
+        "they need it",
     )
     login.add_argument(
         "--field",
@@ -503,11 +504,13 @@ class AuthCommands:
             return True
         if chosen is not None:
             return bool(chosen)
-        default = (self.configured.get(scheme.name) or {}).get("save_secret", True) is not False
+        configured = (self.configured.get(scheme.name) or {}).get("save_secret")
         if not self.interactive:
-            return default
+            return configured is not False  # scripts keep saving unless the coda says not to
+        # A person decides; unless the coda says otherwise, the password stays out of storage
+        # (it may be a directory or identity-provider password).
         where = _location(self.store, scheme.name)
-        return self._confirm(f"Save the password ({where})?", default)
+        return self._confirm(f"Save the password ({where})?", configured is True)
 
     def _sign_in_username(self, args: argparse.Namespace, saved: Mapping[str, str]) -> str:
         """The username to fill in on the browser sign-in page (optional)."""

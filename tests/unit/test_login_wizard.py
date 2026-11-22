@@ -219,7 +219,7 @@ def test_wizard_asks_for_the_site_scheme_and_username(tmp_path: Path) -> None:
         f"Base URL (like {PLACEHOLDER}): ",
         "Choose 1-2 [1]: ",
         "basic username: ",
-        "Save the password (memory)? [Y/n]: ",
+        "Save the password (memory)? [y/N]: ",
     ]
     assert isinstance(auth.err, io.StringIO)
     assert auth.err.getvalue() == (
@@ -237,7 +237,7 @@ def test_wizard_asks_for_the_site_scheme_and_username(tmp_path: Path) -> None:
         "Base URL [https://mysite.atlassian.net]: ",
         "Choose 1-2 [1]: ",
         "basic username [amy@x.test]: ",
-        "Save the password (memory)? [Y/n]: ",
+        "Save the password (memory)? [y/N]: ",
         "basic password: ",
     ]
     assert inner.items == {
@@ -493,6 +493,12 @@ def test_capture_fills_the_username_only_in_a_window(
 
 
 def test_empty_answer_takes_the_default() -> None:
-    auth, _, inner, _ = wizard(["https://a.test", "1", "amy", "", "pw"])
+    auth, _, inner, _ = wizard(["https://a.test", "1", "amy", ""])
     auth.run(login())
+    assert inner.items == {}  # No unless the CLI says otherwise
+    saving, labels, inner, _ = wizard(
+        ["https://a.test", "1", "amy", "", "pw"], configured={"basic": {"save_secret": True}}
+    )
+    saving.run(login())
+    assert labels[3] == "Save the password (memory)? [Y/n]: "
     assert inner.items["default:basic"]["secret"] == "pw"

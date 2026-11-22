@@ -537,9 +537,12 @@ a terminal, `auth login` behaves as before: `--scheme` is required when there ar
 
 #### Keeping a password out of the keyring
 
-`auth login --no-save-secret` (or answering `n`, or `cli.auth.<scheme>.save_secret: false` in
-`codapact.yaml` to make that the default) saves only the username for a basic scheme; any
-password saved before is deleted. Later commands then take the password from
+On a terminal, a basic login asks whether to save the password, and the default answer is No
+(it may be a directory or identity-provider password); `cli.auth.<scheme>.save_secret: true`
+in `codapact.yaml` makes Yes the default, for schemes whose secret is an API token. Scripts
+(no terminal, or `--with-token`) save it unless `save_secret: false`. `auth login
+--no-save-secret` (or answering `n`) saves only the username for a basic scheme; any password
+saved before is deleted. Later commands then take the password from
 `<PREFIX>_<SCHEME>_PASSWORD` or, on a terminal, ask for it (hidden) the first time a request
 needs it, and keep it in memory for that process only. Without a terminal or the variable the
 command exits 3 and says so. `auth status` shows `saved username NAME (password asked when
