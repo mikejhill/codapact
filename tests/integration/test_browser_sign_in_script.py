@@ -105,10 +105,13 @@ def _serve(pages: dict[str, str], cookie_on: str = "") -> Site:
 @pytest.fixture
 def browser() -> Iterator[Any]:
     with sync_api.sync_playwright() as playwright:
+        chromium, reason = None, ""
         try:
             chromium = playwright.chromium.launch()
         except sync_api.Error as error:
-            pytest.skip(f"no browser: {str(error).splitlines()[0]}")
+            reason = str(error).splitlines()[0]
+        if chromium is None:
+            pytest.skip(f"no browser: {reason}")
         yield chromium
         chromium.close()
 
@@ -150,12 +153,16 @@ def test_renewal_signs_in_and_the_guard_stops_a_late_redirect(tmp_path: Path) ->
     }
     hijacked = _serve(hijack, cookie_on="/session")
     try:
+        found: list[Any] | None = None
+        reason = ""
         try:
             found = playwright_capture(_login(origin), tmp_path / "a", True, 15.0, "chromium")
         except AuthError as error:
             if "could not start a browser" not in str(error):
                 raise
-            pytest.skip(f"no browser: {error}")
+            reason = str(error)
+        if found is None:
+            pytest.skip(f"no browser: {reason}")
         assert [c["name"] for c in found] == ["sid"]
         assert urllib.parse.parse_qs(site.posts[0][1])["password"] == ["s3cret pw"]
         late = f"http://127.0.0.1:{hijacked.server_port}"
