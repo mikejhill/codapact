@@ -6,6 +6,7 @@ import argparse
 import contextlib
 import sys
 import types
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,9 @@ from codapact.runtime.browser import (
     browser_root,
     cookie_header,
     forget_profile,
+    password_key,
     playwright_capture,
+    sign_in_headless,
 )
 from codapact.runtime.errors import AuthError
 from codapact.runtime.extensions import CallHook, CliExtension, load_extension
@@ -451,3 +454,75 @@ def test_model_v3_documents_migrate() -> None:
         "model_version": 4,
         "name": "x",
     }
+
+
+class FormPage:
+    """A page whose sign-in form script reports ``outcome`` (or raises ``FakeError``)."""
+
+    def __init__(self, url: str, outcome: str) -> None:
+        self.url = url
+        self.outcome = outcome
+        self.calls: list[list[Any]] = []
+
+    def evaluate(self, script: str, args: list[Any]) -> str:
+        assert script.startswith("([name, secret, href, selectors, done]) =>")
+        self.calls.append(args)
+        if self.outcome == "raise":
+            raise FakeError("navigated away")
+        return self.outcome
+
+
+def test_headless_sign_in_submits_each_page_once() -> None:
+    login = BrowserLogin(SITE + "/", ("t",), domain="acme.example.net", username="amy")
+    login = replace(login, password="pw")
+    filled: set[str] = set()
+    page = FormPage("https://id.example.com/login", "username")
+    assert sign_in_headless(page, login, filled, FakeError) == "username"
+    assert page.calls[0][:3] == ["amy", "pw", "https://id.example.com/login"]
+    assert page.calls[0][4] == []
+    page.outcome = "password"  # the password box appeared on the same URL
+    assert sign_in_headless(page, login, filled, FakeError) == "password"
+    assert page.calls[1][4] == ["username"]  # the script skips steps already submitted
+    for outcome in ("none", "stuck", "moved", "raise"):
+        other = FormPage(f"https://id.example.com/{outcome}", outcome)
+        expected = "error" if outcome == "raise" else outcome
+        assert sign_in_headless(other, login, filled, FakeError) == expected
+    # nothing else was submitted
+    assert filled == {
+        "username https://id.example.com/login",
+        "password https://id.example.com/login",
+    }
+    for n in range(10):
+        sign_in_headless(
+            FormPage(f"https://id.example.com/{n}", "password"), login, filled, FakeError
+        )
+    assert len(filled) == 6  # MFA or a wrong password loops: stop
+
+
+def test_renewal_types_the_saved_password(tmp_path: Path) -> None:
+    store = DiskLikeStore()
+    seen: list[BrowserLogin] = []
+
+    def capture(login: BrowserLogin, *args: Any) -> list[dict[str, Any]]:
+        seen.append(login)
+        return jar(tenant_session_token=str(len(seen)))
+
+    auth = _browser_auth(store, tmp_path, FakeBrowser())
+    auth.capture = capture
+    auth.usernames = {"session": "amy"}
+    session = auth.session(SESSION)
+    assert session is not None
+    assert not session.refresh(SESSION)  # no browser profile and no password
+    session.save_password("pw")
+    assert store.load(password_key("session")) == {"type": "password", "secret": "pw"}
+    assert session.password() == "pw"
+    assert session.refresh(SESSION)  # works without a browser profile
+    assert seen[-1].password == "pw" and seen[-1].username == "amy"
+    auth.usernames = {}
+    unnamed = auth.session(SESSION)
+    assert unnamed is not None and unnamed.refresh(SESSION)
+    assert seen[-1].password == ""  # a password alone types nothing
+    session.save_password(None)
+    assert session.password() == ""
+    store.save(password_key("session"), {"type": "token", "secret": "x"})
+    assert session.password() == ""

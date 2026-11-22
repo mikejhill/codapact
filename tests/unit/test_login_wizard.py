@@ -327,7 +327,7 @@ def test_without_a_terminal_login_keeps_its_old_behaviour() -> None:
 
 
 def test_save_secret_options() -> None:
-    with pytest.raises(AuthError, match="apply to basic auth only"):
+    with pytest.raises(AuthError, match="apply to basic and browser sign-in only"):
         wizard([], interactive=False)[0].run(login(scheme="token", save_secret=False))
     with pytest.raises(AuthError, match="drop --no-save-secret"):
         wizard(["amy"], interactive=False)[0].run(
@@ -380,7 +380,7 @@ def test_browser_login_fills_in_the_username(tmp_path: Path) -> None:
         return [{"name": "sid", "value": "v", "domain": "mysite.test", "path": "/"}]
 
     auth, labels, _, index = wizard(
-        ["mysite.test", "2", "amy@corp.test"],
+        ["mysite.test", "2", "amy@corp.test", "n"],
         api=BROWSER_API,
         configured={**CONFIGURED, **BROWSER},
         env={"XDG_CONFIG_HOME": str(tmp_path)},
@@ -388,7 +388,7 @@ def test_browser_login_fills_in_the_username(tmp_path: Path) -> None:
     provider = next(p for p in auth.chain.providers if isinstance(p, BrowserAuth))
     provider.capture = capture
     result = auth.run(login())
-    assert result["signed_in"] == "mysite.test"
+    assert result["signed_in"] == "mysite.test" and result["password"] == "not saved"
     assert captured[0].username == "amy@corp.test"
     assert captured[0].login_url == "https://mysite.test/login"
     assert labels[2] == "Username to fill in on the sign-in page (optional): "
@@ -546,6 +546,19 @@ def test_capture_fills_the_username_only_in_a_window(
     fake_playwright(monkeypatch, [jar(other="1"), jar(tenant_session_token="abc")])
     browser.playwright_capture(named, tmp_path / "p", True, 5.0, "chromium")
     assert calls == [("amy", False)]  # never while renewing headlessly
+    typed: list[str] = []
+    monkeypatch.setattr(
+        browser,
+        "sign_in_headless",
+        lambda page, login_, filled, error: typed.append(login_.password) or "password",
+    )
+    fake_playwright(monkeypatch, [jar(other="1"), jar(tenant_session_token="abc")])
+    browser.playwright_capture(named, tmp_path / "p", True, 5.0, "chromium")
+    assert typed == []  # no saved password: nothing to type
+    fake_playwright(monkeypatch, [jar(other="1"), jar(tenant_session_token="abc")])
+    browser.playwright_capture(replace(named, password="pw"), tmp_path / "p", True, 5.0, None)
+    assert typed == ["pw"] and calls == [("amy", False)]
+    assert "pw" not in repr(replace(named, password="pw"))
 
 
 def test_empty_answer_takes_the_default() -> None:
@@ -843,7 +856,7 @@ def test_flags_are_checked_before_saved_logins_are_dropped() -> None:
     inner = MemoryTokenStore()
     wizard(["https://a.test", "2", "tok"], index=index, inner=inner)[0].run(login())
     moved, _, _, _ = wizard(["y"], index=index, inner=inner)
-    with pytest.raises(AuthError, match="apply to basic auth only"):
+    with pytest.raises(AuthError, match="apply to basic and browser sign-in only"):
         moved.run(login(scheme="token", base_url="https://b.test", save_secret=False))
     assert "default:token" in inner.items  # nothing was dropped
 
@@ -1146,3 +1159,102 @@ def test_seventh_review(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(getpass, "getpass", ended)
     with pytest.raises(AuthError, match="input ended"):
         CliRuntime.secret_prompt("password: ")
+
+
+def browser_wizard(
+    answers: list[str], tmp_path: Path, **options: Any
+) -> tuple[AuthCommands, list[str], MemoryTokenStore, ProfileIndex]:
+    """A browser-scheme wizard whose sign-in succeeds unless ``fail`` is set."""
+    fail = options.pop("fail", False)
+    configured = options.pop("configured", BROWSER)
+    auth, labels, inner, index = wizard(
+        answers,
+        api=BROWSER_API,
+        configured={**CONFIGURED, **configured},
+        env={"XDG_STATE_HOME": str(tmp_path)},
+        **options,
+    )
+    provider = next(p for p in auth.chain.providers if isinstance(p, BrowserAuth))
+    provider.capture = lambda *_: (
+        [] if fail else [{"name": "sid", "value": "v", "domain": "a.test", "path": "/"}]
+    )
+    return auth, labels, inner, index
+
+
+def test_browser_login_can_save_the_password_for_renewal(tmp_path: Path) -> None:
+    site = {"base_url": "https://a.test", "scheme": "session"}
+    auth, labels, inner, index = browser_wizard(["https://a.test", "2", "amy", "y", "pw"], tmp_path)
+    result = auth.run(login())
+    assert result["password"] == "saved for renewal without a window (memory)"
+    assert labels[3] == (
+        "Save the password so an expired session renews without a window (memory)? [y/N]: "
+    )
+    assert inner.items["default:session.password"] == {
+        "type": "password",
+        "secret": "pw",
+        "codapact_site": "https://a.test",
+    }
+    status = {row["scheme"]: row for row in auth.status()}
+    assert status["session"]["renewal"] == "saved password, no window needed"
+    assert "renewal" not in status["basic"]
+    # without a terminal or a flag, a new sign-in leaves the saved password alone
+    quiet, _, _, _ = browser_wizard([], tmp_path, index=index, inner=inner, interactive=False)
+    assert "password" not in quiet.run(login(scheme="session", base_url="https://a.test"))
+    assert inner.items["default:session.password"]["secret"] == "pw"
+    # answering no forgets it; so does --no-save-secret
+    again, _, _, _ = browser_wizard(["", "", "", "n"], tmp_path, index=index, inner=inner)
+    assert again.run(login())["password"] == "not saved"
+    assert "default:session.password" not in inner.items
+    piped, _, _, _ = browser_wizard([], tmp_path, index=index, inner=inner, interactive=False)
+    piped.stdin = io.StringIO("tok\n")
+    piped.run(login(scheme="session", with_token=True))
+    assert inner.items["default:session.password"]["secret"] == "tok"
+    piped.run(login(scheme="session", save_secret=False))
+    assert "default:session.password" not in inner.items
+    assert index.settings("default") == {**site, "username.session": "amy"}
+    # logout forgets it too
+    piped.stdin = io.StringIO("tok\n")
+    piped.run(login(scheme="session", with_token=True, save_secret=True))
+    out = piped.run(argparse.Namespace(auth_action="logout", scheme="session"))
+    assert out["removed"] == ["session"] and "default:session.password" not in inner.items
+
+
+def test_saving_a_browser_password_needs_a_username_and_a_source(tmp_path: Path) -> None:
+    # no username: nothing to type the password with, so nothing is asked or kept
+    auth, labels, inner, _ = browser_wizard(["https://a.test", "2", ""], tmp_path)
+    assert auth.run(login())["password"] == "not saved"
+    assert len(labels) == 3
+    unnamed, _, _, _ = browser_wizard([], tmp_path, interactive=False)
+    with pytest.raises(AuthError, match="needs a username: pass --username"):
+        unnamed.run(login(scheme="session", base_url="https://a.test", save_secret=True))
+    with pytest.raises(AuthError, match="needs a terminal, or --with-token"):
+        unnamed.run(
+            login(scheme="session", base_url="https://a.test", save_secret=True, username="amy")
+        )
+    with pytest.raises(AuthError, match="drop --no-save-secret"):
+        unnamed.run(login(scheme="session", with_token=True, save_secret=False))
+    strict, _, _, _ = browser_wizard(
+        [],
+        tmp_path,
+        interactive=False,
+        configured={"session": {**BROWSER["session"], "save_secret": False}},
+    )
+    with pytest.raises(AuthError, match="add --save-secret"):
+        strict.run(login(scheme="session", with_token=True, username="amy"))
+
+
+def test_browser_password_default_and_failed_sign_in(tmp_path: Path) -> None:
+    keep = {"session": {**BROWSER["session"], "save_secret": True}}
+    auth, labels, inner, _ = browser_wizard(
+        ["https://a.test", "2", "amy", "", "pw"], tmp_path, configured=keep
+    )
+    auth.run(login())
+    assert labels[3].endswith("[Y/n]: ")
+    assert inner.items["default:session.password"]["secret"] == "pw"
+    # a sign-in that does not finish keeps what was saved before
+    failing, _, _, _ = browser_wizard(
+        ["", "", "", "y", "new"], tmp_path, inner=inner, fail=True, index=auth.profiles
+    )
+    with pytest.raises(AuthError, match="sign-in did not finish"):
+        failing.run(login())
+    assert inner.items["default:session.password"]["secret"] == "pw"

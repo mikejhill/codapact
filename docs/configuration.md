@@ -554,7 +554,8 @@ With stdin and stderr both terminals, `auth login` asks for what the command lin
 2. **Scheme**, from a numbered list showing each `cli.auth.<scheme>.docs` in full,
    wrapped to the terminal. Skipped with `--scheme` or when there is only one.
 3. **The scheme's own prompts.** Basic asks for the username, then whether to save the
-   password; a browser scheme asks for a username to fill in on the sign-in page (optional).
+   password; a browser scheme asks for a username to fill in on the sign-in page (optional)
+   and, when one is given, whether to save the password for renewal without a window.
 
 Saved values are the defaults next time (`[shown in brackets]`; press Enter to keep). Without
 a terminal, `auth login` behaves as before: `--scheme` is required when there are several.
@@ -574,8 +575,25 @@ command exits 3 and says so. `auth status` shows `saved username NAME (password 
 needed)`. `auth logout --scheme NAME` forgets that scheme's username too. Declared `fields` are always
 saved; `--save-secret` does not apply to them.
 
-Browser schemes never store a password: the identity provider's own session lives in the
-per-profile browser directory. The scheme's saved username is typed into the first empty
+#### Browser schemes: renewing without a window
+
+By default a browser scheme stores no password: the identity provider's own session lives in
+the per-profile browser directory, and an expired site session renews headlessly from it.
+When that longer session has expired too, the next command fails until you run `auth login`
+again. To renew even then, save the password: answer `y` when `auth login` asks
+`Save the password so an expired session renews without a window?` (only asked when you gave
+a username; the default is No unless `cli.auth.<scheme>.save_secret: true`), or pass
+`--save-secret` (`--with-token` reads it from stdin). It is saved only after the sign-in
+works, in the same store and bound to the same site as the session. A headless renewal then
+types the username and password into each trusted sign-in page (the trust rule below) and
+submits it: once per step of a page (a password box that appears after the username counts
+as a second step) and at most six times per renewal, so MFA, a CAPTCHA or a wrong password
+stop it and leave the next command to ask for `auth login`. `auth status` shows
+`renewal: saved password, no window needed`; `auth login --no-save-secret`, answering `n`,
+or `auth logout --scheme NAME` forgets it. Without a terminal or a flag, `auth login` leaves
+a saved password as it is.
+
+The scheme's saved username is typed into the first empty
 username or email box of each sign-in page, never over what you typed, and only on trusted
 pages: the login page's host, the cookie domain, and the scheme's `signin_hosts`, over
 HTTPS (plain HTTP only for the login URL's own origin, for a local app). Nothing else is trusted, so for an external identity provider (Okta, Entra ID…) add

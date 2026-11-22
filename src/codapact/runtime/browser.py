@@ -83,6 +83,8 @@ class BrowserLogin:
     """Host globs of the sign-in pages a rejected session redirects to (optional)."""
     username: str = ""
     """Filled into the empty username or email box of trusted sign-in pages (optional)."""
+    password: str = field(default="", repr=False)
+    """With ``username``, typed into trusted sign-in pages by headless renewal (optional)."""
 
     @classmethod
     def from_settings(
@@ -245,8 +247,11 @@ def playwright_capture(
                     found = session_cookies(context.cookies(), login)
                     if found and _on_host(page.url, login.domain):
                         return found
-                    if login.username and not headless and login.trusted_page(page.url):
-                        prefill_username(page, login.username, filled, playwright_error)
+                    if login.username and login.trusted_page(page.url):
+                        if not headless:
+                            prefill_username(page, login.username, filled, playwright_error)
+                        elif login.password:
+                            sign_in_headless(page, login, filled, playwright_error)
                     page.wait_for_timeout(500)
                 return []
             except playwright_error as error:  # page closed, navigation failed...
@@ -303,6 +308,66 @@ def prefill_username(page: Any, username: str, filled: set[str], error: type[Exc
     except error:
         return False
     return False
+
+
+SIGN_IN_SCRIPT = """([name, secret, href, selectors, done]) => {
+  if (location.href !== href) return "moved";
+  const shown = (el) => el && !el.disabled && el.offsetParent !== null;
+  const user = selectors.map((s) => document.querySelector(s)).find(shown);
+  const pass = Array.from(document.querySelectorAll("input[type=password]")).find(shown);
+  if (!user && !pass) return "none";
+  const step = pass ? "password" : "username";
+  if (done.includes(step)) return "done";
+  const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+  const put = (el, value) => {
+    set.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  if (user && !user.value) put(user, name);
+  if (pass) put(pass, secret);
+  const field = pass || user;
+  const form = field.form;
+  const button = (form || document).querySelector(
+    "button[type=submit], input[type=submit], button:not([type])"
+  );
+  if (button && shown(button)) button.click();
+  else if (form) form.requestSubmit();
+  else return "stuck";
+  return step;
+}"""
+"""Fill the sign-in form of the checked page and submit it, in one step of that document."""
+
+SIGN_IN_ATTEMPTS = 6
+"""At most this many form submissions per renewal: a page that keeps asking is left alone."""
+
+
+def sign_in_headless(
+    page: Any, login: BrowserLogin, filled: set[str], error: type[Exception]
+) -> str:
+    """Type the saved username and password into a trusted sign-in page and submit it.
+
+    The caller has checked ``page.url``; the script re-checks, in the same step, that the
+    document is still that page. Each step of a page (the username, then a password box
+    that appears on the same URL) is submitted at most once, and a renewal stops after
+    ``SIGN_IN_ATTEMPTS`` submissions (MFA, a CAPTCHA or a wrong password are left for an
+    interactive ``auth login``). Return what was submitted (or why nothing was).
+    """
+    href = str(page.url)
+    if len(filled) >= SIGN_IN_ATTEMPTS:
+        return "done"
+    done = [step for step in ("username", "password") if f"{step} {href}" in filled]
+    try:
+        outcome = str(
+            page.evaluate(
+                SIGN_IN_SCRIPT, [login.username, login.password, href, USERNAME_FIELDS, done]
+            )
+        )
+    except error:
+        return "error"
+    if outcome in ("username", "password"):
+        filled.add(f"{outcome} {href}")
+    return outcome
 
 
 def session_cookies(cookies: list[Any], login: BrowserLogin) -> list[Cookie]:
@@ -407,18 +472,40 @@ class BrowserSession:
         return self.login.sign_in_redirect(response.header("Location") or "")
 
     def refresh(self, scheme: AuthScheme) -> bool:
-        """Sign in again without a window; return whether a new session was saved."""
+        """Sign in again without a window; return whether a new session was saved.
+
+        With a saved password, the renewal also types it into trusted sign-in pages.
+        """
         del scheme
-        if self.ephemeral or not self.directory.exists():
+        password = self.password()
+        if self.ephemeral or not (self.directory.exists() or password):
             return False
+        login = (
+            replace(self.login, password=password)
+            if password and self.login.username
+            else self.login
+        )
         try:
-            cookies = self.capture(self.login, self.directory, True, RENEW_TIMEOUT, self.browser)
+            cookies = self.capture(login, self.directory, True, RENEW_TIMEOUT, self.browser)
         except AuthError:
             return False
         if not cookies or cookies == self.cookies():
             return False
         self.save(cookies)
         return True
+
+    def password(self) -> str:
+        """The password saved for headless renewal ("" when none is)."""
+        data = self.store.load(password_key(self.key)) or {}
+        secret = data.get("secret") if data.get("type") == "password" else None
+        return secret if isinstance(secret, str) else ""
+
+    def save_password(self, secret: str | None) -> None:
+        """Keep ``secret`` for headless renewal, or forget a saved one (``None``)."""
+        if secret is None:
+            self.store.delete(password_key(self.key))
+        else:
+            self.store.save(password_key(self.key), {"type": "password", "secret": secret})
 
     def sign_in(self) -> list[Cookie]:
         """Open a browser window for the person to sign in; save and return the cookies."""
@@ -455,6 +542,11 @@ class BrowserSession:
     def __repr__(self) -> str:
         """Never render cookies."""
         return f"BrowserSession({self.login.domain})"
+
+
+def password_key(scheme: str) -> str:
+    """The store key of the password a browser scheme keeps for headless renewal."""
+    return f"{scheme}.password"
 
 
 def forget_profile(directory: Path, root: Path) -> bool:
@@ -567,6 +659,7 @@ __all__ = [
     "browser_root",
     "cookie_header",
     "forget_profile",
+    "password_key",
     "playwright_capture",
     "profile_dir",
     "session_cookies",
