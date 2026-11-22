@@ -69,7 +69,7 @@ class Site(http.server.ThreadingHTTPServer):
     posts: list[tuple[str, str]]
 
 
-def _serve(pages: dict[str, str], cookie_on: str = "") -> Site:
+def _serve(pages: dict[str, str], cookie_on: str = "", after_post: str = "/") -> Site:
     class Handler(http.server.BaseHTTPRequestHandler):
         @override
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 (stdlib name)
@@ -93,7 +93,7 @@ def _serve(pages: dict[str, str], cookie_on: str = "") -> Site:
             self.send_response(302)
             if cookie_on and self.path == cookie_on:
                 self.send_header("Set-Cookie", "sid=ok; Path=/")
-            self.send_header("Location", "/")
+            self.send_header("Location", after_post)
             self.end_headers()
 
     server = Site(("127.0.0.1", 0), Handler)
@@ -171,3 +171,30 @@ def test_renewal_signs_in_and_the_guard_stops_a_late_redirect(tmp_path: Path) ->
     finally:
         for server in (site, evil, hijacked):
             server.shutdown()
+
+
+def test_a_2fa_page_stops_the_renewal_and_the_trace_says_why(tmp_path: Path) -> None:
+    pages = {
+        "/login": '<form method=post action="/session"><input name=username id=username>'
+        "<input type=password name=password><button>Sign in</button></form>",
+        "/login/mfa": '<form method=post action="/verify"><input name=otp '
+        'autocomplete="one-time-code"><button>Verify</button></form>',
+    }
+    site = _serve(pages, after_post="/login/mfa")
+    told: list[str] = []
+    login = replace(_login(f"http://127.0.0.1:{site.server_port}"), trace=told.append)
+    try:
+        try:
+            found = playwright_capture(login, tmp_path / "p", True, 4.0, "chromium")
+        except AuthError as error:
+            if "could not start a browser" not in str(error):
+                raise
+            found = None
+        if found is None:
+            pytest.skip("no browser")
+        assert found == []
+        assert "typed the password and submitted" in told
+        assert told[-2].startswith("stopped: a one-time-code (2FA) page")
+        assert [path for path, _ in site.posts] == ["/session"]  # no code was ever sent
+    finally:
+        site.shutdown()

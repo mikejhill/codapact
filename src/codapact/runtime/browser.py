@@ -74,8 +74,12 @@ LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})
 """Hosts a saved password may reach over plain HTTP (a local app)."""
 RENEWAL_SCOPE = "renewal_scope"
 """The session record field listing where the saved password was approved for."""
+RENEWAL_PAUSED = "renewal_paused"
+"""The session record field saying why a saved password stopped being typed."""
 RENEWAL_USERNAME = "renewal_username"
 """The session record field naming the username that password belongs to."""
+RENEWAL_FIELDS = (RENEWAL_PASSWORD, RENEWAL_USERNAME, RENEWAL_SCOPE, RENEWAL_PAUSED)
+"""Every session record field of a saved password."""
 SIGN_IN_ATTEMPTS = 3
 """Default form submissions per headless renewal: a page that keeps asking is left alone."""
 ATTEMPTS_RANGE = "a whole number from 1 to 10"
@@ -105,6 +109,8 @@ class BrowserLogin:
     """With ``username``, typed into trusted sign-in pages by headless renewal (optional)."""
     sign_in_attempts: int = 3
     """At most this many form submissions per headless renewal (``sign_in_attempts``)."""
+    trace: Callable[[str], Any] | None = field(default=None, repr=False, compare=False)
+    """Told each step of a sign-in (pages, submissions, why it stopped); never secrets."""
 
     @classmethod
     def from_settings(
@@ -287,16 +293,22 @@ def playwright_capture(
                 page.goto(login.login_url)
                 deadline = time.monotonic() + timeout
                 filled: set[str] = set()
+                steps = Steps(login.trace)
                 while time.monotonic() < deadline:
+                    steps.page(str(page.url))
                     found = session_cookies(context.cookies(), login)
                     if found and _on_host(page.url, login.domain):
+                        steps.note("signed in: got the session cookies")
                         return found
                     if login.username and login.trusted_page(page.url):
                         if not headless:
                             prefill_username(page, login.username, filled, playwright_error)
                         elif login.password:
-                            sign_in_headless(page, login, filled, playwright_error)
+                            steps.outcome(sign_in_headless(page, login, filled, playwright_error))
+                    elif login.password and headless:
+                        steps.note("not a trusted sign-in page: nothing typed (see signin_hosts)")
                     page.wait_for_timeout(500)
+                steps.note(f"gave up after {int(timeout)} s without the session cookies")
                 return []
             except playwright_error as error:  # page closed, navigation failed...
                 raise AuthError(f"browser sign-in failed: {str(error).splitlines()[0]}") from None
@@ -306,6 +318,58 @@ def playwright_capture(
                 except playwright_error:
                     pass
     raise AuthError("could not start a browser (" + "; ".join(errors) + ")")
+
+
+def shown_url(url: str) -> str:
+    """``url`` safe to print: no user name or password, query or fragment."""
+    parts = urlsplit(url)
+    port = f":{parts.port}" if parts.port else ""
+    return f"{parts.scheme}://{parts.hostname or ''}{port}{parts.path}"
+
+
+def _shown_host(url: str) -> str:
+    parts = urlsplit(url)
+    return (parts.hostname or "") + (f":{parts.port}" if parts.port else "")
+
+
+OUTCOMES = {
+    "username": "typed the username and submitted",
+    "password": "typed the password and submitted",
+    "challenge": "stopped: a one-time-code (2FA) page; run auth login to enter the code",
+    "unclear": "stopped: a page with several or new-password boxes",
+    "other-account": "stopped: the form names another account",
+    "unsafe": "stopped: the form would send the password to an untrusted or plain-HTTP page",
+    "not-sign-in": "skipped: not a sign-in page",
+    "stuck": "stopped: no form, or its submit button is disabled (a CAPTCHA?)",
+    "changed": "stopped: the form changed while it was filled",
+    "done": "waiting: this page was already submitted (a wrong password stays here)",
+    "limit": "stopped: reached sign_in_attempts (the most form submissions per renewal)",
+}
+"""What each ``sign_in_headless`` outcome means, for a trace."""
+
+
+@dataclass(slots=True)
+class Steps:
+    """Tell a trace what a sign-in does, once per change (pages without their query)."""
+
+    trace: Callable[[str], Any] | None
+    last: str = ""
+    url: str = ""
+
+    def note(self, text: str) -> None:
+        if self.trace is not None and text != self.last:
+            self.last = text
+            self.trace(text)
+
+    def page(self, url: str) -> None:
+        shown = shown_url(url)
+        if shown != self.url:
+            self.url = shown
+            self.note(f"page {shown}")
+
+    def outcome(self, outcome: str) -> None:
+        if outcome in OUTCOMES:
+            self.note(OUTCOMES[outcome])
 
 
 def guard_password(context: Any, login: BrowserLogin) -> None:
@@ -327,23 +391,32 @@ def guard_password(context: Any, login: BrowserLogin) -> None:
     def handle(route: Any) -> None:
         request = route.request
         url = str(request.url)
+        blocked = f"blocked a request carrying the password to {_shown_host(url)}"
         if carries(url.encode()) or carries(unquote_plus(url).encode()):
+            _tell(login, blocked)
             route.abort()
             return
         if not carries(request.post_data_buffer or b""):
             route.continue_()
             return
         if request.method != "POST" or not login.password_page(url):
+            _tell(login, blocked)
             route.abort()
             return
         response = route.fetch(max_redirects=0)
         location = urljoin(url, response.headers.get("location", ""))
         if response.status in (307, 308) and not login.password_page(location):
+            _tell(login, f"blocked a redirect resending the password to {_shown_host(location)}")
             route.abort()
             return
         route.fulfill(response=response)
 
     context.route("**/*", handle)
+
+
+def _tell(login: BrowserLogin, text: str) -> None:
+    if login.trace is not None:
+        login.trace(text)
 
 
 USERNAME_FIELDS = (
@@ -502,7 +575,7 @@ def sign_in_headless(
     """
     href = str(page.url)
     if len(filled) >= login.sign_in_attempts:
-        return "done"
+        return "limit"
     if not login.password_page(href):
         return "unsafe"
     done = [step for step in ("username", "password") if f"{step} {href}" in filled]
@@ -633,18 +706,65 @@ class BrowserSession:
         With a saved password, the renewal also types it into trusted sign-in pages.
         """
         del scheme
+        return self.renew() == "renewed"
+
+    def renew(self) -> str:
+        """Sign in again without a window and say how it went.
+
+        ``renewed`` (new cookies saved), ``unchanged`` (the browser only had the saved
+        session), ``failed: …``, or ``unavailable`` (no browser profile or password).
+        """
         password = self.password()
         if self.ephemeral or not (self.directory.exists() or password):
-            return False
-        login = replace(self.login, password=password) if password else self.login
+            return "unavailable"
+        seen: list[str] = []
+        outer = self.login.trace
+
+        def trace(text: str) -> None:
+            seen.append(text)
+            if outer is not None:
+                outer(text)
+
+        login = replace(self.login, password=password, trace=trace)
         try:
             cookies = self.capture(login, self.directory, True, RENEW_TIMEOUT, self.browser)
-        except AuthError:
-            return False
-        if not cookies or cookies == self.cookies():
-            return False
+        except AuthError as error:
+            if OUTCOMES["password"] in seen:
+                self._pause_password(str(error))  # it went out; the browser then failed
+            return f"failed: {error}"
+        if not cookies:
+            stops = [t for t in seen if t.startswith(("stopped:", "waiting:", "blocked "))]
+            reason = stops[-1] if stops else (seen[-1] if seen else "no session cookies")
+            if OUTCOMES["password"] in seen:
+                # A wrong password or a 2FA page: do not retry it on every command (a
+                # lockout or CAPTCHA); the next auth login saves a new one.
+                self._pause_password(reason)
+            return f"failed: {reason}"
+        if cookies == self.cookies():
+            return "unchanged"
         self.save(cookies)
-        return True
+        return "renewed"
+
+    def _pause_password(self, reason: str) -> None:
+        record = dict(self.saved())
+        if record.get(RENEWAL_PASSWORD):
+            record[RENEWAL_PAUSED] = reason
+            self.store.save(self.key, record)
+
+    def paused(self) -> str:
+        """Why this account's saved password is no longer typed ("" when it still is)."""
+        record = self.saved()
+        reason = record.get(RENEWAL_PAUSED)
+        return str(reason) if reason and self._owns(record) else ""
+
+    def _owns(self, record: Mapping[str, Any]) -> bool:
+        """Whether ``record``'s saved password is for this username and these sign-in pages."""
+        return (
+            isinstance(record.get(RENEWAL_PASSWORD), str)
+            and bool(self.login.username)
+            and record.get(RENEWAL_USERNAME) == self.login.username
+            and record.get(RENEWAL_SCOPE) == self.login.password_scope
+        )
 
     def password(self) -> str:
         """The password saved for headless renewal ("" when none is).
@@ -653,13 +773,11 @@ class BrowserSession:
         settings, which another login (another store, say) may have changed since.
         """
         record = self.saved()
-        secret = record.get(RENEWAL_PASSWORD)
-        user = record.get(RENEWAL_USERNAME)
-        if not (isinstance(secret, str) and self.login.username and user == self.login.username):
-            return ""
-        if record.get(RENEWAL_SCOPE) != self.login.password_scope:
-            return ""  # the sign-in pages changed since it was approved
-        return secret
+        if not self._owns(record):
+            return ""  # another username, or the sign-in pages changed since it was approved
+        if record.get(RENEWAL_PAUSED):
+            return ""  # it failed once; wait for the next auth login
+        return str(record[RENEWAL_PASSWORD])
 
     def save_password(self, secret: str | None) -> None:
         """Keep ``secret`` for headless renewal, or forget a saved one (``None``).
@@ -670,7 +788,7 @@ class BrowserSession:
         record = dict(self.saved())
         if not record or (secret is None and RENEWAL_PASSWORD not in record):
             return
-        for field_name in (RENEWAL_PASSWORD, RENEWAL_USERNAME, RENEWAL_SCOPE):
+        for field_name in RENEWAL_FIELDS:
             record.pop(field_name, None)
         if secret is not None and self.login.username:
             record.update(self._renewal(secret))
@@ -714,9 +832,9 @@ class BrowserSession:
             "cookies": [dict(c) for c in cookies],
             "saved_at": int(time.time()),
         }
-        password = self.password()
-        if password:
-            record.update(self._renewal(password))
+        previous = self.saved()
+        if self._owns(previous):  # paused or not: only auth login replaces or forgets it
+            record.update({k: v for k, v in previous.items() if k in RENEWAL_FIELDS})
         self.store.save(self.key, record)
 
     @override

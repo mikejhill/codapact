@@ -1289,3 +1289,80 @@ def test_another_account_gets_a_clean_browser_and_status_follows(tmp_path: Path)
     provider = next(p for p in keep.chain.providers if isinstance(p, BrowserAuth))
     provider.base_url = ""  # no site: no session handler either
     assert keep._renewal_status(SESSION).startswith("saved password not used")
+
+
+def test_auth_renew_shows_each_step(tmp_path: Path) -> None:
+    from tests.unit.test_extensions import DiskLikeStore  # keeps a browser profile
+
+    auth, _, _, _ = browser_wizard(
+        ["https://a.test", "2", "amy", "y", "pw"], tmp_path, inner=DiskLikeStore()
+    )
+    auth.run(login())
+    provider = next(p for p in auth.chain.providers if isinstance(p, BrowserAuth))
+    stop = "stopped: a one-time-code (2FA) page; run auth login to enter the code"
+    results: list[Any] = [
+        (["page https://a.test/login", "typed the password and submitted", stop], []),
+        ([], [{"name": "sid", "value": "new", "domain": "a.test", "path": "/"}]),
+    ]
+
+    def capture(login_: BrowserLogin, *args: Any) -> list[dict[str, Any]]:
+        steps, cookies = results.pop(0)
+        for text in steps:
+            assert login_.trace is not None
+            login_.trace(text)
+        return cookies
+
+    provider.capture = capture
+    renew = argparse.Namespace(auth_action="renew", scheme="session")
+    with pytest.raises(AuthError, match="renewal failed: stopped: a one-time-code"):
+        auth.run(renew)
+    stream = auth.err
+    assert isinstance(stream, io.StringIO)
+    err = stream.getvalue()
+    assert "  saved password: saved\n" in err and f"  {stop}\n" in err
+    assert "pw" not in err.replace("pwd", "")
+    row = auth.status()[1]
+    assert (
+        row["renewal"] == f"saved password paused after a failed sign-in ({stop}): run auth login"
+    )
+    provider.directory(SESSION, auth.profile or None).mkdir(parents=True)  # the IdP login
+    assert auth.run(renew) == {"profile": "default", "scheme": "session", "renewal": "renewed"}
+    assert "saved password: " + stop in stream.getvalue()
+    auth.err = None
+    with pytest.raises(AuthError, match="does not sign in with a browser"):
+        auth.run(argparse.Namespace(auth_action="renew", scheme="basic"))
+    empty, _, _, _ = browser_wizard([], tmp_path / "other", interactive=False)
+    empty.profiles.update_settings("default", {"base_url": "https://a.test"})
+    other = next(p for p in empty.chain.providers if isinstance(p, BrowserAuth))
+    other.base_url = "https://a.test"
+    with pytest.raises(AuthError, match="nothing to renew from"):
+        empty.run(argparse.Namespace(auth_action="renew", scheme="session"))
+
+
+def test_auth_renew_stays_on_the_profile_site_and_quiet_for_json(tmp_path: Path) -> None:
+    from tests.unit.test_extensions import DiskLikeStore
+
+    auth, _, inner, index = browser_wizard(
+        ["https://a.test", "2", "amy", "y", "pw"], tmp_path, inner=DiskLikeStore()
+    )
+    auth.run(login())
+    provider = next(p for p in auth.chain.providers if isinstance(p, BrowserAuth))
+    provider.capture = lambda *_: []
+    provider.base_url = "https://b.test"  # --base-url another tenant
+    renew = argparse.Namespace(auth_action="renew", scheme="session")
+    with pytest.raises(AuthError, match="signs in to https://a.test, not https://b.test"):
+        auth.run(renew)
+    provider.base_url = "https://a.test"
+    auth.show_steps = False  # --error-format json
+    auth.err = io.StringIO()
+    with pytest.raises(AuthError, match="renewal failed"):
+        auth.run(renew)
+    assert auth.err.getvalue() == ""
+    # a same-user login without a terminal or flag keeps the saved password
+    quiet, _, _, _ = browser_wizard([], tmp_path, index=index, inner=inner, interactive=False)
+    quiet_provider = next(p for p in quiet.chain.providers if isinstance(p, BrowserAuth))
+    quiet_provider.capture = lambda *_: [
+        {"name": "sid", "value": "v2", "domain": "a.test", "path": "/"}
+    ]
+    quiet.run(login(scheme="session", base_url="https://a.test"))
+    assert inner.items["default:session"]["renewal_password"] == "pw"

@@ -603,7 +603,18 @@ HTTP only on `localhost`). It is kept exactly as typed (spaces too) inside the s
 with the username and the sign-in pages (login URL, cookie domain, `signin_hosts`) it was
 saved for; after a login with another username, or a change to those pages, it is not used
 and `auth status` says so. Signing in as another username starts from a clean browser
-profile, so the previous account's cookies are never saved as the new account's session. `auth status` shows
+profile, so the previous account's cookies are never saved as the new account's session.
+
+If a renewal typed the password but got no session (a wrong password, a 2FA code page, a
+CAPTCHA), the password is paused: later commands do not type it again (no lockout from
+repeated attempts) until the next `auth login`, and `auth status` shows why. With 2FA, a
+saved password only helps while the identity provider remembers the browser; otherwise the
+code page stops the renewal and `auth login` opens a window for the code.
+
+`<program> auth renew [--scheme NAME]` runs that renewal now and prints each step to stderr:
+the pages visited (without their query), what was typed (never the values), and why it
+stopped, for example `stopped: a one-time-code (2FA) page` or `waiting: this page was
+already submitted (a wrong password stays here)`. It exits 3 when the renewal fails. `auth status` shows
 `renewal: saved password, no window needed`; `auth login --no-save-secret`, answering `n`,
 or `auth logout --scheme NAME` forgets it. Without a terminal or a flag, `auth login` leaves
 a saved password as it is.

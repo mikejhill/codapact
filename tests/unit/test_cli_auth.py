@@ -77,12 +77,13 @@ def test_auth_group_shape() -> None:
     actions = subparsers(group)
     assert (actions.dest, actions.metavar, actions.required) == ("auth_action", "ACTION", True)
     assert tuple(actions.choices) == ACTIONS
-    assert ACTIONS == ("login", "logout", "status", "token", "profiles", "use")
+    assert ACTIONS == ("login", "logout", "status", "token", "renew", "profiles", "use")
     assert helps(actions) == {
         "login": "save a credential (prompt, stdin, or an OAuth sign-in)",
         "logout": "forget a saved credential (all of them removes the profile)",
         "status": "show where each credential comes from",
         "token": "print the credential a command would send",
+        "renew": "renew a browser session now, without a window, showing each step",
         "profiles": "list saved-login profiles and the default",
         "use": "make a profile the default",
     }
