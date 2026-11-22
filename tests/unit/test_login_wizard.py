@@ -454,6 +454,9 @@ def test_prefill_username_fills_one_empty_box_per_page() -> None:
     assert typed.boxes["input[name='username']"] == "bob"  # never overwrite the person
     broken = FakePage("https://x.test/", {"input[id='username']": ""}, broken=True)
     assert prefill_username(broken, "amy", filled, RuntimeError) is False
+    assert (
+        prefill_username(FakePage("https://none.test/", {}), "amy", filled, RuntimeError) is False
+    )
     moved = FakePage("https://id2.test/", {"input[type='email']": ""})
     moved.document = "https://evil.test/"  # navigated after the trust check
     assert prefill_username(moved, "amy", filled, RuntimeError) is False
