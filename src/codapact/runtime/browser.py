@@ -338,7 +338,7 @@ SIGN_IN_SCRIPT = """([name, secret, href, selectors, done]) => {
 }"""
 """Fill the sign-in form of the checked page and submit it, in one step of that document."""
 
-SIGN_IN_ATTEMPTS = 6
+SIGN_IN_ATTEMPTS = 3
 """At most this many form submissions per renewal: a page that keeps asking is left alone."""
 
 

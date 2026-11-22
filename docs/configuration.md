@@ -587,7 +587,7 @@ a username; the default is No unless `cli.auth.<scheme>.save_secret: true`), or 
 works, in the same store and bound to the same site as the session. A headless renewal then
 types the username and password into each trusted sign-in page (the trust rule below) and
 submits it: once per step of a page (a password box that appears after the username counts
-as a second step) and at most six times per renewal, so MFA, a CAPTCHA or a wrong password
+as a second step) and at most three times per renewal, so MFA, a CAPTCHA or a wrong password
 stop it and leave the next command to ask for `auth login`. `auth status` shows
 `renewal: saved password, no window needed`; `auth login --no-save-secret`, answering `n`,
 or `auth logout --scheme NAME` forgets it. Without a terminal or a flag, `auth login` leaves

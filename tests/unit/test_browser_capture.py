@@ -496,7 +496,7 @@ def test_headless_sign_in_submits_each_page_once() -> None:
         sign_in_headless(
             FormPage(f"https://id.example.com/{n}", "password"), login, filled, FakeError
         )
-    assert len(filled) == 6  # MFA or a wrong password loops: stop
+    assert len(filled) == 3  # MFA or a wrong password loops: stop
 
 
 def test_renewal_types_the_saved_password(tmp_path: Path) -> None:
