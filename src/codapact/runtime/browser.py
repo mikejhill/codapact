@@ -67,6 +67,17 @@ SIGN_IN_WORDS = frozenset(
 )
 """Whole host labels or path segments that mark a sign-in page (``authors`` is not one)."""
 DEFAULT_PORTS = {"http": 80, "https": 443}
+RENEWAL_PASSWORD = "renewal_password"  # noqa: S105 (a field name)
+"""The session record field holding the password saved for headless renewal."""
+SIGN_IN_ATTEMPTS = 3
+"""Default form submissions per headless renewal: a page that keeps asking is left alone."""
+ATTEMPTS_RANGE = "a whole number from 1 to 10"
+
+
+def _attempts_ok(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 10
+
+
 _SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 
 
@@ -85,6 +96,8 @@ class BrowserLogin:
     """Filled into the empty username or email box of trusted sign-in pages (optional)."""
     password: str = field(default="", repr=False)
     """With ``username``, typed into trusted sign-in pages by headless renewal (optional)."""
+    sign_in_attempts: int = 3
+    """At most this many form submissions per headless renewal (``sign_in_attempts``)."""
 
     @classmethod
     def from_settings(
@@ -115,12 +128,16 @@ class BrowserLogin:
         hosts = raw.get("signin_hosts") or []
         if not isinstance(hosts, list) or not all(isinstance(h, str) for h in hosts):
             raise ConfigError("auth browser 'signin_hosts' must list host names or globs")
+        attempts = raw.get("sign_in_attempts", SIGN_IN_ATTEMPTS)
+        if not _attempts_ok(attempts):
+            raise ConfigError(f"auth browser 'sign_in_attempts' must be {ATTEMPTS_RANGE}")
         return cls(
             url,
             tuple(cookies),
             {str(k): str(v) for k, v in headers.items()},
             domain,
             tuple(hosts),
+            sign_in_attempts=attempts,
         )
 
     def trusted_page(self, url: str) -> bool:
@@ -310,14 +327,39 @@ def prefill_username(page: Any, username: str, filled: set[str], error: type[Exc
     return False
 
 
-SIGN_IN_SCRIPT = """([name, secret, href, selectors, done]) => {
-  if (location.href !== href) return "moved";
+SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect]) => {
+  if (location.href !== href) return { outcome: "moved" };
   const shown = (el) => el && !el.disabled && el.offsetParent !== null;
-  const user = selectors.map((s) => document.querySelector(s)).find(shown);
-  const pass = Array.from(document.querySelectorAll("input[type=password]")).find(shown);
-  if (!user && !pass) return "none";
+  const all = (s) => Array.from(document.querySelectorAll(s)).filter(shown);
+  const otp = /(^|[-_ ])(otp|totp|mfa|2fa|passcode|verification|code)([-_ ]|$)/i;
+  const challenge = all("input").some(
+    (el) => /one-time-code/i.test(el.autocomplete || "") || otp.test(el.name) || otp.test(el.id)
+  );
+  if (challenge) return { outcome: "challenge" };
+  const passes = all("input[type=password]");
+  if (passes.length > 1 || passes.some((el) => /new-password/i.test(el.autocomplete || "")))
+    return { outcome: "unclear" };
+  const pass = passes[0];
+  const user = selectors.flatMap(all)[0];
+  if (!user && !pass) return { outcome: "none" };
   const step = pass ? "password" : "username";
-  if (done.includes(step)) return "done";
+  if (done.includes(step)) return { outcome: "done" };
+  if (user && user.value && user.value.trim().toLowerCase() !== name.trim().toLowerCase())
+    return { outcome: "other-account" };
+  const form = (pass || user).form;
+  if (!form) return { outcome: "stuck" };
+  const button =
+    Array.from(
+      form.querySelectorAll("button[type=submit], input[type=submit], button:not([type])")
+    ).find(shown) || null;
+  const own = (attr) => button && button.getAttribute(attr) !== null;
+  const dest = (own("formaction") ? button.formAction : form.action) || location.href;
+  const method = ((own("formmethod") ? button.getAttribute("formmethod") : null) ||
+    form.getAttribute("method") || "").toLowerCase();
+  const plan = { outcome: step, dest, method };
+  if (mode === "inspect") return plan;
+  if (!expect || expect.outcome !== step || expect.dest !== dest || expect.method !== method)
+    return { outcome: "changed" };
   const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
   const put = (el, value) => {
     set.call(el, value);
@@ -326,20 +368,14 @@ SIGN_IN_SCRIPT = """([name, secret, href, selectors, done]) => {
   };
   if (user && !user.value) put(user, name);
   if (pass) put(pass, secret);
-  const field = pass || user;
-  const form = field.form;
-  const button = (form || document).querySelector(
-    "button[type=submit], input[type=submit], button:not([type])"
-  );
-  if (button && shown(button)) button.click();
-  else if (form) form.requestSubmit();
-  else return "stuck";
-  return step;
+  if (button) button.click();
+  else form.requestSubmit();
+  return plan;
 }"""
-"""Fill the sign-in form of the checked page and submit it, in one step of that document."""
+"""Inspect the checked page's sign-in form, or fill and submit it as inspected.
 
-SIGN_IN_ATTEMPTS = 3
-"""At most this many form submissions per renewal: a page that keeps asking is left alone."""
+Pages with a one-time-code box, several password boxes or a new-password box, a form
+naming another account, or no form at all are left alone."""
 
 
 def sign_in_headless(
@@ -347,24 +383,33 @@ def sign_in_headless(
 ) -> str:
     """Type the saved username and password into a trusted sign-in page and submit it.
 
-    The caller has checked ``page.url``; the script re-checks, in the same step, that the
-    document is still that page. Each step of a page (the username, then a password box
-    that appears on the same URL) is submitted at most once, and a renewal stops after
-    ``SIGN_IN_ATTEMPTS`` submissions (MFA, a CAPTCHA or a wrong password are left for an
-    interactive ``auth login``). Return what was submitted (or why nothing was).
+    The caller has checked ``page.url``. The form is inspected first: it must submit to a
+    trusted page (``BrowserLogin.trusted_page``), and a password never goes with an
+    explicit ``GET``. The submit step re-checks, in the same step of the document, that
+    the page and form are still the inspected ones. Each step of a page (the username,
+    then a password box that appears on the same URL) is submitted at most once, and a
+    renewal stops after ``login.sign_in_attempts`` submissions (MFA, a CAPTCHA or a wrong
+    password are left for an interactive ``auth login``). Return what was submitted, or
+    why nothing was.
     """
     href = str(page.url)
-    if len(filled) >= SIGN_IN_ATTEMPTS:
+    if len(filled) >= login.sign_in_attempts:
         return "done"
     done = [step for step in ("username", "password") if f"{step} {href}" in filled]
+    base = [login.username, login.password, href, list(USERNAME_FIELDS), done]
     try:
-        outcome = str(
-            page.evaluate(
-                SIGN_IN_SCRIPT, [login.username, login.password, href, USERNAME_FIELDS, done]
-            )
-        )
+        plan = page.evaluate(SIGN_IN_SCRIPT, ["inspect", *base, None])
+        outcome = str(plan.get("outcome")) if isinstance(plan, dict) else "none"
+        if outcome not in ("username", "password"):
+            return outcome
+        if not login.trusted_page(str(plan.get("dest"))) or (
+            outcome == "password" and plan.get("method") == "get"
+        ):
+            return "unsafe"
+        sent = page.evaluate(SIGN_IN_SCRIPT, ["submit", *base, plan])
     except error:
         return "error"
+    outcome = str(sent.get("outcome")) if isinstance(sent, dict) else "none"
     if outcome in ("username", "password"):
         filled.add(f"{outcome} {href}")
     return outcome
@@ -496,16 +541,23 @@ class BrowserSession:
 
     def password(self) -> str:
         """The password saved for headless renewal ("" when none is)."""
-        data = self.store.load(password_key(self.key)) or {}
-        secret = data.get("secret") if data.get("type") == "password" else None
+        secret = self.saved().get(RENEWAL_PASSWORD)
         return secret if isinstance(secret, str) else ""
 
     def save_password(self, secret: str | None) -> None:
-        """Keep ``secret`` for headless renewal, or forget a saved one (``None``)."""
+        """Keep ``secret`` for headless renewal, or forget a saved one (``None``).
+
+        It lives in the session record, so it shares its site and is never a key another
+        scheme could own; with no session saved there is nothing to keep it with.
+        """
+        record = dict(self.saved())
+        if not record or record.get(RENEWAL_PASSWORD) == secret:
+            return
         if secret is None:
-            self.store.delete(password_key(self.key))
+            record.pop(RENEWAL_PASSWORD, None)
         else:
-            self.store.save(password_key(self.key), {"type": "password", "secret": secret})
+            record[RENEWAL_PASSWORD] = secret
+        self.store.save(self.key, record)
 
     def sign_in(self) -> list[Cookie]:
         """Open a browser window for the person to sign in; save and return the cookies."""
@@ -527,26 +579,25 @@ class BrowserSession:
         return cookies
 
     def save(self, cookies: list[Cookie]) -> None:
-        """Store the session cookies with the origin they were issued for."""
-        self.store.save(
-            self.key,
-            {
-                "type": "browser",
-                "origin": _api_origin(self.login),
-                "cookies": [dict(c) for c in cookies],
-                "saved_at": int(time.time()),
-            },
-        )
+        """Store the session cookies with the origin they were issued for.
+
+        A password saved for renewal (for this site) is kept.
+        """
+        record: dict[str, Any] = {
+            "type": "browser",
+            "origin": _api_origin(self.login),
+            "cookies": [dict(c) for c in cookies],
+            "saved_at": int(time.time()),
+        }
+        password = self.password()
+        if password:
+            record[RENEWAL_PASSWORD] = password
+        self.store.save(self.key, record)
 
     @override
     def __repr__(self) -> str:
         """Never render cookies."""
         return f"BrowserSession({self.login.domain})"
-
-
-def password_key(scheme: str) -> str:
-    """The store key of the password a browser scheme keeps for headless renewal."""
-    return f"{scheme}.password"
 
 
 def forget_profile(directory: Path, root: Path) -> bool:
@@ -659,7 +710,6 @@ __all__ = [
     "browser_root",
     "cookie_header",
     "forget_profile",
-    "password_key",
     "playwright_capture",
     "profile_dir",
     "session_cookies",

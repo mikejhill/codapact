@@ -433,6 +433,7 @@ cli:
         headers: {X-Atlassian-Token: no-check}   # sent with every request (optional)
         domain: example.atlassian.net            # cookie host (default: login URL host)
         signin_hosts: ["id.example.com"]         # sign-in hosts a rejected session redirects to
+        sign_in_attempts: 3                      # form submissions per renewal with a saved password
 ```
 
 * `<program> auth login --scheme session` opens a browser window; the person signs in
@@ -587,8 +588,12 @@ a username; the default is No unless `cli.auth.<scheme>.save_secret: true`), or 
 works, in the same store and bound to the same site as the session. A headless renewal then
 types the username and password into each trusted sign-in page (the trust rule below) and
 submits it: once per step of a page (a password box that appears after the username counts
-as a second step) and at most three times per renewal, so MFA, a CAPTCHA or a wrong password
-stop it and leave the next command to ask for `auth login`. `auth status` shows
+as a second step) and at most three times per renewal (`browser.sign_in_attempts`, 1 to 10,
+changes it for a coda whose sign-in has more steps), so MFA, a CAPTCHA or a wrong password
+stop it and leave the next command to ask for `auth login`. The form must submit to a trusted
+page, and the password never goes with an explicit `GET`. Pages with a one-time-code box,
+several password boxes or a new-password box, or a form that already names another account,
+are left alone. The password is kept exactly as typed (spaces too) inside the session record. `auth status` shows
 `renewal: saved password, no window needed`; `auth login --no-save-secret`, answering `n`,
 or `auth logout --scheme NAME` forgets it. Without a terminal or a flag, `auth login` leaves
 a saved password as it is.

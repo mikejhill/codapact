@@ -1189,34 +1189,34 @@ def test_browser_login_can_save_the_password_for_renewal(tmp_path: Path) -> None
     assert labels[3] == (
         "Save the password so an expired session renews without a window (memory)? [y/N]: "
     )
-    assert inner.items["default:session.password"] == {
-        "type": "password",
-        "secret": "pw",
-        "codapact_site": "https://a.test",
-    }
+    record = inner.items["default:session"]
+    assert record["renewal_password"] == "pw"
+    assert record["codapact_site"] == "https://a.test"
     status = {row["scheme"]: row for row in auth.status()}
     assert status["session"]["renewal"] == "saved password, no window needed"
     assert "renewal" not in status["basic"]
     # without a terminal or a flag, a new sign-in leaves the saved password alone
     quiet, _, _, _ = browser_wizard([], tmp_path, index=index, inner=inner, interactive=False)
     assert "password" not in quiet.run(login(scheme="session", base_url="https://a.test"))
-    assert inner.items["default:session.password"]["secret"] == "pw"
+    assert inner.items["default:session"]["renewal_password"] == "pw"
     # answering no forgets it; so does --no-save-secret
     again, _, _, _ = browser_wizard(["", "", "", "n"], tmp_path, index=index, inner=inner)
     assert again.run(login())["password"] == "not saved"
-    assert "default:session.password" not in inner.items
+    assert "renewal_password" not in inner.items.get("default:session", {})
     piped, _, _, _ = browser_wizard([], tmp_path, index=index, inner=inner, interactive=False)
     piped.stdin = io.StringIO("tok\n")
     piped.run(login(scheme="session", with_token=True))
-    assert inner.items["default:session.password"]["secret"] == "tok"
+    assert inner.items["default:session"]["renewal_password"] == "tok"
     piped.run(login(scheme="session", save_secret=False))
-    assert "default:session.password" not in inner.items
+    assert "renewal_password" not in inner.items.get("default:session", {})
     assert index.settings("default") == {**site, "username.session": "amy"}
     # logout forgets it too
     piped.stdin = io.StringIO("tok\n")
     piped.run(login(scheme="session", with_token=True, save_secret=True))
     out = piped.run(argparse.Namespace(auth_action="logout", scheme="session"))
-    assert out["removed"] == ["session"] and "default:session.password" not in inner.items
+    assert out["removed"] == ["session"] and "renewal_password" not in inner.items.get(
+        "default:session", {}
+    )
 
 
 def test_saving_a_browser_password_needs_a_username_and_a_source(tmp_path: Path) -> None:
@@ -1250,11 +1250,11 @@ def test_browser_password_default_and_failed_sign_in(tmp_path: Path) -> None:
     )
     auth.run(login())
     assert labels[3].endswith("[Y/n]: ")
-    assert inner.items["default:session.password"]["secret"] == "pw"
+    assert inner.items["default:session"]["renewal_password"] == "pw"
     # a sign-in that does not finish keeps what was saved before
     failing, _, _, _ = browser_wizard(
         ["", "", "", "y", "new"], tmp_path, inner=inner, fail=True, index=auth.profiles
     )
     with pytest.raises(AuthError, match="sign-in did not finish"):
         failing.run(login())
-    assert inner.items["default:session.password"]["secret"] == "pw"
+    assert inner.items["default:session"]["renewal_password"] == "pw"

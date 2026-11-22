@@ -20,7 +20,6 @@ from codapact.runtime.browser import (
     browser_root,
     cookie_header,
     forget_profile,
-    password_key,
     playwright_capture,
     sign_in_headless,
 )
@@ -457,46 +456,87 @@ def test_model_v3_documents_migrate() -> None:
 
 
 class FormPage:
-    """A page whose sign-in form script reports ``outcome`` (or raises ``FakeError``)."""
+    """A page whose sign-in form inspects as ``plan`` (``raise`` raises ``FakeError``)."""
 
-    def __init__(self, url: str, outcome: str) -> None:
+    def __init__(self, url: str, plan: Any, submitted: Any = None) -> None:
         self.url = url
-        self.outcome = outcome
+        self.plan = plan
+        self.submitted = submitted
         self.calls: list[list[Any]] = []
 
-    def evaluate(self, script: str, args: list[Any]) -> str:
-        assert script.startswith("([name, secret, href, selectors, done]) =>")
+    def evaluate(self, script: str, args: list[Any]) -> Any:
+        assert script.startswith("([mode, name, secret, href, selectors, done, expect]) =>")
         self.calls.append(args)
-        if self.outcome == "raise":
+        if self.plan == "raise":
             raise FakeError("navigated away")
-        return self.outcome
+        if args[0] == "inspect":
+            return self.plan
+        assert args[6] == self.plan  # submits exactly what was inspected
+        return self.plan if self.submitted is None else self.submitted
 
 
-def test_headless_sign_in_submits_each_page_once() -> None:
-    login = BrowserLogin(SITE + "/", ("t",), domain="acme.example.net", username="amy")
-    login = replace(login, password="pw")
+def step(outcome: str, dest: str = "https://id.example.com/login", method: str = "post") -> Any:
+    return {"outcome": outcome, "dest": dest, "method": method}
+
+
+def test_headless_sign_in_submits_each_page_step_once() -> None:
+    login = replace(
+        BrowserLogin(SITE + "/", ("t",), domain="acme.example.net", username="amy"),
+        password="pw",
+        signin_hosts=("id.example.com",),
+    )
     filled: set[str] = set()
-    page = FormPage("https://id.example.com/login", "username")
+    page = FormPage("https://id.example.com/login", step("username", method=""))
     assert sign_in_headless(page, login, filled, FakeError) == "username"
-    assert page.calls[0][:3] == ["amy", "pw", "https://id.example.com/login"]
-    assert page.calls[0][4] == []
-    page.outcome = "password"  # the password box appeared on the same URL
+    assert [c[0] for c in page.calls] == ["inspect", "submit"]
+    assert page.calls[0][1:4] == ["amy", "pw", "https://id.example.com/login"]
+    assert page.calls[0][5] == []
+    page.plan = step("password")  # the password box appeared on the same URL
     assert sign_in_headless(page, login, filled, FakeError) == "password"
-    assert page.calls[1][4] == ["username"]  # the script skips steps already submitted
-    for outcome in ("none", "stuck", "moved", "raise"):
-        other = FormPage(f"https://id.example.com/{outcome}", outcome)
-        expected = "error" if outcome == "raise" else outcome
-        assert sign_in_headless(other, login, filled, FakeError) == expected
-    # nothing else was submitted
-    assert filled == {
-        "username https://id.example.com/login",
-        "password https://id.example.com/login",
+    assert page.calls[2][5] == ["username"]  # the script skips steps already submitted
+    cases = {
+        "challenge": FormPage("https://id.example.com/mfa", {"outcome": "challenge"}),
+        "none": FormPage("https://id.example.com/n", "not a dict"),
+        "error": FormPage("https://id.example.com/e", "raise"),
+        # the form posts somewhere untrusted, or sends the password in the URL
+        "unsafe": FormPage("https://id.example.com/x", step("password", "https://evil.test/")),
+        "changed": FormPage("https://id.example.com/c", step("password"), {"outcome": "changed"}),
     }
+    cases["get"] = FormPage("https://id.example.com/g", step("password", method="get"))
+    for expected, case in cases.items():
+        outcome = sign_in_headless(case, login, filled, FakeError)
+        assert outcome == ("unsafe" if expected == "get" else expected)
+    # a username may go with GET (a username-first page); nothing else was submitted
+    get_user = FormPage("https://id.example.com/u", step("username", method="get"))
+    assert sign_in_headless(get_user, login, filled, FakeError) == "username"
+    assert len(filled) == 3
+    blocked = FormPage("https://id.example.com/9", step("password"))
+    assert sign_in_headless(blocked, login, filled, FakeError) == "done"  # default 3
+    assert blocked.calls == []
+    roomy = replace(login, sign_in_attempts=5)
     for n in range(10):
         sign_in_headless(
-            FormPage(f"https://id.example.com/{n}", "password"), login, filled, FakeError
+            FormPage(f"https://id.example.com/{n}", step("password")), roomy, filled, FakeError
         )
-    assert len(filled) == 3  # MFA or a wrong password loops: stop
+    assert len(filled) == 5
+
+
+def test_sign_in_attempts_setting() -> None:
+    browser: dict[str, Any] = {"login_url": SITE, "cookies": ["t"]}
+    settings = {"browser": browser}
+    login = BrowserLogin.from_settings(settings)
+    assert login is not None and login.sign_in_attempts == 3
+    browser["sign_in_attempts"] = 1
+    login = BrowserLogin.from_settings(settings)
+    assert login is not None and login.sign_in_attempts == 1
+    for bad in (0, 11, True, "3"):
+        browser["sign_in_attempts"] = bad
+        with pytest.raises(ConfigError, match="sign_in_attempts"):
+            BrowserLogin.from_settings(settings)
+        with pytest.raises(PluginError, match="sign_in_attempts"):
+            _browser_settings("session", browser)
+    browser["sign_in_attempts"] = 4
+    _browser_settings("session", browser)
 
 
 def test_renewal_types_the_saved_password(tmp_path: Path) -> None:
@@ -512,17 +552,22 @@ def test_renewal_types_the_saved_password(tmp_path: Path) -> None:
     auth.usernames = {"session": "amy"}
     session = auth.session(SESSION)
     assert session is not None
+    session.save_password("pw")  # no session saved: nothing to keep it with
+    assert session.password() == "" and store.load("session") is None
     assert not session.refresh(SESSION)  # no browser profile and no password
+    session.save([])
     session.save_password("pw")
-    assert store.load(password_key("session")) == {"type": "password", "secret": "pw"}
+    assert (store.load("session") or {})["renewal_password"] == "pw"
     assert session.password() == "pw"
     assert session.refresh(SESSION)  # works without a browser profile
     assert seen[-1].password == "pw" and seen[-1].username == "amy"
+    assert session.password() == "pw"  # new cookies keep it
     auth.usernames = {}
     unnamed = auth.session(SESSION)
     assert unnamed is not None and unnamed.refresh(SESSION)
     assert seen[-1].password == ""  # a password alone types nothing
     session.save_password(None)
-    assert session.password() == ""
-    store.save(password_key("session"), {"type": "token", "secret": "x"})
+    assert session.password() == "" and "renewal_password" not in (store.load("session") or {})
+    session.save_password(None)  # nothing to forget
+    store.save("session", {**(store.load("session") or {}), "renewal_password": 7})
     assert session.password() == ""

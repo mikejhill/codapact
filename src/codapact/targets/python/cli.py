@@ -175,7 +175,7 @@ def _browser_settings(scheme: str, value: object) -> None:
     where = f"cli.auth.{scheme}.browser"
     if not isinstance(value, dict):
         raise PluginError(f"{where} must be a mapping")
-    allowed = {"login_url", "cookies", "headers", "domain", "signin_hosts"}
+    allowed = {"login_url", "cookies", "headers", "domain", "signin_hosts", "sign_in_attempts"}
     if set(value) - allowed:
         raise PluginError(f"{where} allows {', '.join(sorted(allowed))}")
     cookies = value.get("cookies")
@@ -189,6 +189,9 @@ def _browser_settings(scheme: str, value: object) -> None:
     hosts = value.get("signin_hosts", [])
     if not isinstance(hosts, list) or not all(isinstance(h, str) for h in hosts):
         raise PluginError(f"{where}.signin_hosts must list host names or globs")
+    attempts = value.get("sign_in_attempts", 3)
+    if not isinstance(attempts, int) or isinstance(attempts, bool) or not 1 <= attempts <= 10:
+        raise PluginError(f"{where}.sign_in_attempts must be a whole number from 1 to 10")
 
 
 def _spelling(name: str) -> str:
