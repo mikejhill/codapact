@@ -1294,7 +1294,7 @@ def test_another_account_gets_a_clean_browser_and_status_follows(tmp_path: Path)
 def test_auth_renew_shows_each_step(tmp_path: Path) -> None:
     from tests.unit.test_extensions import DiskLikeStore  # keeps a browser profile
 
-    auth, _, inner, index = browser_wizard(
+    auth, _, _, _ = browser_wizard(
         ["https://a.test", "2", "amy", "y", "pw"], tmp_path, inner=DiskLikeStore()
     )
     auth.run(login())
@@ -1337,4 +1337,3 @@ def test_auth_renew_shows_each_step(tmp_path: Path) -> None:
     other.base_url = "https://a.test"
     with pytest.raises(AuthError, match="nothing to renew from"):
         empty.run(argparse.Namespace(auth_action="renew", scheme="session"))
-    del inner, index

@@ -569,9 +569,10 @@ class AuthCommands:
             if err is not None:
                 print(f"  {text}", file=err)
 
-        password = browser.paused() or ("saved" if browser.password() else "")
+        has_secret = bool(browser.password())  # only whether one is saved, never its value
+        state = browser.paused() or ("saved" if has_secret else "none")
         show(f"renewing {scheme.name} at {browser.login.login_url}")
-        show(f"saved password: {password or 'none'}")
+        show(f"saved password: {state}")
         outcome = replace(browser, login=replace(browser.login, trace=show)).renew()
         if outcome == "unavailable":
             raise AuthError(
