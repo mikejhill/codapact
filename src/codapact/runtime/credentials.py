@@ -9,23 +9,33 @@ Resolution order for a generated CLI (first hit wins):
 4. ``<PREFIX>_<SCHEME>_CLIENT_ID`` + ``_CLIENT_SECRET``: OAuth 2.0 client
    credentials, fetched and refreshed automatically (``OAuthClientAuth``).
 5. What ``<program> auth login`` stored in the keyring or credentials file
-   (``StoreAuth``), including OAuth tokens that refresh themselves.
+   (``StoreAuth``), including OAuth tokens that refresh themselves. A basic login
+   saved without its password (``auth login --no-save-secret``) keeps the username in
+   the profile; the password then comes from ``<PREFIX>_<SCHEME>_PASSWORD`` or, on a
+   terminal, a hidden prompt the first time a request needs it (``AskedPassword``).
 """
 
 from __future__ import annotations
 
+import base64
 import importlib
 import os
 import shlex
 import subprocess
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, override
 
 from codapact.core.naming import env_variable
 from codapact.model.api import Api, AuthKind, AuthScheme
-from codapact.runtime.abstractions import AuthProvider, Credential, Secret, Transport
-from codapact.runtime.auth import ChainAuth, EnvAuth, StaticAuth, auth_hint
+from codapact.runtime.abstractions import (
+    AuthProvider,
+    Credential,
+    HttpRequest,
+    Secret,
+    Transport,
+)
+from codapact.runtime.auth import ChainAuth, EnvAuth, StaticAuth, auth_hint, with_headers
 from codapact.runtime.browser import BrowserAuth
 from codapact.runtime.errors import AuthError
 from codapact.runtime.oauth import (
@@ -185,27 +195,77 @@ class StoredSession:
 
 
 @dataclass(slots=True)
+class AskedPassword:
+    """Basic credentials whose password is asked for, hidden, when a request first needs it.
+
+    The password stays in memory for this process only. Telling where a credential
+    comes from (``auth status``, ``doctor`` without a request) never asks.
+    """
+
+    username: str
+    ask: Callable[[str], str] = field(repr=False)
+    label: str = "password"
+    _password: str | None = field(default=None, repr=False)
+
+    def authenticate(self, request: HttpRequest, scheme: AuthScheme) -> HttpRequest:
+        """Send ``Authorization: Basic`` with the saved username and the asked password."""
+        if self._password is None:
+            value = self.ask(f"{self.label}: ").strip()
+            if not value:
+                raise AuthError(f"no password given for {scheme.name}")
+            self._password = value
+        raw = f"{self.username}:{self._password}".encode()
+        return with_headers(
+            request, {"Authorization": "Basic " + base64.b64encode(raw).decode("ascii")}
+        )
+
+    @override
+    def __repr__(self) -> str:
+        """Name the user, never the password."""
+        return f"AskedPassword({self.username!r})"
+
+
+@dataclass(slots=True)
 class StoreAuth:
-    """Credentials that ``<program> auth login`` saved in a ``TokenStore``."""
+    """Credentials that ``<program> auth login`` saved in a ``TokenStore``.
+
+    ``username`` is the profile's saved username: a basic scheme with no saved password
+    pairs it with ``<PREFIX>_<SCHEME>_PASSWORD``, or with ``ask`` (a hidden terminal
+    prompt, ``None`` when there is no terminal).
+    """
 
     store: TokenStore
     http: Transport
     login_hint: str = ""
+    username: str = ""
+    ask: Callable[[str], str] | None = field(default=None, repr=False)
+    prefix: str = ""
+    environ: Mapping[str, str] = field(default_factory=dict, repr=False)
     _cache: dict[str, Secret] = field(default_factory=dict)
 
     def hint(self, scheme: AuthScheme) -> str:
         """Point at the login command."""
         if scheme.kind is AuthKind.CUSTOM or not self.login_hint:
             return ""
+        if scheme.kind is AuthKind.BASIC and self.username:
+            variable = env_variable(self.prefix, scheme.name) + "_PASSWORD"
+            return (
+                f"the password for {self.username} is not saved: run on a terminal to be "
+                f"asked for it, set {variable}, or run {self.login_hint} --scheme "
+                f"{scheme.name} --save-secret"
+            )
         return f"run {self.login_hint} --scheme {scheme.name}"
 
     def credential(self, scheme: AuthScheme) -> Secret | None:
-        """Return the stored secret or a self-refreshing OAuth session."""
+        """Return the stored secret, a self-refreshing OAuth session, or an asked password."""
         if scheme.name in self._cache:
             return self._cache[scheme.name]
         data = self.store.load(scheme.name)
         if not data:
-            return None
+            found = self._unsaved_password(scheme)
+            if found is not None:
+                self._cache[scheme.name] = found
+            return found
         secret: Secret | None = None
         if data.get("type") == "oauth2" and isinstance(data.get("access_token"), str):
             token_url = str(data.get("token_url") or "")
@@ -223,6 +283,17 @@ class StoreAuth:
         if secret is not None:
             self._cache[scheme.name] = secret
         return secret
+
+    def _unsaved_password(self, scheme: AuthScheme) -> Secret | None:
+        """Pair the saved username with a password from the environment or a prompt."""
+        if scheme.kind is not AuthKind.BASIC or not self.username:
+            return None
+        password = self.environ.get(env_variable(self.prefix, scheme.name) + "_PASSWORD")
+        if password:
+            return Credential(password, self.username)
+        if self.ask is None:
+            return None
+        return AskedPassword(self.username, self.ask, f"{scheme.name} password for {self.username}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,6 +408,8 @@ def cli_auth(
     plugin: str | None = None,
     configured: Mapping[str, Mapping[str, Any]] | None = None,
     base_url: str = "",
+    username: str = "",
+    ask: Callable[[str], str] | None = None,
 ) -> ChainAuth:
     """Build the credential chain every generated CLI uses (see the module docs)."""
     providers: list[AuthProvider] = []
@@ -358,9 +431,12 @@ def cli_auth(
                 environ,
                 base_url,
                 str(getattr(store, "profile", "") or ""),
+                username=username,
             )
         )
-    providers.append(StoreAuth(store, http, f"{program} auth login"))
+    providers.append(
+        StoreAuth(store, http, f"{program} auth login", username, ask, prefix, environ)
+    )
     return ChainAuth(tuple(providers))
 
 
@@ -385,6 +461,11 @@ def _provider_label(provider: AuthProvider, scheme: AuthScheme) -> str:
         case OAuthClientAuth():
             return "OAuth client credentials"
         case StoreAuth():
+            if provider.store.load(scheme.name) is None and provider.username:
+                variable = env_variable(provider.prefix, scheme.name) + "_PASSWORD"
+                if provider.environ.get(variable):
+                    return f"saved username {provider.username} with {variable}"
+                return f"saved username {provider.username} (password asked when needed)"
             return f"saved login ({store_location(provider.store, scheme.name)})"
         case BrowserAuth():
             return f"browser session ({store_location(provider.store, scheme.name)})"
@@ -394,6 +475,7 @@ def _provider_label(provider: AuthProvider, scheme: AuthScheme) -> str:
 
 
 __all__ = [
+    "AskedPassword",
     "AuthContext",
     "CommandAuth",
     "OAuthClientAuth",

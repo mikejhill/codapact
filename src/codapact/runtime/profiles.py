@@ -5,6 +5,10 @@ stores scheme ``bearer`` under ``work:bearer`` (keyring entry
 ``codapact:<program>:work:bearer``). The list of profiles and the default live in
 ``$XDG_CONFIG_HOME/<program>/profiles.json``; secrets never do.
 
+Each profile can also keep non-secret settings there (``PROFILE_SETTINGS``): the base
+URL, the scheme it signed in with, and the username. ``auth login`` saves them, and
+commands read the base URL after flags and environment, before the settings file.
+
 Selection, first hit wins: ``--profile NAME``, ``<PREFIX>_PROFILE``, the settings
 file's ``profile``, the default in ``profiles.json``, then ``default``.
 
@@ -28,6 +32,8 @@ from codapact.runtime.errors import AuthError
 from codapact.runtime.oauth import TokenStore, store_location
 
 DEFAULT_PROFILE = "default"
+PROFILE_SETTINGS = ("base_url", "scheme", "username")
+"""Non-secret values a profile keeps next to its saved logins."""
 PROFILE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 
 
@@ -62,11 +68,23 @@ class ProfileIndex:
             data = data if isinstance(data, dict) else {}
             names = data.get("profiles")
             default = data.get("default")
+            settings = data.get("settings")
             self._data = {
                 "default": default if isinstance(default, str) else None,
                 "profiles": [n for n in names if isinstance(n, str)]
                 if isinstance(names, list)
                 else [],
+                "settings": {
+                    str(name): {
+                        k: v
+                        for k, v in values.items()
+                        if k in PROFILE_SETTINGS and isinstance(v, str)
+                    }
+                    for name, values in settings.items()
+                    if isinstance(values, dict)
+                }
+                if isinstance(settings, dict)
+                else {},
             }
         return self._data
 
@@ -77,7 +95,8 @@ class ProfileIndex:
         fd, temp = tempfile.mkstemp(dir=self.path.parent, prefix=".profiles-")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(self._load(), handle, indent=2)
+                data = self._load()
+                json.dump({k: v for k, v in data.items() if k != "settings" or v}, handle, indent=2)
             os.replace(temp, self.path)
         except BaseException:
             Path(temp).unlink(missing_ok=True)
@@ -128,12 +147,40 @@ class ProfileIndex:
         data["default"] = name
         self._save()
 
+    def settings(self, name: str) -> dict[str, str]:
+        """The non-secret settings saved for profile ``name`` (empty when none)."""
+        return dict(self._load()["settings"].get(name, {}))
+
+    def update_settings(self, name: str, values: dict[str, str]) -> None:
+        """Merge ``values`` into the settings of ``name`` and register the profile.
+
+        An empty value removes that setting.
+        """
+        unknown = set(values) - set(PROFILE_SETTINGS)
+        if unknown:
+            raise AuthError(f"unknown profile settings: {', '.join(sorted(unknown))}")
+        data = self._load()
+        current = data["settings"].setdefault(check_profile_name(name), {})
+        for key, value in values.items():
+            if value:
+                current[key] = value
+            else:
+                current.pop(key, None)
+        if not current:
+            del data["settings"][name]
+        if name not in data["profiles"]:
+            data["profiles"].append(name)
+            if data["default"] not in data["profiles"]:
+                data["default"] = name
+        self._save()
+
     def remove(self, name: str) -> bool:
-        """Forget ``name``; the default moves to the oldest remaining profile."""
+        """Forget ``name`` and its settings; the default moves to the oldest remaining profile."""
         data = self._load()
         if name not in data["profiles"]:
             return False
         data["profiles"].remove(name)
+        data["settings"].pop(name, None)
         if data["default"] == name:
             data["default"] = data["profiles"][0] if data["profiles"] else None
         self._save()
@@ -217,6 +264,7 @@ def profiles_path(program: str, environ: dict[str, str] | Any) -> Path:
 
 __all__ = [
     "DEFAULT_PROFILE",
+    "PROFILE_SETTINGS",
     "ProfileIndex",
     "ProfileStore",
     "check_profile_name",

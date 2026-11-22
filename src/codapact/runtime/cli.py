@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import getpass
 import importlib.metadata
 import io
 import json
@@ -326,6 +327,18 @@ class CliRuntime:
     """``package.module:factory`` CLI extensions (``cli.extensions``): extra global options,
     call hooks, and ``describe`` notes; see ``codapact.runtime.extensions``."""
 
+    @staticmethod
+    def secret_prompt(label: str) -> str:
+        """Ask for a secret on the terminal without echoing it."""
+        return getpass.getpass(label, stream=sys.stderr)
+
+    @staticmethod
+    def prompt(label: str) -> str:
+        """Ask for a value on the terminal (the label goes to stderr, like ``getpass``)."""
+        sys.stderr.write(label)
+        sys.stderr.flush()
+        return sys.stdin.readline().rstrip("\n")
+
     def loaded_extensions(self) -> list[Any]:
         """Return the CLI extension objects (built afresh on each call)."""
         return [load_extension(spec, self) for spec in self.extensions]
@@ -626,7 +639,11 @@ class CliRuntime:
         file_settings = self._file_settings(getattr(args, "config", None))
         options: dict[str, Any] = {}
         sources: dict[str, str] = {}
+        profile, profile_source = self.profile(args, file_settings)
+        saved = self.profiles().settings(profile)
         base_url, sources["base_url"] = self._setting(args, file_settings, "base_url")
+        if sources["base_url"] in ("settings file", "default") and saved.get("base_url"):
+            base_url, sources["base_url"] = saved["base_url"], f"profile {profile}"
         if base_url:
             options["base_url"] = str(base_url)
         else:
@@ -658,9 +675,10 @@ class CliRuntime:
         plugin, sources["auth_plugin"] = self._setting(args, file_settings, "auth_plugin")
         if not plugin and self.auth_plugin:
             plugin, sources["auth_plugin"] = self.auth_plugin, "generated default"
-        profile, source = self.profile(args, file_settings)
-        sources["profile"] = f"{profile} (from {source})"
-        options["auth"] = self.credentials(options, file_settings, str(plugin or ""), profile)
+        sources["profile"] = f"{profile} (from {profile_source})"
+        options["auth"] = self.credentials(
+            options, file_settings, str(plugin or ""), profile, saved.get("username", "")
+        )
         return options, sources
 
     def profiles(self) -> ProfileIndex:
@@ -705,8 +723,13 @@ class CliRuntime:
         file_settings: Mapping[str, Any],
         plugin: str = "",
         profile: str | None = None,
+        username: str = "",
     ) -> ChainAuth:
-        """Build the credential chain: plugin, env, command, OAuth client, saved login."""
+        """Build the credential chain: plugin, env, command, OAuth client, saved login.
+
+        ``username`` is the profile's saved one; on a terminal, a basic scheme saved
+        without its password asks for it when a request needs it.
+        """
         configured: dict[str, Mapping[str, Any]] = dict(self.auth_config or {})
         file_auth = file_settings.get("auth") or {}
         if not isinstance(file_auth, Mapping):
@@ -730,6 +753,8 @@ class CliRuntime:
             base_url=str(
                 options.get("base_url") or (api.servers[0].url if api.servers else "") or ""
             ),
+            username=username,
+            ask=self.secret_prompt if _interactive() else None,
         )
 
     def settings(self, args: argparse.Namespace) -> dict[str, Any]:
@@ -1042,9 +1067,10 @@ class CliRuntime:
             _error_format.reset(token)
 
     def _auth(self, args: argparse.Namespace, api: Api, fmt: str, out: TextIO, err: TextIO) -> int:
-        options, _ = self.resolve(args)
+        options, sources = self.resolve(args)
         chain = options["auth"]
         profile, _ = self.profile(args, self._file_settings(getattr(args, "config", None)))
+        interactive = _interactive()
         commands = cli_auth.AuthCommands(
             program=self.program,
             prefix=self.env_prefix,
@@ -1056,6 +1082,11 @@ class CliRuntime:
             environ=self.env,
             configured=self.auth_config or {},
             err=err,
+            prompt=self.prompt if interactive else input,
+            secret_prompt=self.secret_prompt,
+            interactive=interactive,
+            contract_url=api.servers[0].url if api.servers else "",
+            base_url_source=sources.get("base_url", ""),
         )
         try:
             if args.auth_action == "token":
@@ -1454,6 +1485,14 @@ class Trace:
         size = len(response.body)
         print(f"< {response.status} ({size} bytes, {elapsed:.0f} ms)", file=self.stream)
         return response
+
+
+def _interactive() -> bool:
+    """Whether a person can answer prompts: stdin and stderr are both terminals."""
+    try:
+        return sys.stdin.isatty() and sys.stderr.isatty()
+    except (AttributeError, ValueError):  # replaced or closed streams
+        return False
 
 
 def _global_options(parser: argparse.ArgumentParser) -> list[dict[str, Any]]:

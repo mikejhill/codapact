@@ -35,7 +35,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, override
 from urllib.parse import urlsplit
@@ -81,6 +81,8 @@ class BrowserLogin:
     """Host the cookies belong to (default: the login URL's host)."""
     signin_hosts: tuple[str, ...] = ()
     """Host globs of the sign-in pages a rejected session redirects to (optional)."""
+    username: str = ""
+    """Filled into the first empty username or email field of each sign-in page (optional)."""
 
     @classmethod
     def from_settings(
@@ -217,10 +219,13 @@ def playwright_capture(
                 page = context.pages[0] if context.pages else context.new_page()
                 page.goto(login.login_url)
                 deadline = time.monotonic() + timeout
+                filled: set[str] = set()
                 while time.monotonic() < deadline:
                     found = session_cookies(context.cookies(), login)
                     if found and _on_host(page.url, login.domain):
                         return found
+                    if login.username and not headless:
+                        prefill_username(page, login.username, filled, playwright_error)
                     page.wait_for_timeout(500)
                 return []
             except playwright_error as error:  # page closed, navigation failed...
@@ -231,6 +236,38 @@ def playwright_capture(
                 except playwright_error:
                     pass
     raise AuthError("could not start a browser (" + "; ".join(errors) + ")")
+
+
+USERNAME_FIELDS = (
+    "input[autocomplete~='username']",
+    "input[type='email']",
+    "input[name='username']",
+    "input[name='email']",
+    "input[name='loginfmt']",
+    "input[id='username']",
+)
+"""Selectors for the username box of common sign-in pages (Atlassian, Okta, Entra ID…)."""
+
+
+def prefill_username(page: Any, username: str, filled: set[str], error: type[Exception]) -> bool:
+    """Type ``username`` into the page's empty, visible username field, once per URL.
+
+    Best effort: a page without such a field, or one that changes while it is filled,
+    is left for the person. Return whether a field was filled.
+    """
+    url = str(page.url).split("?", 1)[0]
+    if url in filled:
+        return False
+    try:
+        for selector in USERNAME_FIELDS:
+            box = page.locator(selector + ":visible").first
+            if box.count() and not box.input_value():
+                box.fill(username)
+                filled.add(url)
+                return True
+    except error:
+        return False
+    return False
 
 
 def session_cookies(cookies: list[Any], login: BrowserLogin) -> list[Cookie]:
@@ -414,6 +451,8 @@ class BrowserAuth:
     base_url: str = ""
     profile: str = ""
     capture: Capture = field(default_factory=lambda: playwright_capture)  # an instance attribute
+    username: str = ""
+    """Pre-filled on the sign-in page (the profile's saved username)."""
 
     def uses_browser(self, scheme: AuthScheme) -> bool:
         """Whether ``scheme`` has ``browser`` settings."""
@@ -426,16 +465,24 @@ class BrowserAuth:
         )
 
     def session(
-        self, scheme: AuthScheme, *, store: Any = None, profile: str | None = None
+        self,
+        scheme: AuthScheme,
+        *,
+        store: Any = None,
+        profile: str | None = None,
+        username: str | None = None,
     ) -> BrowserSession | None:
         """Return the session handler for ``scheme`` (with or without saved cookies).
 
-        ``store`` and ``profile`` override the chain's (``auth login --new`` picks a new
-        profile after the chain was built).
+        ``store``, ``profile`` and ``username`` override the chain's (``auth login --new``
+        picks a new profile after the chain was built).
         """
         login = BrowserLogin.from_settings(self.configured.get(scheme.name), self.base_url)
         if login is None:
             return None
+        chosen_user = self.username if username is None else username
+        if chosen_user:
+            login = replace(login, username=chosen_user)
         browser = self.environ.get(f"{self.prefix}_BROWSER") or None
         if browser is not None and browser not in BROWSERS:
             raise ConfigError(f"{self.prefix}_BROWSER must be one of {', '.join(BROWSERS)}")

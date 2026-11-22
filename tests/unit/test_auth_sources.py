@@ -519,12 +519,16 @@ def test_cli_target_validates_baked_auth_settings() -> None:
         )
 
     assert _auth_config(request({"sso": {"client_id": "c"}})) == {"sso": {"client_id": "c"}}
+    assert _auth_config(request({"login": {"save_secret": False}})) == {
+        "login": {"save_secret": False}
+    }
     for bad, message in [
         ("sso", "must map"),
         ({"nope": {}}, "unknown scheme"),
         ({"sso": {"client_secret": "s"}}, "allows client_id"),
         ({"sso": "c"}, "allows client_id"),
         ({"sso": {"docs": 1}}, "docs must be a string"),
+        ({"login": {"save_secret": "no"}}, "save_secret must be true or false"),
     ]:
         with pytest.raises(PluginError, match=message):
             _auth_config(request(bad))
