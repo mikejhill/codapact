@@ -465,7 +465,9 @@ class FormPage:
         self.calls: list[list[Any]] = []
 
     def evaluate(self, script: str, args: list[Any]) -> Any:
-        assert script.startswith("([mode, name, secret, href, selectors, done, expect]) =>")
+        assert script.startswith(
+            "([mode, name, secret, href, selectors, done, expect, signinPage]) =>"
+        )
         self.calls.append(args)
         if self.plan == "raise":
             raise FakeError("navigated away")
@@ -490,7 +492,7 @@ def test_headless_sign_in_submits_each_page_step_once() -> None:
     assert sign_in_headless(page, login, filled, FakeError) == "username"
     assert [c[0] for c in page.calls] == ["inspect", "submit"]
     assert page.calls[0][1:4] == ["amy", "pw", "https://id.example.com/login"]
-    assert page.calls[0][5] == []
+    assert page.calls[0][5] == [] and page.calls[0][7] is True  # a sign-in host
     page.plan = step("password")  # the password box appeared on the same URL
     assert sign_in_headless(page, login, filled, FakeError) == "password"
     assert page.calls[2][5] == ["username"]  # the script skips steps already submitted
@@ -502,11 +504,10 @@ def test_headless_sign_in_submits_each_page_step_once() -> None:
         "unsafe": FormPage("https://id.example.com/x", step("password", "https://evil.test/")),
         "changed": FormPage("https://id.example.com/c", step("password"), {"outcome": "changed"}),
     }
-    cases["get"] = FormPage("https://id.example.com/g", step("password", method="get"))
+    cases["stuck"] = FormPage("https://id.example.com/b", {**step("password"), "blocked": True})
     for expected, case in cases.items():
-        outcome = sign_in_headless(case, login, filled, FakeError)
-        assert outcome == ("unsafe" if expected == "get" else expected)
-    # a username may go with GET (a username-first page); nothing else was submitted
+        assert sign_in_headless(case, login, filled, FakeError) == expected
+    # GET forms are submitted (the script posts a password); nothing else was submitted
     get_user = FormPage("https://id.example.com/u", step("username", method="get"))
     assert sign_in_headless(get_user, login, filled, FakeError) == "username"
     assert len(filled) == 3
@@ -519,6 +520,15 @@ def test_headless_sign_in_submits_each_page_step_once() -> None:
             FormPage(f"https://id.example.com/{n}", step("password")), roomy, filled, FakeError
         )
     assert len(filled) == 5
+
+
+def test_sign_in_pages_for_email_only_forms() -> None:
+    from codapact.runtime.browser import _sign_in_page
+
+    login = BrowserLogin(SITE + "/", ("t",), signin_hosts=("id.*.com",))
+    assert _sign_in_page(login, "https://id.example.com/anything")
+    assert _sign_in_page(login, SITE + "/login?next=/")
+    assert not _sign_in_page(login, SITE + "/newsletter")
 
 
 def test_sign_in_attempts_setting() -> None:
@@ -564,8 +574,14 @@ def test_renewal_types_the_saved_password(tmp_path: Path) -> None:
     assert session.password() == "pw"  # new cookies keep it
     auth.usernames = {}
     unnamed = auth.session(SESSION)
-    assert unnamed is not None and unnamed.refresh(SESSION)
-    assert seen[-1].password == ""  # a password alone types nothing
+    assert unnamed is not None and unnamed.password() == ""  # a password alone types nothing
+    auth.usernames = {"session": "bob"}  # another login changed the username since
+    other = auth.session(SESSION)
+    assert other is not None and other.password() == ""
+    assert not other.refresh(SESSION)  # nor lets a renewal run without a profile
+    unnamed.save_password("pw")  # nothing to pair it with: forgotten
+    assert "renewal_password" not in (store.load("session") or {})
+    session.save_password("pw")
     session.save_password(None)
     assert session.password() == "" and "renewal_password" not in (store.load("session") or {})
     session.save_password(None)  # nothing to forget
