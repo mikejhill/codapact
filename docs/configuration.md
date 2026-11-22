@@ -499,14 +499,15 @@ site does not use it, whichever store or settings file is in effect: changing `b
 in the settings file, or switching between the keyring and the file, never sends a saved
 credential to a site it was not entered for. Sites compare without case in the scheme and
 host and without a trailing `/`; a different path is a different site. A login saved while
-no site was chosen (a placeholder server and no `--base-url`) is used only while none is
-configured. Logins saved before 0.14 have no site and are used as before until the next
+no site was chosen (a placeholder server and no `--base-url`) is bound to the URL requests
+actually went to. A site change asks before replacing logins saved for another site (by the
+site each records) and forgets them only once the new login has worked. Logins saved before 0.14 have no site and are used as before until the next
 `auth login`. A value too large for
 one keyring entry (Windows allows 2,560 bytes, which browser session cookies exceed) is
 split across entries `<key>#<generation>.<n>`; the previous value stays readable until the
 new one is complete, old parts that cannot be removed stay listed until a later save or
 `auth logout` removes them, and commands take `~/.cache/codapact/locks/<service>.lock` while
-they read or write. The Windows backend keeps an overwritten value as `<user>@<service>`;
+they read or write (without one if that folder cannot be written). The Windows backend keeps an overwritten value as `<user>@<service>`;
 that copy is removed once the new value is written (so opting out of a saved password really
 removes it). Logins written by earlier versions may have left such copies: `auth logout`
 removes them.

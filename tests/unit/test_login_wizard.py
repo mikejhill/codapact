@@ -322,7 +322,7 @@ def test_without_a_terminal_login_keeps_its_old_behaviour() -> None:
     )
     assert unsaved.run(login(scheme="basic"))["password"].startswith("not saved")
     assert inner.items == {
-        "default:basic": {"type": "basic", "username": "amy", "codapact_site": ""}
+        "default:basic": {"type": "basic", "username": "amy", "codapact_site": PLACEHOLDER}
     }
 
 
@@ -344,7 +344,7 @@ def test_save_secret_options() -> None:
     quiet.run(login(scheme="basic", save_secret=False))
     # the old password would otherwise still be sent
     assert inner.items == {
-        "default:basic": {"type": "basic", "username": "amy", "codapact_site": ""}
+        "default:basic": {"type": "basic", "username": "amy", "codapact_site": PLACEHOLDER}
     }
     fields, _, _, _ = wizard(
         [], interactive=False, configured={"basic": {"fields": {"pin": {"secret": True}}}}
@@ -999,3 +999,66 @@ def test_malformed_manifests_are_plain_values() -> None:
     ):
         backend.items[("codapact:acme:m", "m")] = raw
         assert store.load("m") == json.loads(raw)
+
+
+def test_sixth_review_sites_and_guard(tmp_path: Path) -> None:
+    from codapact.runtime.cli_auth import contract_site
+    from codapact.runtime.locking import locked
+
+    assert contract_site("https://api.example/graphql?version=1") == ""
+    inner = MemoryTokenStore()
+    ProfileStore(inner, "default", site="https://a.test").save(
+        "token", {"type": "token", "secret": "a"}
+    )
+    fresh, _, _, _ = wizard(["b"], inner=inner, interactive=False, contract="https://b.test")
+    with pytest.raises(AuthError, match="has saved logins"):
+        fresh.run(login(scheme="token"))  # the record says site A, whatever the index says
+    assert inner.items["default:token"]["secret"] == "a"
+    index = ProfileIndex(None)
+    keep = MemoryTokenStore()
+    wizard(["https://a.test", "2", "tok"], index=index, inner=keep)[0].run(login())
+    switch, _, _, _ = wizard(["y", ""], index=index, inner=keep)
+    with pytest.raises(AuthError):
+        switch.run(login(scheme="basic", base_url="https://b.test"))  # no username given
+    assert keep.items["default:token"]["secret"] == "tok"  # kept: the new login failed
+    bad, _, _, _ = wizard(["tok"], interactive=False)
+    bad.fallback_base_url = "https://u:p@bad.test"
+    assert bad.run(login(scheme="token", base_url="https://ok.test"))["base_url"] == (
+        "https://ok.test"
+    )
+    blocker = tmp_path / "file"
+    blocker.write_text("x")
+    with locked(blocker / "sub" / "x.lock"):  # cannot be created: no lock, no failure
+        pass
+    plain = BrowserLogin("http://localhost:80/login", ("sid",), domain="localhost")
+    assert plain.trusted_page("http://localhost/next")
+
+
+def test_a_copy_that_cannot_be_removed_is_reported() -> None:
+    from codapact.runtime.oauth import KeyringTokenStore
+    from tests.unit.test_oauth import FakeKeyring
+
+    class Sticky(FakeKeyring):
+        @override
+        def set_password(self, service: str, key: str, value: str) -> None:
+            if (service, key) in self.items:
+                self.items[(f"{key}@{service}", key)] = self.items[(service, key)]
+            super().set_password(service, key, value)
+
+        @override
+        def delete_password(self, service: str, key: str) -> None:
+            raise OSError("access denied")
+
+    store = KeyringTokenStore("codapact:acme", Sticky())
+    store.save("basic", {"secret": "pw"})
+    with pytest.raises(AuthError, match="could not remove the previous value's copy"):
+        store.save("basic", {"username": "amy"})
+
+
+def test_a_confirmed_switch_drops_other_schemes_after_the_new_login() -> None:
+    index = ProfileIndex(None)
+    inner = MemoryTokenStore()
+    wizard(["https://a.test", "2", "tok"], index=index, inner=inner)[0].run(login())
+    switch, _, _, _ = wizard(["y", "amy", "n"], index=index, inner=inner)
+    switch.run(login(scheme="basic", base_url="https://b.test"))
+    assert sorted(inner.items) == ["default:basic"]

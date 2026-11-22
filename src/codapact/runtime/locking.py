@@ -16,8 +16,13 @@ LOCK_TIMEOUT = 10.0
 @contextlib.contextmanager
 def locked(path: Path) -> Generator[None]:
     """Hold an exclusive lock on ``path`` (created if missing) across processes."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+b") as handle:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = path.open("a+b")
+    except OSError:
+        yield  # an unwritable lock directory never blocks reading or saving
+        return
+    with handle:
         if os.name == "nt":  # pragma: no cover - exercised by the Windows CI job
             import msvcrt  # noqa: PLC0415
 

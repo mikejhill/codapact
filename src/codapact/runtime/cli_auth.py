@@ -70,6 +70,7 @@ from codapact.runtime.oauth import (
 )
 from codapact.runtime.profiles import (
     DEFAULT_PROFILE,
+    SITE,
     ProfileIndex,
     ProfileStore,
     same_site,
@@ -206,15 +207,19 @@ class AuthCommands:
         destination = self._destination(args, saved, new)
         scheme = self._choose_scheme(args.scheme, saved)  # validated before anything is dropped
         self._check_options(scheme, args)
-        self._guard_site_change(saved, destination)
+        site = destination or self.contract_url  # where requests will really go
+        stale = self._guard_site_change(saved, destination, site)
         if isinstance(self.store, ProfileStore):
-            self.store.site = destination  # each record names its site ("" = not chosen)
+            self.store.site = site  # each record names its site
         remember: dict[str, str] = {}
         if destination:
             remember["base_url"] = destination  # pinned: a settings-file change never moves it
         result = self._scoped(self.login(scheme, args, saved, remember))
         remember["scheme"] = scheme.name
         self.profiles.update_settings(self.profile_name, remember)
+        for name in stale:  # only now that the new login worked
+            if name != scheme.name:
+                self.logout(name)
         if destination and not same_site(destination, saved.get("base_url", "")):
             result["base_url"] = destination
         if self.profile and self.profile != self.profiles.default:
@@ -243,13 +248,14 @@ class AuthCommands:
         sign-in page follows it, so ``--new`` never opens the previous profile's site.
         """
         flag = getattr(args, "base_url", None)
-        current = self._previous_site(saved)
         if flag:
             url = _normal_url(str(flag))
         elif self.base_url_source.startswith("env"):
             url = _normal_url(self.base_url)
         elif self.interactive and (
-            not current or saved.get("base_url") or _placeholder(self.contract_url)
+            not (current := self._previous_site(saved))
+            or saved.get("base_url")
+            or _placeholder(self.contract_url)
         ):
             default = current
             hint = f" (like {self.contract_url})" if self.contract_url and not default else ""
@@ -259,11 +265,18 @@ class AuthCommands:
                 raise AuthError("a base URL is required: pass --base-url")
             url = _normal_url(answer)
         else:
-            url = current  # empty when it is still a placeholder: the site is unknown
+            url = self._previous_site(saved)  # empty when still a placeholder: unknown
         browser = self._browser_auth()
         if browser is not None and (url or new):
             browser.base_url = url  # the chain was built before --new or this choice
         return url
+
+    def _known_site(self, saved: Mapping[str, str]) -> str:
+        """The previous site, or "" when it is unknown or not a valid URL."""
+        try:
+            return self._previous_site(saved)
+        except AuthError:
+            return ""
 
     def _previous_site(self, saved: Mapping[str, str]) -> str:
         """The site this profile used so far ("" when unknown).
@@ -277,31 +290,43 @@ class AuthCommands:
             return _normal_url(self.fallback_base_url)
         return contract_site(self.contract_url)
 
-    def _signed_in(self) -> list[str]:
-        """Schemes with anything saved in this profile: a login or a plugin's session."""
+    def _signed_in(self, other_than: str | None = None, legacy_moves: bool = True) -> list[str]:
+        """Schemes with a login or plugin session saved in this profile.
+
+        With ``other_than``, only those saved for another site; a record from before sites
+        were recorded counts when ``legacy_moves``.
+        """
         return [
             s.name
             for s in self.api.auth_schemes
-            if self._held(s.name) or self._held(session_key(s.name))
+            if any(
+                self._held(key, other_than, legacy_moves) for key in (s.name, session_key(s.name))
+            )
         ]
 
-    def _held(self, key: str) -> bool:
-        """Whether anything is saved under ``key``, for any site."""
+    def _held(self, key: str, other_than: str | None = None, legacy_moves: bool = True) -> bool:
         stored = getattr(self.store, "stored", self.store.load)
-        return stored(key) is not None
+        data = stored(key)
+        if data is None:
+            return False
+        if other_than is None:
+            return True
+        if SITE not in data:
+            return legacy_moves
+        return not same_site(str(data[SITE]), other_than)
 
-    def _guard_site_change(self, saved: Mapping[str, str], url: str) -> None:
-        """Refuse to point saved logins at another site unless a person agrees to drop them.
+    def _guard_site_change(self, saved: Mapping[str, str], url: str, site: str) -> list[str]:
+        """Return the schemes to forget once this login to ``site`` succeeds.
 
-        The previous site is the profile's URL, else the one commands used without it; a
-        placeholder means it is unknown, which counts as different.
+        Logins saved for another site (by the site each one records; for older logins,
+        the profile's previous URL) are only forgotten when a person agrees; without a
+        terminal the login is refused.
         """
-        previous = self._previous_site(saved)
-        if previous == url or (previous and url and same_site(previous, url)):
-            return
-        signed_in = self._signed_in()
+        previous = self._known_site(saved)
+        moved = not (previous == url or (previous and url and same_site(previous, url)))
+        signed_in = self._signed_in(other_than=site, legacy_moves=moved)
         if not signed_in:
-            return
+            return []
         where = previous or "an unknown site"
         question = (
             f"Profile {self.profile_name} signs in to {where}; its saved logins "
@@ -309,9 +334,7 @@ class AuthCommands:
             "Forget them and switch?"
         )
         if self.interactive and self._confirm(question, False):
-            for name in signed_in:
-                self.logout(name)
-            return
+            return signed_in
         raise AuthError(
             f"profile {self.profile_name} has saved logins for {where}: sign in to "
             f"{url or 'another site'} with auth login --new (or --profile NAME), or run "
@@ -774,10 +797,13 @@ def _preset_fields(spec: Mapping[str, Mapping[str, Any]], given: list[str]) -> d
 
 
 def contract_site(url: str) -> str:
-    """The contract's server as a site, or "" when it is missing, a placeholder or relative."""
+    """The contract's server as a site to offer, or "" (missing, placeholder, relative...)."""
     if not url or _placeholder(url) or not urlsplit(url).netloc:
         return ""
-    return _normal_url(url)
+    try:
+        return _normal_url(url)
+    except AuthError:
+        return ""  # a server URL with a query (a GraphQL endpoint) is no site to offer
 
 
 def _placeholder(url: str) -> bool:

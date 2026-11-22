@@ -336,10 +336,17 @@ class KeyringTokenStore:
         backend.set_password(service, user, value)
         copy = f"{user}@{service}"
         try:
-            if backend.get_password(copy, user) is not None:
+            found = backend.get_password(copy, user) is not None
+        except Exception:  # noqa: BLE001 - other backends never make such a copy
+            found = False
+        if found:
+            try:
                 backend.delete_password(copy, user)
-        except Exception:  # noqa: BLE001, S110 - other backends never make such a copy
-            pass
+            except Exception as error:  # noqa: BLE001 - every backend raises its own types
+                raise AuthError(
+                    f"saved, but could not remove the previous value's copy {copy!r} from the "
+                    f"keyring ({type(error).__name__}); delete it in the credential manager"
+                ) from None
 
     def _part(self, key: str, generation: str, n: int) -> tuple[str, str]:
         name = f"{key}#{generation}.{n}" if generation else f"{key}#{n}"
@@ -379,7 +386,7 @@ class KeyringTokenStore:
                 for n, part in enumerate(parts, start=1):
                     self._put(backend, *self._part(key, current[1], n), part)
                 self._publish(backend, key, current, old.generations if old else ())
-            except Exception:
+            except BaseException:  # Ctrl-C too: never leave unlisted parts behind
                 self._drop_parts(backend, key, current)
                 raise
         stuck = []
@@ -388,8 +395,9 @@ class KeyringTokenStore:
                 self._drop_parts(backend, key, generation, strict=True)
             except Exception:  # noqa: BLE001 - kept in the manifest for the next attempt
                 stuck.append(generation)
-        if current is not None:  # always, when there were old parts
-            self._publish(backend, key, current, stuck)
+        if current is not None and old is not None and stuck != list(old.generations):
+            with contextlib.suppress(Exception):  # the new value is already readable
+                self._publish(backend, key, current, stuck)
 
     def _publish(
         self, backend: Any, key: str, current: tuple[int, str], retired: Sequence[tuple[int, str]]

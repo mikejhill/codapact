@@ -753,13 +753,12 @@ class CliRuntime:
         api = self.model() if self.model is not None else Api(self.api_name, "", ())
         contract = api.servers[0].url if api.servers else ""
         transport = str(options.get("base_url") or contract or "")
-        site = str(options.get("base_url") or "") or cli_auth.contract_site(contract)
         return build_cli_auth(
             api,
             program=self.program,
             prefix=self.env_prefix,
             environ=self.env,
-            store=self.credential_store(profile, site),
+            store=self.credential_store(profile, transport),  # bound to where requests go
             http=self._auth_http(options),
             plugin=plugin or None,
             configured=configured,
@@ -1089,9 +1088,7 @@ class CliRuntime:
             prefix=self.env_prefix,
             api=api,
             chain=chain,
-            store=self.credential_store(
-                profile, str(options.get("base_url") or "") or cli_auth.contract_site(contract)
-            ),
+            store=self.credential_store(profile, str(options.get("base_url") or contract)),
             profiles=self.profiles(),
             http=self._auth_http(options),
             environ=self.env,

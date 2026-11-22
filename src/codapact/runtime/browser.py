@@ -135,10 +135,8 @@ class BrowserLogin:
             return False
         if parts.scheme != "https":
             # plain HTTP only for the configured login origin itself (a local app)
-            return (
-                parts.scheme == login.scheme == "http"
-                and host == (login.hostname or "").lower()
-                and parts.port == login.port
+            return parts.scheme == login.scheme == "http" and _origin(url) == _origin(
+                self.login_url
             )
         if host in {(login.hostname or "").lower(), self.domain.lower()}:
             return True

@@ -336,6 +336,7 @@ __all__ = [
     "setting_allowed",
     "username_key",
     "ProfileIndex",
+    "SITE",
     "same_site",
     "ProfileStore",
     "check_profile_name",
