@@ -1062,3 +1062,82 @@ def test_a_confirmed_switch_drops_other_schemes_after_the_new_login() -> None:
     switch, _, _, _ = wizard(["y", "amy", "n"], index=index, inner=inner)
     switch.run(login(scheme="basic", base_url="https://b.test"))
     assert sorted(inner.items) == ["default:basic"]
+
+
+def test_seventh_review(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import getpass
+
+    from codapact.runtime.oauth import KEYRING_CHUNK, KeyringTokenStore
+    from codapact.runtime.profiles import same_site
+    from tests.unit.test_oauth import FakeKeyring
+
+    assert not same_site("https://a.test/graphql?tenant=A", "https://a.test/graphql?tenant=B")
+    # the selected scheme's old plugin session goes too, once the new login works
+    index = ProfileIndex(None)
+    inner = MemoryTokenStore()
+    wizard(["https://a.test", "2", "tok"], index=index, inner=inner)[0].run(login())
+    ProfileStore(inner, "default", site="https://a.test").save("token.session", {"s": 1})
+    switch, _, _, _ = wizard(["y", "tok2"], index=index, inner=inner)
+    switch.run(login(scheme="token", base_url="https://b.test"))
+    assert sorted(inner.items) == ["default:token"]
+    # the question names the site the stale login records
+    other = MemoryTokenStore()
+    ProfileStore(other, "default", site="https://a.test").save("token", {"secret": "a"})
+    fresh, _, _, _ = wizard(["b"], inner=other, interactive=False, contract="https://b.test")
+    with pytest.raises(AuthError, match="saved logins for https://a.test"):
+        fresh.run(login(scheme="token"))
+    # a clean browser profile for the new site; the old one back if sign-in fails
+    auth, _, _, _ = wizard([], interactive=False)
+    directory = tmp_path / "session"
+    provider = types.SimpleNamespace(
+        uses_browser=lambda scheme: True, directory=lambda scheme, profile: directory
+    )
+    monkeypatch.setattr(AuthCommands, "_browser_auth", lambda self: provider)
+    scheme = API.auth_schemes[0]
+    directory.mkdir()
+    (directory / "old").write_text("cookie")
+    with pytest.raises(RuntimeError), auth._fresh_browser(scheme, True):
+        assert not directory.exists()
+        directory.mkdir()
+        raise RuntimeError("sign-in failed")
+    assert (directory / "old").exists()
+    with auth._fresh_browser(scheme, True):
+        directory.mkdir()
+    assert not (directory / "old").exists() and not (tmp_path / "session.previous-site").exists()
+    (tmp_path / "session.previous-site").mkdir()  # left over from an earlier crash
+    with auth._fresh_browser(scheme, True):
+        pass
+    with auth._fresh_browser(scheme, False):
+        pass
+    gone = tmp_path / "none"
+    monkeypatch.setattr(provider, "directory", lambda scheme, profile: gone)
+    with auth._fresh_browser(scheme, True):
+        pass
+
+    # a published value stays readable when only its backup copy could not be removed
+    class Sticky(FakeKeyring):
+        @override
+        def set_password(self, service: str, key: str, value: str) -> None:
+            if (service, key) in self.items:
+                self.items[(f"{key}@{service}", key)] = self.items[(service, key)]
+            super().set_password(service, key, value)
+
+        @override
+        def delete_password(self, service: str, key: str) -> None:
+            if "@" in service:
+                raise OSError("access denied")
+            super().delete_password(service, key)
+
+    store = KeyringTokenStore("codapact:acme", Sticky())
+    big = {"v": "x" * (KEYRING_CHUNK * 2)}
+    store.save("session", big)
+    with pytest.raises(AuthError, match="previous value's copy"):
+        store.save("session", {"v": "y" * (KEYRING_CHUNK * 2)})
+    assert store.load("session") == {"v": "y" * (KEYRING_CHUNK * 2)}
+
+    def ended(label: str, stream: Any = None) -> str:
+        raise EOFError
+
+    monkeypatch.setattr(getpass, "getpass", ended)
+    with pytest.raises(AuthError, match="input ended"):
+        CliRuntime.secret_prompt("password: ")

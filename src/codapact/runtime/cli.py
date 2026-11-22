@@ -330,7 +330,10 @@ class CliRuntime:
     @staticmethod
     def secret_prompt(label: str) -> str:
         """Ask for a secret on the terminal without echoing it."""
-        return getpass.getpass(label, stream=sys.stderr)
+        try:
+            return getpass.getpass(label, stream=sys.stderr)
+        except EOFError:
+            raise AuthError("input ended before an answer; nothing was changed") from None
 
     @staticmethod
     def prompt(label: str) -> str:

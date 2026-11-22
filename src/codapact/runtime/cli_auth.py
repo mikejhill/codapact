@@ -32,13 +32,14 @@ defaults next time; options given on the command line skip their prompts.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import getpass
 import re
 import shutil
 import sys
 import textwrap
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, TextIO
 from urllib.parse import urlsplit
@@ -214,12 +215,15 @@ class AuthCommands:
         remember: dict[str, str] = {}
         if destination:
             remember["base_url"] = destination  # pinned: a settings-file change never moves it
-        result = self._scoped(self.login(scheme, args, saved, remember))
+        with self._fresh_browser(scheme, scheme.name in stale):
+            result = self._scoped(self.login(scheme, args, saved, remember))
         remember["scheme"] = scheme.name
         self.profiles.update_settings(self.profile_name, remember)
         for name in stale:  # only now that the new login worked
             if name != scheme.name:
                 self.logout(name)
+            elif self._held(session_key(name), other_than=site):
+                self.store.delete(session_key(name))  # the old site's plugin session
         if destination and not same_site(destination, saved.get("base_url", "")):
             result["base_url"] = destination
         if self.profile and self.profile != self.profiles.default:
@@ -327,7 +331,7 @@ class AuthCommands:
         signed_in = self._signed_in(other_than=site, legacy_moves=moved)
         if not signed_in:
             return []
-        where = previous or "an unknown site"
+        where = self._saved_sites(signed_in, site) or previous or "an unknown site"
         question = (
             f"Profile {self.profile_name} signs in to {where}; its saved logins "
             f"({', '.join(signed_in)}) would be sent to {url or 'a new site'}. "
@@ -340,6 +344,47 @@ class AuthCommands:
             f"{url or 'another site'} with auth login --new (or --profile NAME), or run "
             "auth logout first"
         )
+
+    def _saved_sites(self, names: list[str], site: str) -> str:
+        """The sites the stale logins of ``names`` record ("an unknown site" for old ones)."""
+        stored = getattr(self.store, "stored", self.store.load)
+        sites: list[str] = []
+        for name in names:
+            for key in (name, session_key(name)):
+                data = stored(key)
+                if data is None or (SITE in data and same_site(str(data[SITE]), site)):
+                    continue
+                label = str(data[SITE]) if data.get(SITE) else "an unknown site"
+                if label not in sites:
+                    sites.append(label)
+        return " and ".join(sites)
+
+    @contextlib.contextmanager
+    def _fresh_browser(self, scheme: AuthScheme, switching: bool) -> Generator[None]:
+        """Sign in to a new site with a clean browser profile, keeping the old until it works.
+
+        The old site's cookies could otherwise be taken for the new site's session.
+        """
+        provider = self._browser_auth()
+        if not switching or provider is None or not provider.uses_browser(scheme):
+            yield
+            return
+        directory = provider.directory(scheme, self.profile or None)
+        backup = directory.with_name(directory.name + ".previous-site")
+        if not directory.exists():
+            yield
+            return
+        if backup.exists():
+            shutil.rmtree(backup)
+        directory.rename(backup)
+        try:
+            yield
+        except BaseException:
+            if directory.exists():
+                shutil.rmtree(directory)
+            backup.rename(directory)
+            raise
+        shutil.rmtree(backup, ignore_errors=True)
 
     def _choose_scheme(self, name: str | None, saved: Mapping[str, str]) -> AuthScheme:
         """Return the named scheme, the only one, or the one a person picks from a list."""

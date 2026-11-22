@@ -343,7 +343,7 @@ class KeyringTokenStore:
             try:
                 backend.delete_password(copy, user)
             except Exception as error:  # noqa: BLE001 - every backend raises its own types
-                raise AuthError(
+                raise CopyLeftError(
                     f"saved, but could not remove the previous value's copy {copy!r} from the "
                     f"keyring ({type(error).__name__}); delete it in the credential manager"
                 ) from None
@@ -386,6 +386,8 @@ class KeyringTokenStore:
                 for n, part in enumerate(parts, start=1):
                     self._put(backend, *self._part(key, current[1], n), part)
                 self._publish(backend, key, current, old.generations if old else ())
+            except CopyLeftError:
+                raise  # the manifest was written: its parts are live, old ones listed
             except BaseException:  # Ctrl-C too: never leave unlisted parts behind
                 self._drop_parts(backend, key, current)
                 raise
@@ -440,6 +442,10 @@ GENERATION = "codapact_generation"
 RETIRED = "codapact_retired"
 MAX_CHUNKS = 1000
 """At most this many parts: a larger value is refused before any part is written."""
+
+
+class CopyLeftError(AuthError):
+    """A value was saved, but the backup copy of the previous value could not be removed."""
 
 
 @dataclass(frozen=True, slots=True)

@@ -315,11 +315,13 @@ SITE = "codapact_site"
 
 
 def same_site(first: str, second: str) -> bool:
-    """Whether two base URLs reach the same place (case of scheme and host, trailing ``/``)."""
+    """Whether two base URLs reach the same place (case of scheme and host, trailing ``/``).
 
-    def key(url: str) -> tuple[str, str, str]:
+    A query (a GraphQL endpoint's tenant, say) is part of the site."""
+
+    def key(url: str) -> tuple[str, str, str, str]:
         parts = urlsplit(url.strip())
-        return parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/")
+        return parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), parts.query
 
     return key(first) == key(second)
 
