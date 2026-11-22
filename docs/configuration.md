@@ -504,9 +504,10 @@ configured. Logins saved before 0.14 have no site and are used as before until t
 `auth login`. A value too large for
 one keyring entry (Windows allows 2,560 bytes, which browser session cookies exceed) is
 split across entries `<key>#<generation>.<n>`; the previous value stays readable until the
-new one is complete, and commands take `$XDG_CONFIG_HOME/<program>/keyring.lock` while they
-read or write. An entry is deleted before it is written again, because the Windows backend
-otherwise keeps the old value as `<user>@<service>` (so opting out of a saved password really
+new one is complete, old parts that cannot be removed stay listed until a later save or
+`auth logout` removes them, and commands take `~/.cache/codapact/locks/<service>.lock` while
+they read or write. The Windows backend keeps an overwritten value as `<user>@<service>`;
+that copy is removed once the new value is written (so opting out of a saved password really
 removes it). Logins written by earlier versions may have left such copies: `auth logout`
 removes them.
 
@@ -541,8 +542,8 @@ order: `--base-url`, `<PREFIX>_BASE_URL`, the profile, the settings file, the co
 
 With stdin and stderr both terminals, `auth login` asks for what the command line leaves out:
 
-1. **Base URL**, when the contract's server is a placeholder (`{site}`, `your-domain.…`)
-   or the profile already has one. `site.example` becomes `https://site.example`; a URL
+1. **Base URL**, when the contract's server is a placeholder (`{site}`, `your-domain.…`),
+   relative or missing and no URL is configured, or the profile already has one. `site.example` becomes `https://site.example`; a URL
    with a user name, password, query or fragment is refused, from the prompt, `--base-url`
    or `<PREFIX>_BASE_URL` alike. The default is the profile's URL, else the settings file's.
    Skipped when `--base-url` or `<PREFIX>_BASE_URL` is set. The site a login used is saved

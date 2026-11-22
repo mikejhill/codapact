@@ -337,7 +337,10 @@ class CliRuntime:
         """Ask for a value on the terminal (the label goes to stderr, like ``getpass``)."""
         sys.stderr.write(label)
         sys.stderr.flush()
-        return sys.stdin.readline().rstrip("\n")
+        line = sys.stdin.readline()
+        if not line:  # end of input is no answer: change nothing
+            raise AuthError("input ended before an answer; nothing was changed")
+        return line.rstrip("\n")
 
     def loaded_extensions(self) -> list[Any]:
         """Return the CLI extension objects (built afresh on each call)."""
@@ -748,7 +751,9 @@ class CliRuntime:
         if self.model is None and plugin:
             raise CodapactError("auth plugins need the generated model; regenerate the CLI")
         api = self.model() if self.model is not None else Api(self.api_name, "", ())
-        site = str(options.get("base_url") or (api.servers[0].url if api.servers else "") or "")
+        contract = api.servers[0].url if api.servers else ""
+        transport = str(options.get("base_url") or contract or "")
+        site = str(options.get("base_url") or "") or cli_auth.contract_site(contract)
         return build_cli_auth(
             api,
             program=self.program,
@@ -758,7 +763,7 @@ class CliRuntime:
             http=self._auth_http(options),
             plugin=plugin or None,
             configured=configured,
-            base_url=site,
+            base_url=transport,
             usernames=usernames,
             ask=self.secret_prompt if _interactive() else None,
         )
@@ -1084,7 +1089,9 @@ class CliRuntime:
             prefix=self.env_prefix,
             api=api,
             chain=chain,
-            store=self.credential_store(profile, str(options.get("base_url") or contract)),
+            store=self.credential_store(
+                profile, str(options.get("base_url") or "") or cli_auth.contract_site(contract)
+            ),
             profiles=self.profiles(),
             http=self._auth_http(options),
             environ=self.env,
@@ -1163,7 +1170,9 @@ class CliRuntime:
             elif scheme.kind is AuthKind.BASIC:
                 entry["environment"] = [f"{variable}_USERNAME", f"{variable}_PASSWORD"]
                 entry["login"] = login
-                entry["login_stdin"] = f"{login} --username USER --with-token"
+                keeps = (self.auth_config or {}).get(scheme.name, {}).get("save_secret")
+                opt_in = " --save-secret" if keeps is False else ""
+                entry["login_stdin"] = f"{login} --username USER --with-token{opt_in}"
             else:
                 entry["environment"] = [variable, f"{variable}_COMMAND"]
                 entry["login"] = login

@@ -243,15 +243,16 @@ class AuthCommands:
         sign-in page follows it, so ``--new`` never opens the previous profile's site.
         """
         flag = getattr(args, "base_url", None)
-        current = saved.get("base_url") or self.fallback_base_url
-        current = "" if not current or _placeholder(current) else _normal_url(current)
+        current = self._previous_site(saved)
         if flag:
             url = _normal_url(str(flag))
         elif self.base_url_source.startswith("env"):
             url = _normal_url(self.base_url)
-        elif self.interactive and (_placeholder(self.contract_url) or saved.get("base_url")):
+        elif self.interactive and (
+            not current or saved.get("base_url") or _placeholder(self.contract_url)
+        ):
             default = current
-            hint = f" (like {self.contract_url})" if not default else ""
+            hint = f" (like {self.contract_url})" if self.contract_url and not default else ""
             shown = f" [{default}]" if default else ""
             answer = self.prompt(f"Base URL{hint}{shown}: ").strip() or default
             if not answer:
@@ -263,6 +264,18 @@ class AuthCommands:
         if browser is not None and (url or new):
             browser.base_url = url  # the chain was built before --new or this choice
         return url
+
+    def _previous_site(self, saved: Mapping[str, str]) -> str:
+        """The site this profile used so far ("" when unknown).
+
+        A URL a person chose (the profile's, the settings file's) is only checked; the
+        contract's server counts only when it is a real, absolute URL.
+        """
+        if saved.get("base_url"):
+            return _normal_url(saved["base_url"])
+        if self.fallback_base_url and self.fallback_base_url != self.contract_url:
+            return _normal_url(self.fallback_base_url)
+        return contract_site(self.contract_url)
 
     def _signed_in(self) -> list[str]:
         """Schemes with anything saved in this profile: a login or a plugin's session."""
@@ -283,7 +296,7 @@ class AuthCommands:
         The previous site is the profile's URL, else the one commands used without it; a
         placeholder means it is unknown, which counts as different.
         """
-        previous = _known(saved.get("base_url") or self.fallback_base_url)
+        previous = self._previous_site(saved)
         if previous == url or (previous and url and same_site(previous, url)):
             return
         signed_in = self._signed_in()
@@ -589,8 +602,15 @@ class AuthCommands:
                 f"{scheme.name} saves declared fields; --save-secret and "
                 "--no-save-secret do not apply"
             )
-        if getattr(args, "with_token", False) and save_secret is False:
-            raise AuthError("--with-token saves the secret it reads; drop --no-save-secret")
+        if getattr(args, "with_token", False) and scheme.kind is AuthKind.BASIC and not spec:
+            configured = (self.configured.get(scheme.name) or {}).get("save_secret")
+            if save_secret is False:
+                raise AuthError("--with-token saves the secret it reads; drop --no-save-secret")
+            if configured is False and save_secret is not True:
+                raise AuthError(
+                    f"{self.program} does not save {scheme.name} passwords by default: add "
+                    "--save-secret to save the one read from stdin"
+                )
         _preset_fields(spec, getattr(args, "field", None) or [])
 
     def _save_secret(self, scheme: AuthScheme, args: argparse.Namespace) -> bool:
@@ -598,12 +618,7 @@ class AuthCommands:
         chosen = getattr(args, "save_secret", None)
         configured = (self.configured.get(scheme.name) or {}).get("save_secret")
         if args.with_token:
-            if configured is False and chosen is not True:
-                raise AuthError(
-                    f"{self.program} does not save {scheme.name} passwords by default: add "
-                    "--save-secret to save the one read from stdin"
-                )
-            return True
+            return True  # what _check_options allows saves the secret it reads
         if chosen is not None:
             return bool(chosen)
         if not self.interactive:
@@ -758,9 +773,11 @@ def _preset_fields(spec: Mapping[str, Mapping[str, Any]], given: list[str]) -> d
     return preset
 
 
-def _known(url: str) -> str:
-    """``url`` normalised, or empty when it is missing or a placeholder."""
-    return "" if not url or _placeholder(url) else _normal_url(url)
+def contract_site(url: str) -> str:
+    """The contract's server as a site, or "" when it is missing, a placeholder or relative."""
+    if not url or _placeholder(url) or not urlsplit(url).netloc:
+        return ""
+    return _normal_url(url)
 
 
 def _placeholder(url: str) -> bool:
@@ -768,4 +785,4 @@ def _placeholder(url: str) -> bool:
     return bool(PLACEHOLDER_HOST.search(urlsplit(url).netloc)) if url else False
 
 
-__all__ = ["ACTIONS", "AuthCommands", "add_auth_commands"]
+__all__ = ["ACTIONS", "AuthCommands", "add_auth_commands", "contract_site"]

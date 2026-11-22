@@ -684,7 +684,8 @@ def test_keyring_values_too_big_for_one_entry_are_split() -> None:
     assert len(manifest["codapact_generation"]) == 8
     assert store.load("session") == big
     store.save("session", {"type": "browser", "cookies": []})
-    assert sorted(k for _, k in backend.items) == ["session"]  # stale parts removed
+    assert len(backend.items) == 2  # stale parts removed; one part under a new generation
+    assert store.load("session") == {"type": "browser", "cookies": []}
     store.save("session", big)
     first = sorted(backend.items)
     store.save("session", big)  # a refresh writes a new generation, then drops the old
@@ -887,3 +888,100 @@ def test_keyring_rewrites_leave_no_copies_and_logout_is_complete(tmp_path: Path)
     with pytest.raises(AuthError, match="could not remove every part of 'session'"):
         kept.delete("session")
     assert ("codapact:acme:session", "session") in stubborn.items  # a retry finds the parts
+
+
+def test_fifth_review_sites() -> None:
+    from codapact.runtime.cli_auth import contract_site
+
+    assert contract_site(PLACEHOLDER) == "" and contract_site("/v1") == ""
+    assert contract_site("") == "" and contract_site("https://a.test/") == "https://a.test"
+    relative, _, inner, _ = wizard(["tok"], interactive=False, contract="/v1")
+    relative.fallback_base_url = "/v1"
+    result = relative.run(login(scheme="token", base_url="https://api.example"))
+    assert result["base_url"] == "https://api.example"
+    assert inner.items["default:token"]["codapact_site"] == "https://api.example"
+    blank, labels, _, _ = wizard(["https://b.test", "tok"], contract="")
+    blank.run(login(scheme="token"))
+    assert labels[0] == "Base URL: "  # no server at all: asked
+    index = ProfileIndex(None)
+    index.update_settings("default", {"base_url": "https://your-company.example"})
+    chosen, _, inner2, _ = wizard(["tok"], index=index, interactive=False)
+    chosen.run(login(scheme="token"))  # a URL a person saved is never a placeholder
+    assert inner2.items["default:token"]["codapact_site"] == "https://your-company.example"
+
+
+def test_fifth_review_stdin_policy_and_eof(monkeypatch: pytest.MonkeyPatch) -> None:
+    index = ProfileIndex(None)
+    inner = MemoryTokenStore()
+    no_save = {"basic": {"save_secret": False}}
+    first, _, _, _ = wizard(["https://a.test", "2", "tok"], index=index, inner=inner)
+    first.run(login())
+    moved, _, _, _ = wizard(["y"], index=index, inner=inner, configured=no_save)
+    with pytest.raises(AuthError, match="add --save-secret"):
+        moved.run(login(scheme="basic", base_url="https://b.test", username="amy", with_token=True))
+    assert "default:token" in inner.items  # checked before anything was dropped
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    with pytest.raises(AuthError, match="input ended"):
+        CliRuntime.prompt("Save? ")
+
+
+def test_keyring_keeps_old_values_until_replaced() -> None:
+    from codapact.runtime.oauth import KEYRING_CHUNK, KeyringTokenStore
+    from tests.unit.test_oauth import FakeKeyring
+
+    big = {"v": "x" * (KEYRING_CHUNK * 2)}
+
+    class Gate(FakeKeyring):
+        fail_on: str = ""
+        locked: bool = False
+
+        @override
+        def set_password(self, service: str, key: str, value: str) -> None:
+            if self.fail_on and key == self.fail_on:
+                raise OSError("refused")
+            super().set_password(service, key, value)
+
+        @override
+        def delete_password(self, service: str, key: str) -> None:
+            if self.locked and "#" in key:
+                raise OSError("locked")
+            super().delete_password(service, key)
+
+    gate = Gate()
+    store = KeyringTokenStore("codapact:acme", gate)
+    store.save("token", {"secret": "old"})
+    gate.fail_on = "token"
+    with pytest.raises(AuthError, match="could not save"):
+        store.save("token", {"secret": "new"})
+    assert store.load("token") == {"secret": "old"}  # a failed write loses nothing
+    gate.fail_on = ""
+    store.save("session", big)
+    gate.fail_on = "session"  # the manifest write fails
+    with pytest.raises(AuthError, match="could not save"):
+        store.save("session", big)
+    assert store.load("session") == big
+    gate.fail_on = ""
+    gate.locked = True  # old parts cannot be removed: kept in the manifest
+    store.save("session", big)
+    assert "codapact_retired" in gate.items[("codapact:acme:session", "session")]
+    assert store.load("session") == big
+    gate.locked = False
+    deleted = store.delete("session")
+    assert deleted is True
+    assert [k for _, k in gate.items] == ["token"]  # every generation removed
+
+
+def test_keyring_copy_cleanup_never_fails_a_save() -> None:
+    from codapact.runtime.oauth import KeyringTokenStore
+    from tests.unit.test_oauth import FakeKeyring
+
+    class NoCopies(FakeKeyring):
+        @override
+        def get_password(self, service: str, key: str) -> str | None:
+            if "@" in service:
+                raise RuntimeError("no such entry")
+            return super().get_password(service, key)
+
+    store = KeyringTokenStore("codapact:acme", NoCopies())
+    store.save("token", {"secret": "s"})
+    assert store.load("token") == {"secret": "s"}

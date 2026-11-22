@@ -237,10 +237,9 @@ class KeyringTokenStore:
     than ``KEYRING_CHUNK`` characters (a browser session's cookies) is split over
     entries ``<key>#<generation>.1``, ``.2``, … with a manifest under ``<key>``.
 
-    An existing entry is deleted before it is written again: the Windows backend
-    otherwise keeps the old value under ``<user>@<service>``. With ``lock_path``,
-    reads and writes hold that file's lock, so commands refreshing the same login never
-    interleave.
+    The Windows backend keeps an overwritten value as ``<user>@<service>``; that copy is
+    removed once the new value is written. With ``lock_path``, reads and writes hold
+    that file's lock, so commands refreshing the same login never interleave.
 
     Needs the optional ``keyring`` package.
     """
@@ -315,8 +314,10 @@ class KeyringTokenStore:
             removed = self._drop_legacy(backend, key)
             raw = backend.get_password(self.entry(key), key)
             if raw is not None:
+                manifest = _manifest(raw)
                 try:
-                    self._drop_parts(backend, key, _manifest(raw), strict=True)
+                    for generation in manifest.generations if manifest else ():
+                        self._drop_parts(backend, key, generation, strict=True)
                 except Exception as error:  # noqa: BLE001 - every backend raises its own types
                     raise AuthError(
                         f"could not remove every part of {key!r} from the keyring "
@@ -327,10 +328,18 @@ class KeyringTokenStore:
             return removed
 
     def _put(self, backend: Any, service: str, user: str, value: str) -> None:
-        """Write one entry, removing any previous value first (see the class notes)."""
-        if backend.get_password(service, user) is not None:
-            backend.delete_password(service, user)
+        """Write one entry, then remove the copy of its old value some backends keep.
+
+        Windows' backend first saves the previous value as ``<user>@<service>``; it is
+        removed only once the new value is written, so a failed write loses nothing.
+        """
         backend.set_password(service, user, value)
+        copy = f"{user}@{service}"
+        try:
+            if backend.get_password(copy, user) is not None:
+                backend.delete_password(copy, user)
+        except Exception:  # noqa: BLE001, S110 - other backends never make such a copy
+            pass
 
     def _part(self, key: str, generation: str, n: int) -> tuple[str, str]:
         name = f"{key}#{generation}.{n}" if generation else f"{key}#{n}"
@@ -341,7 +350,7 @@ class KeyringTokenStore:
         manifest = _manifest(raw)
         if manifest is None:
             return _decode(raw)
-        count, generation = manifest
+        count, generation = manifest.current
         parts = [backend.get_password(*self._part(key, generation, n)) for n in range(1, count + 1)]
         if any(part is None for part in parts):
             return None  # a half-written value is no credential
@@ -351,7 +360,8 @@ class KeyringTokenStore:
         """Write ``data``; a split value's parts go under a new generation, published last.
 
         Until the new manifest replaces the old one, readers see the previous value whole;
-        a failed write removes the parts it wrote.
+        a failed write removes the parts it wrote. Old parts that cannot be removed stay
+        listed in the manifest, so a later save or ``delete`` removes them.
         """
         old = _manifest(backend.get_password(self.entry(key), key))
         text = json.dumps(data, sort_keys=True)
@@ -360,30 +370,41 @@ class KeyringTokenStore:
         parts = [text[i : i + KEYRING_CHUNK] for i in range(0, len(text), KEYRING_CHUNK)]
         if len(parts) > MAX_CHUNKS:
             raise ValueError(f"the value is too large ({len(text)} characters)")
-        if len(parts) <= 1:
+        current: tuple[int, str] | None = None
+        if len(parts) <= 1 and old is None:
             self._put(backend, self.entry(key), key, text)
         else:
-            generation = secrets.token_hex(4)
+            current = (len(parts), secrets.token_hex(4))
             try:
                 for n, part in enumerate(parts, start=1):
-                    self._put(backend, *self._part(key, generation, n), part)
-                manifest = {CHUNKS: len(parts), GENERATION: generation}
-                self._put(
-                    backend, self.entry(key), key, json.dumps(manifest, separators=(",", ":"))
-                )
+                    self._put(backend, *self._part(key, current[1], n), part)
+                self._publish(backend, key, current, old.generations if old else ())
             except Exception:
-                self._drop_parts(backend, key, (len(parts), generation))
+                self._drop_parts(backend, key, current)
                 raise
-        self._drop_parts(backend, key, old)
+        stuck = []
+        for generation in old.generations if old else ():
+            try:
+                self._drop_parts(backend, key, generation, strict=True)
+            except Exception:  # noqa: BLE001 - kept in the manifest for the next attempt
+                stuck.append(generation)
+        if current is not None:  # always, when there were old parts
+            self._publish(backend, key, current, stuck)
+
+    def _publish(
+        self, backend: Any, key: str, current: tuple[int, str], retired: Sequence[tuple[int, str]]
+    ) -> None:
+        manifest: dict[str, Any] = {CHUNKS: current[0], GENERATION: current[1]}
+        if retired:
+            manifest[RETIRED] = [list(item) for item in retired]
+        self._put(backend, self.entry(key), key, json.dumps(manifest, separators=(",", ":")))
 
     def _drop_parts(
-        self, backend: Any, key: str, manifest: tuple[int, str] | None, strict: bool = False
+        self, backend: Any, key: str, generation: tuple[int, str], strict: bool = False
     ) -> None:
-        if manifest is None:
-            return
-        count, generation = manifest
+        count, name = generation
         for n in range(1, count + 1):
-            where = self._part(key, generation, n)
+            where = self._part(key, name, n)
             try:
                 if backend.get_password(*where) is not None:
                     backend.delete_password(*where)
@@ -408,21 +429,48 @@ KEYRING_CHUNK = 1000
 """Characters per keyring entry: Windows stores UTF-16, at most 2560 bytes per entry."""
 CHUNKS = "codapact_chunks"
 GENERATION = "codapact_generation"
+RETIRED = "codapact_retired"
 MAX_CHUNKS = 1000
 """At most this many parts: a larger value is refused before any part is written."""
 
 
-def _manifest(raw: str | None) -> tuple[int, str] | None:
-    """A split value's part count and generation (``None`` for a value stored whole)."""
+@dataclass(frozen=True, slots=True)
+class _Manifest:
+    """Where a split value's parts are: the current generation and any not yet removed."""
+
+    current: tuple[int, str]
+    retired: tuple[tuple[int, str], ...] = ()
+
+    @property
+    def generations(self) -> tuple[tuple[int, str], ...]:
+        return (self.current, *self.retired)
+
+
+def _generation(count: Any, name: Any, minimum: int) -> tuple[int, str] | None:
+    if not isinstance(count, int) or isinstance(count, bool) or not minimum <= count <= MAX_CHUNKS:
+        return None
+    if not isinstance(name, str) or not re.fullmatch(r"[0-9a-f]{0,16}", name):
+        return None
+    return count, name
+
+
+def _manifest(raw: str | None) -> _Manifest | None:
+    """A split value's manifest (``None`` for a value stored whole)."""
     data = _decode(raw)
-    if data is None or not {CHUNKS} <= set(data) <= {CHUNKS, GENERATION}:
+    if data is None or not {CHUNKS} <= set(data) <= {CHUNKS, GENERATION, RETIRED}:
         return None
-    count, generation = data[CHUNKS], data.get(GENERATION, "")
-    if not isinstance(count, int) or not 1 < count <= MAX_CHUNKS:
+    name = data.get(GENERATION, "")
+    current = _generation(data[CHUNKS], name, 1 if name else 2)
+    retired = data.get(RETIRED, [])
+    if current is None or not isinstance(retired, list):
         return None
-    if not isinstance(generation, str) or not re.fullmatch(r"[0-9a-f]{0,16}", generation):
+    old = [
+        _generation(*item, 1) if isinstance(item, list) and len(item) == 2 else None
+        for item in retired
+    ]
+    if any(item is None for item in old):
         return None
-    return count, generation
+    return _Manifest(current, tuple(item for item in old if item is not None))
 
 
 def _decode(raw: str | None) -> dict[str, Any] | None:
@@ -509,6 +557,12 @@ def default_store(
     return RenamedStore(current, tuple(_named_store(name, env, choice) for name in previous))
 
 
+def keyring_lock(service: str) -> Path:
+    """The lock file for ``service``: one per user, whatever ``XDG_CONFIG_HOME`` says."""
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", service)
+    return Path.home() / ".cache" / "codapact" / "locks" / f"{name}.lock"
+
+
 def _named_store(program: str, env: Mapping[str, str], choice: str) -> TokenStore:
     root = env.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
     file_store = FileTokenStore(Path(root) / program / "credentials.json")
@@ -520,7 +574,7 @@ def _named_store(program: str, env: Mapping[str, str], choice: str) -> TokenStor
             keyring_service(program),
             keyring,
             legacy_service=program,
-            lock_path=Path(root) / program / "keyring.lock",
+            lock_path=keyring_lock(keyring_service(program)),
         )
     if choice == "keyring":
         raise AuthError("the keyring credential store needs the 'keyring' package")
