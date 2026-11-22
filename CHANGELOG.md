@@ -2,6 +2,13 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.15.0](https://github.com/mikejhill/codapact/compare/v0.14.0...v0.15.0) (2026-11-22)
+
+
+### Features
+
+* **auth:** save a password so browser sessions renew without a window ([#79](https://github.com/mikejhill/codapact/issues/79)) ([3483b50](https://github.com/mikejhill/codapact/commit/3483b504ef4e8ae751f7563a596dd409c276758e))
+
 ## [0.14.0](https://github.com/mikejhill/codapact/compare/v0.13.0...v0.14.0) (2026-11-22)
 
 
