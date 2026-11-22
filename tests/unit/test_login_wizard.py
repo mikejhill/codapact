@@ -1096,6 +1096,7 @@ def test_seventh_review(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     scheme = API.auth_schemes[0]
     directory.mkdir()
     (directory / "old").write_text("cookie")
+
     def failed_sign_in() -> None:
         with auth._fresh_browser(scheme, True):
             assert not directory.exists()
