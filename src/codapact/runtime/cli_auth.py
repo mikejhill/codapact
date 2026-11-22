@@ -11,6 +11,10 @@ Actions: ``login``, ``logout``, ``status``, ``token``, ``profiles``, ``use``.
   and later commands ask for the password when a request needs it;
 * OAuth 2.0 with declared flows: runs device code or authorization code + PKCE
   (``--flow`` chooses), or client credentials when a client secret is set;
+* browser (``cli.auth.<scheme>.browser``): opens a window to sign in; on a terminal it
+  asks for a username to fill in and whether to save the password, which lets an
+  expired session renew without a window (``--save-secret``, default No unless
+  ``save_secret: true``);
 * declared fields (``cli.auth.<scheme>.fields``): prompts for each field, secret
   ones hidden, and saves them together for an auth plugin to use;
 * custom without fields: refuses, because only an auth plugin can satisfy it.
@@ -50,7 +54,7 @@ from codapact.core.net import validate_url
 from codapact.model.api import Api, AuthKind, AuthScheme, OAuthFlowKind
 from codapact.runtime.abstractions import Credential, Transport
 from codapact.runtime.auth import ChainAuth
-from codapact.runtime.browser import BrowserAuth
+from codapact.runtime.browser import RENEWAL_PASSWORD, BrowserAuth
 from codapact.runtime.credentials import (
     AskedPassword,
     credential_fields,
@@ -123,9 +127,9 @@ def add_auth_commands(
         "--save-secret",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="basic auth: save the password too (default: ask on a terminal, answer No "
-        "unless the CLI sets otherwise); without it, commands ask for the password when "
-        "they need it",
+        help="basic auth: save the password too, else commands ask for it when they need "
+        "it; browser sign-in: save it so an expired session renews without a window "
+        "(default: ask on a terminal, answer No unless the CLI sets otherwise)",
     )
     login.add_argument(
         "--field",
@@ -303,9 +307,7 @@ class AuthCommands:
         return [
             s.name
             for s in self.api.auth_schemes
-            if any(
-                self._held(key, other_than, legacy_moves) for key in (s.name, session_key(s.name))
-            )
+            if any(self._held(key, other_than, legacy_moves) for key in _record_keys(s.name))
         ]
 
     def _held(self, key: str, other_than: str | None = None, legacy_moves: bool = True) -> bool:
@@ -350,7 +352,7 @@ class AuthCommands:
         stored = getattr(self.store, "stored", self.store.load)
         sites: list[str] = []
         for name in names:
-            for key in (name, session_key(name)):
+            for key in _record_keys(name):
                 data = stored(key)
                 if data is None or (SITE in data and same_site(str(data[SITE]), site)):
                     continue
@@ -441,8 +443,8 @@ class AuthCommands:
             return
         view = ProfileStore(self.store.inner, DEFAULT_PROFILE, on_save=self.profiles.add)
         for scheme in self.api.auth_schemes:
-            view.load(scheme.name)
-            view.load(session_key(scheme.name))
+            for key in _record_keys(scheme.name):
+                view.load(key)
 
     def _scoped(self, data: dict[str, Any]) -> dict[str, Any]:
         """Put the profile first in ``data`` when the store has profiles."""
@@ -531,6 +533,8 @@ class AuthCommands:
                 row["expires_in"] = f"{left}s" if left > 0 else "expired"
                 if token.refresh_token:
                     row["expires_in"] += " (refreshable)"
+            if stored and stored.get("type") == "browser" and stored.get(RENEWAL_PASSWORD):
+                row["renewal"] = self._renewal_status(scheme)
             spec = field_specs(self.configured.get(scheme.name))
             if spec:
                 row["fields"] = self._field_status(scheme.name, spec)
@@ -538,6 +542,17 @@ class AuthCommands:
                     row["status"] = "missing"  # an auth plugin cannot sign in without them
             rows.append(row)
         return rows
+
+    def _renewal_status(self, scheme: AuthScheme) -> str:
+        """Whether the saved password still renews this scheme's session."""
+        username = self.profiles.settings(self.profile_name).get(username_key(scheme.name))
+        try:
+            browser = self._browser(scheme, username or None)
+        except AuthError:
+            browser = None
+        if browser is not None and browser.password():
+            return "saved password, no window needed"
+        return "saved password not used (another username or sign-in page): run auth login"
 
     def _field_status(self, scheme: str, spec: Mapping[str, Mapping[str, Any]]) -> dict[str, str]:
         saved = credential_fields(scheme, spec, self.prefix, {}, self.store)
@@ -612,19 +627,31 @@ class AuthCommands:
             remember[key] = username
         browser = self._browser(scheme, username)
         if browser is not None:
+            previous = saved.get(key, "")
+            password = self._renewal_password(scheme, args, username or "", previous)
             if self.err is not None:
                 print(
                     f"Sign in to {browser.login.domain} in the browser window that opens; "
                     "it closes by itself once you are signed in.",
                     file=self.err,
                 )
-            cookies = browser.sign_in()
-            return {
+            # another account: a clean browser profile, so the old account's cookies are not
+            # taken for the new one's session (the old profile comes back if this fails)
+            with self._fresh_browser(scheme, bool(previous) and username != previous):
+                cookies = browser.sign_in()
+            result = {
                 "scheme": scheme.name,
                 "signed_in": browser.login.domain,
                 "cookies": sorted({str(c["name"]) for c in cookies}),
                 "saved": _location(self.store, scheme.name),
             }
+            if password is not None:  # only once the sign-in worked
+                browser.save_password(password or None)
+                where = _location(self.store, scheme.name)
+                result["password"] = (
+                    f"saved for renewal without a window ({where})" if password else "not saved"
+                )
+            return result
         if scheme.kind is AuthKind.CUSTOM:
             raise AuthError(
                 f"{scheme.name} is a custom scheme; set {self.prefix}_AUTH_PLUGIN to code "
@@ -663,14 +690,22 @@ class AuthCommands:
         """Refuse flags that do not fit ``scheme`` before anything saved is touched."""
         save_secret = getattr(args, "save_secret", None)
         spec = field_specs(self.configured.get(scheme.name))
-        if save_secret is not None and scheme.kind is not AuthKind.BASIC:
-            raise AuthError("--save-secret and --no-save-secret apply to basic auth only")
+        provider = self._browser_auth()
+        browser = provider is not None and provider.uses_browser(scheme)
+        if save_secret is not None and scheme.kind is not AuthKind.BASIC and not browser:
+            raise AuthError(
+                "--save-secret and --no-save-secret apply to basic and browser sign-in only"
+            )
         if spec and save_secret is not None:
             raise AuthError(
                 f"{scheme.name} saves declared fields; --save-secret and "
                 "--no-save-secret do not apply"
             )
-        if getattr(args, "with_token", False) and scheme.kind is AuthKind.BASIC and not spec:
+        if (
+            getattr(args, "with_token", False)
+            and (scheme.kind is AuthKind.BASIC or browser)
+            and not spec
+        ):
             configured = (self.configured.get(scheme.name) or {}).get("save_secret")
             if save_secret is False:
                 raise AuthError("--with-token saves the secret it reads; drop --no-save-secret")
@@ -695,6 +730,34 @@ class AuthCommands:
         # (it may be a directory or identity-provider password).
         where = _location(self.store, scheme.name)
         return self._confirm(f"Save the password ({where})?", configured is True)
+
+    def _renewal_password(
+        self, scheme: AuthScheme, args: argparse.Namespace, username: str, previous: str
+    ) -> str | None:
+        """The password a browser scheme keeps for renewal without a window.
+
+        Return it to save, ``""`` to forget a saved one, or ``None`` to leave things as
+        they are (no terminal and no flag, same username). Asked before the window opens,
+        saved after.
+        """
+        chosen = getattr(args, "save_secret", None)
+        configured = (self.configured.get(scheme.name) or {}).get("save_secret")
+        if chosen is False:
+            return ""
+        if not (chosen or args.with_token):
+            if not self.interactive:
+                return None if username == previous else ""  # it was another account's
+            if not username:
+                return ""  # renewal types a password only with a username
+            where = _location(self.store, scheme.name)
+            question = f"Save the password so an expired session renews without a window ({where})?"
+            if not self._confirm(question, configured is True):
+                return ""
+        if not username:
+            raise AuthError("saving the password needs a username: pass --username")
+        if not (args.with_token or self.interactive):
+            raise AuthError("--save-secret needs a terminal, or --with-token to read stdin")
+        return self._read_secret(args.with_token, f"{scheme.name} password: ", exact=True)
 
     def _sign_in_username(self, args: argparse.Namespace, default: str) -> str:
         """The username to fill in on the browser sign-in page (optional)."""
@@ -756,11 +819,14 @@ class AuthCommands:
             "fields": list(values),
         }
 
-    def _read_secret(self, from_stdin: bool, label: str) -> str:
+    def _read_secret(self, from_stdin: bool, label: str, *, exact: bool = False) -> str:
+        """Read a secret; ``exact`` keeps its spaces (a password typed into a form)."""
         if from_stdin:
-            value = (self.stdin or sys.stdin).readline().strip()
+            value = (self.stdin or sys.stdin).readline().rstrip("\r\n")
         else:
-            value = self.secret_prompt(label).strip()
+            value = self.secret_prompt(label)
+        if not exact:
+            value = value.strip()
         if not value:
             raise AuthError("no secret given")
         return value
@@ -805,6 +871,11 @@ def _status(source: str | None) -> str:
     if source is None:
         return "missing"
     return "error" if source.startswith("error") else "ok"
+
+
+def _record_keys(scheme: str) -> tuple[str, str]:
+    """The store keys a scheme's login can occupy: its credential and a plugin session."""
+    return scheme, session_key(scheme)
 
 
 def _location(store: TokenStore, key: str | None = None) -> str:
