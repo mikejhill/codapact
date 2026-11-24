@@ -124,21 +124,20 @@ def _login(origin: str) -> BrowserLogin:
 def test_sign_in_script_on_real_forms(browser: Any) -> None:
     site = _serve(PAGES)
     origin = f"http://127.0.0.1:{site.server_port}"
-    page = browser.new_page()
     try:
-        for path, expected in EXPECTED.items():
-            page.goto(origin + path)
-            assert sign_in_headless(page, _login(origin), set(), sync_api.Error) == expected, path
-            page.wait_for_timeout(200)
+        page = browser.new_page()
+        try:
+            for path, expected in EXPECTED.items():
+                page.goto(origin + path)
+                assert sign_in_headless(page, _login(origin), set(), sync_api.Error) == expected
+                page.wait_for_timeout(200)
+            # a window without a password leaves the password box to the person
+            page.goto(origin + "/login/csrf")
+            no_password = replace(_login(origin), password="")
+            assert sign_in_headless(page, no_password, set(), sync_api.Error) == "manual"
+        finally:
+            page.close()
     finally:
-        page.close()
-    page = browser.new_page()
-    try:  # a window without a password leaves the password box to the person
-        page.goto(origin + "/login/csrf")
-        no_password = replace(_login(origin), password="")
-        assert sign_in_headless(page, no_password, set(), sync_api.Error) == "manual"
-    finally:
-        page.close()
         site.shutdown()
     bodies = [urllib.parse.parse_qs(body) for _, body in site.posts]
     # only the CSRF form and the GET form (posted instead) sent the password, both by POST
@@ -203,5 +202,28 @@ def test_a_2fa_page_stops_the_renewal_and_the_trace_says_why(tmp_path: Path) -> 
         assert "typed the password and submitted" in told
         assert told[-2].startswith("stopped: a one-time-code (2FA) page")
         assert [path for path, _ in site.posts] == ["/session"]  # no code was ever sent
+    finally:
+        site.shutdown()
+
+
+def test_the_window_types_once_and_notices_a_rejected_password(tmp_path: Path) -> None:
+    """Needs a display (skipped without one): ``xvfb-run pytest`` on Linux."""
+    pages = {
+        "/login": '<form method=post action="/session"><input name=username id=username>'
+        "<input type=password name=password><button>Sign in</button></form>",
+    }
+    site = _serve(pages, after_post="/login?error=1")  # a wrong password: the form again
+    told: list[str] = []
+    login = replace(_login(f"http://127.0.0.1:{site.server_port}"), trace=told.append)
+    try:
+        try:
+            found = playwright_capture(login, tmp_path / "w", False, 4.0, "chromium")
+        except AuthError as error:
+            if "could not start a browser" not in str(error):
+                raise
+            pytest.skip("no display for a browser window")
+        assert found == []
+        assert [path for path, _ in site.posts] == ["/session"]  # the password went once
+        assert "the sign-in page asked for the password again (a wrong password?)" in told
     finally:
         site.shutdown()

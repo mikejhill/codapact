@@ -161,8 +161,8 @@ def add_auth_commands(
     renew.add_argument(
         "--fresh",
         action="store_true",
-        help="clear the browser profile's cookies first, as on a new device, to test a full "
-        "sign-in (if it fails, auth login signs in again)",
+        help="empty the browser profile first (cookies and site storage), as on a new device, "
+        "to test a full sign-in (if it fails, auth login signs in again)",
     )
     profiles = actions.add_parser(
         "profiles",

@@ -584,9 +584,10 @@ submits the password too when you gave one (see below), with the same checks as 
 Anything else is yours to finish in the window: a 2FA code (`waiting: a one-time-code (2FA)
 page: enter the code in the window`), a CAPTCHA, a consent page, or a password you did not
 give (`waiting: type the password in the window`). The window closes by itself once the
-session cookies arrive, or after five minutes. If the password box comes back after the
-password was submitted (a wrong password), the step says so and that password is not saved;
-type the right one in the window.
+session cookies arrive, or after five minutes. The password is submitted once per sign-in:
+if a password box comes back empty (a wrong password), the step says so, nothing is typed
+again, and that password is not saved; type the right one in the window. A form that would
+send the password to an untrusted or plain-HTTP page gets a warning instead.
 
 #### Browser schemes: renewing without a window
 
@@ -627,9 +628,9 @@ code page stops the renewal and `auth login` opens a window for the code.
 the pages visited (without their query), what was typed (never the values), and why it
 stopped, for example `stopped: a one-time-code (2FA) page` or `waiting: this page was
 already submitted (a wrong password stays here)`. It exits 3 when the renewal fails.
-`--fresh` first clears the browser profile's cookies, as on a new device, so the renewal
-runs the whole sign-in (password, then any 2FA page) instead of reusing the identity
-provider's session; if it fails, run `auth login` to sign in again. `auth status` shows
+`--fresh` first empties the browser profile (cookies and site storage), as on a new device,
+so the renewal runs the whole sign-in (password, then any 2FA page) instead of reusing the
+identity provider's session; if it fails, run `auth login` to sign in again. `auth status` shows
 `renewal: saved password, no window needed`; `auth login --no-save-secret`, answering `n`,
 or `auth logout --scheme NAME` forgets it. Without a terminal or a flag, `auth login` leaves
 a saved password as it is.

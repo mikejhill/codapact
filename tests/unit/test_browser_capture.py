@@ -15,6 +15,7 @@ import pytest
 from codapact.core.errors import ConfigError, PluginError
 from codapact.model.api import AuthKind, AuthScheme
 from codapact.runtime.browser import (
+    OUTCOMES,
     BrowserAuth,
     BrowserLogin,
     browser_root,
@@ -50,6 +51,11 @@ class FakePage:
     def __init__(self, land_on: str) -> None:
         self.url = "about:blank"
         self.land_on = land_on
+        self.retyping = False  # what RETYPING_SCRIPT finds
+
+    def evaluate(self, script: str, secret: str) -> bool:
+        assert script.startswith("(secret) =>") and secret == "pw"
+        return self.retyping
 
     def goto(self, url: str) -> None:
         if self.land_on == "boom":
@@ -502,6 +508,9 @@ def test_without_a_password_the_password_step_is_left_to_the_person() -> None:
     page = FormPage("https://id.example.com/login", step("password"))
     assert sign_in_headless(page, login, set(), FakeError) == "manual"
     assert [c[0] for c in page.calls] == ["inspect"]  # nothing submitted
+    # a form posting elsewhere is a warning, never "type the password"
+    offsite = FormPage("https://id.example.com/login", step("password", "https://evil.test/"))
+    assert sign_in_headless(offsite, login, set(), FakeError) == "unsafe"
 
 
 def test_headless_sign_in_submits_each_page_step_once() -> None:
@@ -721,49 +730,69 @@ def test_a_window_hands_each_stop_to_the_person(
 
     told: list[str] = []
     prefilled: list[str] = []
-    outcomes = iter(["username", "manual", "unclear", "challenge"])
+    outcomes = iter(["username", "manual", "unclear", "stuck", "unsafe", "challenge"])
     monkeypatch.setattr(module, "sign_in_headless", lambda *_: next(outcomes, "challenge"))
     monkeypatch.setattr(module, "prefill_username", lambda page, name, *_: prefilled.append(name))
     named = replace(LOGIN, username="amy", trace=told.append)
     fake_playwright(monkeypatch, [jar(other="1")], land_on="https://acme.example.net/login")
     assert playwright_capture(named, tmp_path / "p", False, 2.2, "chromium") == []
-    assert told[1:5] == [
+    assert told[1:7] == [
         "typed the username and submitted",
         "waiting: type the password in the window (none was given)",
         "waiting: a page with several or new-password boxes: finish in the window",
+        "waiting: no form, or its submit button is disabled (a CAPTCHA?): finish in the window",
+        "warning: this form would send the password to an untrusted or plain-HTTP page; "
+        "check the address before typing it",
         "waiting: a one-time-code (2FA) page: enter the code in the window",
     ]
-    assert prefilled == ["amy"]  # the box beside the password the person types
+    # filled, not submitted: beside the password the person types, or a disabled button
+    assert prefilled == ["amy", "amy"]
 
 
-def test_a_password_box_that_stays_is_reported_and_fresh_clears_cookies(
+def test_the_password_goes_once_and_a_retyped_box_is_reported(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from codapact.runtime import browser as module
 
+    passwords: list[str] = []
+
     def submitted(page: Any, login: Any, filled: set[str], error: Any) -> str:
-        if f"password {page.url}" in filled:
-            return "done"
-        filled.add(f"password {page.url}")
+        passwords.append(login.password)
+        if not login.password:
+            page.retyping = True  # the page came back with an empty password box
+            return "manual"
         return "password"
 
     told: list[str] = []
+    prefilled: list[str] = []
     monkeypatch.setattr(module, "sign_in_headless", submitted)
-    named = replace(LOGIN, username="amy", password="pw", trace=told.append, fresh=True)
-    launches: list[Any] = []
-    real = FakeContext.__init__
-
-    def init(self: FakeContext, *args: Any) -> None:
-        real(self, *args)
-        launches.append(self)
-
-    monkeypatch.setattr(FakeContext, "__init__", init)
+    monkeypatch.setattr(module, "prefill_username", lambda page, name, *_: prefilled.append(name))
+    named = replace(LOGIN, username="amy", password="pw", trace=told.append)
     fake_playwright(monkeypatch, [jar(other="1")], land_on="https://acme.example.net/login")
-    assert playwright_capture(named, tmp_path / "p", False, 4.0, "chromium") == []
-    assert told[0] == "cleared the browser profile's cookies (a new device)"
-    assert launches[0].cleared == 1
-    assert module.ASKED_AGAIN in told
+    assert playwright_capture(named, tmp_path / "p", False, 2.0, "chromium") == []
+    assert passwords[0] == "pw" and set(passwords[1:]) == {""}  # submitted once only
     assert told.count("typed the password and submitted") == 1
+    assert "waiting: the password was submitted once: type it in the window if it was wrong" in told
+    assert module.ASKED_AGAIN in told
+    assert prefilled and set(prefilled) == {"amy"}
+    told.clear()
+    fake_playwright(monkeypatch, [jar(other="1")], land_on="https://acme.example.net/login")
+    playwright_capture(named, tmp_path / "p", True, 1.2, "chromium")
+    assert OUTCOMES["again"] in told  # renewal: a stop, so the password is paused
+
+
+def test_fresh_starts_from_an_empty_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    profile = tmp_path / "p"
+    (profile / "Default").mkdir(parents=True)
+    (profile / "Default" / "Local Storage").write_text("refresh token")
+    told: list[str] = []
+    fake_playwright(monkeypatch, [jar(tenant_session_token="abc")])
+    named = replace(LOGIN, trace=told.append, fresh=True)
+    assert playwright_capture(named, profile, True, 2.0, "chromium")
+    assert told[0] == "started from an empty browser profile (a new device)"
+    assert profile.is_dir() and not (profile / "Default").exists()
 
 
 def test_guard_tells_the_trace_what_it_blocked() -> None:
@@ -888,3 +917,13 @@ def test_renew_keeps_reasons_and_paused_passwords(tmp_path: Path) -> None:
     script.append((["page https://x.test/"], []))
     session.save_password("pw")
     assert session.renew() == "failed: page https://x.test/"
+
+
+def test_a_page_that_navigates_away_is_not_retyping() -> None:
+    from codapact.runtime.browser import _retyping
+
+    class Gone:
+        def evaluate(self, script: str, secret: str) -> bool:
+            raise FakeError("Execution context was destroyed")
+
+    assert _retyping(Gone(), "pw", FakeError) is False
