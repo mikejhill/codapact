@@ -741,8 +741,10 @@ def test_a_window_hands_each_stop_to_the_person(
         "waiting: type the password in the window (none was given)",
         "waiting: a page with several or new-password boxes: finish in the window",
         "waiting: no form, or its submit button is disabled (a CAPTCHA?): finish in the window",
-        "warning: this form would send the password to an untrusted or plain-HTTP page; "
-        "check the address before typing it",
+        (
+            "warning: this form would send the password to an untrusted or plain-HTTP page; "
+            "check the address before typing it"
+        ),
         "waiting: a one-time-code (2FA) page: enter the code in the window",
     ]
     # filled, not submitted: beside the password the person types, or a disabled button

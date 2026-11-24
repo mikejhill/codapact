@@ -216,11 +216,13 @@ def test_the_window_types_once_and_notices_a_rejected_password(tmp_path: Path) -
     told: list[str] = []
     login = replace(_login(f"http://127.0.0.1:{site.server_port}"), trace=told.append)
     try:
+        found: list[Any] | None = None
         try:
             found = playwright_capture(login, tmp_path / "w", False, 4.0, "chromium")
         except AuthError as error:
             if "could not start a browser" not in str(error):
                 raise
+        if found is None:
             pytest.skip("no display for a browser window")
         assert found == []
         assert [path for path, _ in site.posts] == ["/session"]  # the password went once
