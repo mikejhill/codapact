@@ -1440,6 +1440,12 @@ def test_auth_renew_fresh_starts_from_an_empty_profile(tmp_path: Path) -> None:
     with pytest.raises(AuthError, match="renewal failed"):
         auth.run(argparse.Namespace(auth_action="renew", scheme="session", fresh=True))
     assert existed == [False]  # the whole profile went, storage too
+    # without a usable password, --fresh would only delete the profile: refused
+    auth.run(argparse.Namespace(auth_action="logout", scheme="session"))
+    (directory / "Default").mkdir(parents=True)
+    with pytest.raises(AuthError, match="--fresh needs a saved password"):
+        auth.run(argparse.Namespace(auth_action="renew", scheme="session", fresh=True))
+    assert (directory / "Default").exists()
     stream = auth.err
     assert isinstance(stream, io.StringIO)
     assert "  started from an empty browser profile (a new device)\n" in stream.getvalue()

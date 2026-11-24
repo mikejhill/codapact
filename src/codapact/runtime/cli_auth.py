@@ -589,6 +589,12 @@ class AuthCommands:
         state = browser.paused() or ("saved" if has_secret else "none")
         show(f"renewing {scheme.name} at {shown_url(browser.login.login_url)}")
         show(f"saved password: {state}")
+        if fresh and not has_secret:  # paused or none: nothing could sign in again
+            raise AuthError(
+                f"--fresh needs a saved password that is not paused (it would only delete "
+                f"the browser profile); run {self.program} auth login --scheme {scheme.name} "
+                "--save-secret first"
+            )
         if fresh:  # cookies, storage and all, inside the browser root only: a new device
             provider.forget(scheme, self.profile or None)
             show("started from an empty browser profile (a new device)")

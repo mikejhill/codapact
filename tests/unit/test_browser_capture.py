@@ -511,6 +511,9 @@ def test_without_a_password_the_password_step_is_left_to_the_person() -> None:
     # a form posting elsewhere is a warning, never "type the password"
     offsite = FormPage("https://id.example.com/login", step("password", "https://evil.test/"))
     assert sign_in_headless(offsite, login, set(), FakeError) == "unsafe"
+    # a GET form would put what the person types in the URL
+    get = FormPage("https://id.example.com/login", step("password", method="get"))
+    assert sign_in_headless(get, login, set(), FakeError) == "unsafe"
 
 
 def test_headless_sign_in_submits_each_page_step_once() -> None:
@@ -742,8 +745,8 @@ def test_a_window_hands_each_stop_to_the_person(
         "waiting: a page with several or new-password boxes: finish in the window",
         "waiting: no form, or its submit button is disabled (a CAPTCHA?): finish in the window",
         (
-            "warning: this form would send the password to an untrusted or plain-HTTP page; "
-            "check the address before typing it"
+            "warning: this form would send the password to an untrusted or plain-HTTP page, "
+            "or in its URL; check the address before typing it"
         ),
         "waiting: a one-time-code (2FA) page: enter the code in the window",
     ]
@@ -923,7 +926,7 @@ def test_a_username_only_filled_does_not_count_as_a_submission(
 
     monkeypatch.setattr(module, "sign_in_headless", disabled_until_filled)
     monkeypatch.setattr(
-        module, "prefill_username", lambda page, name, done, error: done.add(page.url)
+        module, "prefill_username", lambda page, name, done, error, href: done.add(href)
     )
     named = replace(LOGIN, username="amy", sign_in_attempts=1)
     fake_playwright(monkeypatch, [jar(other="1")], land_on="https://acme.example.net/login")

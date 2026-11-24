@@ -316,7 +316,9 @@ def playwright_capture(
                                 typing = replace(login, password="")
                             if not headless and outcome in ("manual", "again", "stuck"):
                                 # fill only: the person types the rest (or the button waits)
-                                prefill_username(page, login.username, prefilled, playwright_error)
+                                prefill_username(
+                                    page, login.username, prefilled, playwright_error, href
+                                )
                             if typing is not login:
                                 shown = _asked_again(page, login, playwright_error)
                                 again = again + 1 if shown else 0
@@ -385,6 +387,7 @@ OUTCOMES = {
     "password": "typed the password and submitted",
     "manual": "waiting: type the password in the window (none was given)",
     "again": "stopped: the sign-in page asked for the password again (a wrong password?)",
+    "typing": "waiting: the password box already has text; it is left as it is",
     "challenge": "stopped: a one-time-code (2FA) page; run auth login to enter the code",
     "unclear": "stopped: a page with several or new-password boxes",
     "other-account": "stopped: the form names another account",
@@ -402,8 +405,8 @@ WINDOW_OUTCOMES = {
     "done": "waiting: this page was already submitted once: finish it in the window",
     "limit": "waiting: reached sign_in_attempts: finish signing in in the window",
     "again": "waiting: the password was submitted once: type it in the window if it was wrong",
-    "unsafe": "warning: this form would send the password to an untrusted or plain-HTTP page; "
-    "check the address before typing it",
+    "unsafe": "warning: this form would send the password to an untrusted or plain-HTTP page, "
+    "or in its URL; check the address before typing it",
 }
 """The outcomes that read differently while a window is open for the person."""
 
@@ -508,15 +511,18 @@ PREFILL_SCRIPT = """(box, [name, href]) => {
 """Fill ``box`` only if its document is still the checked page and the box is still empty."""
 
 
-def prefill_username(page: Any, username: str, filled: set[str], error: type[Exception]) -> bool:
+def prefill_username(
+    page: Any, username: str, filled: set[str], error: type[Exception], checked: str = ""
+) -> bool:
     """Type ``username`` into the page's empty, visible username field, once per URL.
 
     The caller has checked that ``page.url`` is trusted; the fill itself re-checks, in
     the same step, that the field's document is still at that URL and the field is
     still empty, so a navigation or the person's typing in between wins. Best effort: a
     page without such a field is left for the person. Return whether a field was filled.
+    ``checked`` is the URL the caller trusted, when the page may have moved since.
     """
-    href = str(page.url)
+    href = checked or str(page.url)
     url = href.split("?", 1)[0]
     if url in filled:
         return False
@@ -556,6 +562,7 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
   if (!user && !pass) return { outcome: "none" };
   const step = pass ? "password" : "username";
   if (done.includes(step)) return { outcome: "done" };
+  if (pass && pass.value) return { outcome: "typing" };  // the person's, never overwritten
   const strong = "input[autocomplete~='username'], input[name='username'], " +
     "input[name='loginfmt'], input[id='username']";
   // a password only on a sign-in page; a username alone also where the box says so
@@ -656,6 +663,8 @@ def sign_in_headless(
         if not login.password_page(str(plan.get("dest"))):
             return "unsafe"
         if outcome == "password" and not login.password:
+            if str(plan.get("method") or "").lower() != "post":
+                return "unsafe"  # the person's password would go in the URL
             return "manual"  # a window, and the person types it
         if plan.get("blocked"):
             return "stuck"  # a button waiting for validation or a CAPTCHA
