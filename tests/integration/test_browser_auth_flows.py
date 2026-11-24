@@ -222,14 +222,19 @@ def login(site: Site, told: list[str], password: str = PASSWORD) -> BrowserLogin
 def capture(
     login_: BrowserLogin, profile: Path, *, headless: bool = True, timeout: float = 8.0
 ) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] | None = None
+    reason = ""
     try:
-        return playwright_capture(login_, profile, headless, timeout, "chromium")
+        found = playwright_capture(login_, profile, headless, timeout, "chromium")
     except AuthError as error:
         if "could not start a browser" not in str(error) or os.environ.get(
             "CODAPACT_REQUIRE_BROWSER"
         ):
             raise
-        pytest.skip(f"no browser{'' if headless else ' window (no display)'}: {error}")
+        reason = str(error)
+    if found is None:
+        pytest.skip(f"no browser{'' if headless else ' window (no display)'}: {reason}")
+    return found
 
 
 def names(cookies: list[dict[str, Any]]) -> list[str]:
