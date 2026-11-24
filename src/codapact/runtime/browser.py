@@ -319,7 +319,9 @@ def playwright_capture(
                                 prefill_username(
                                     page, login.username, prefilled, playwright_error, href
                                 )
-                            if typing is not login:
+                            if outcome == "again":  # a new page, its password box empty
+                                steps.note(ASKED_AGAIN)
+                            elif typing is not login:  # the same page, emptied
                                 shown = _asked_again(page, login, playwright_error)
                                 again = again + 1 if shown else 0
                                 if again == ASKED_AGAIN_POLLS:

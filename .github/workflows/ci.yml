@@ -135,10 +135,31 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  browser:
+    name: Browser sign-in in Chromium
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: '3.13'
+          enable-cache: false
+      - run: uv sync --locked --extra browser
+      - run: uv run playwright install --with-deps chromium
+      - name: Sign-in flows against a local site, with and without a window
+        run: >-
+          xvfb-run -a uv run pytest -v
+          tests/integration/test_browser_auth_flows.py
+          tests/integration/test_browser_sign_in_script.py
+        env:
+          CODAPACT_REQUIRE_BROWSER: '1'
+
   passed:
     name: CI passed
     if: always()
-    needs: [check, coverage, prism, perf, title]
+    needs: [browser, check, coverage, prism, perf, title]
     runs-on: ubuntu-latest
     steps:
       - name: Require all checks
