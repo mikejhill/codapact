@@ -106,7 +106,7 @@ class BrowserLogin:
     username: str = ""
     """Filled into the empty username or email box of trusted sign-in pages (optional)."""
     password: str = field(default="", repr=False)
-    """With ``username``, typed into trusted sign-in pages by headless renewal (optional)."""
+    """With ``username``, typed into trusted sign-in pages (renewal, or ``auth login``)."""
     sign_in_attempts: int = 3
     """At most this many form submissions per headless renewal (``sign_in_attempts``)."""
     trace: Callable[[str], Any] | None = field(default=None, repr=False, compare=False)
@@ -276,7 +276,7 @@ def playwright_capture(
     with api.sync_playwright() as playwright:
         for choice in choices:
             options: dict[str, Any] = {"headless": headless}
-            guarded = headless and bool(login.password and login.username)
+            guarded = bool(login.password and login.username)
             if guarded:
                 options["service_workers"] = "block"  # so every request passes the guard
             if choice != "chromium":
@@ -287,25 +287,46 @@ def playwright_capture(
                 errors.append(f"{choice}: {str(error).splitlines()[0]}")
                 continue
             try:
+                steps = Steps(login.trace, window=not headless)
                 if guarded:
                     guard_password(context, login)
                 page = context.pages[0] if context.pages else context.new_page()
                 page.goto(login.login_url)
                 deadline = time.monotonic() + timeout
-                filled: set[str] = set()
-                steps = Steps(login.trace)
+                filled: set[str] = set()  # submitted steps (what sign_in_attempts counts)
+                prefilled: set[str] = set()  # pages whose username box was only filled
+                typing = login  # the password is submitted once; then the page is the person's
+                again = 0  # polls a password box has shown without the submitted password
                 while time.monotonic() < deadline:
                     steps.page(str(page.url))
                     found = session_cookies(context.cookies(), login)
                     if found and _on_host(page.url, login.domain):
                         steps.note("signed in: got the session cookies")
                         return found
-                    if login.username and login.trusted_page(page.url):
-                        if not headless:
-                            prefill_username(page, login.username, filled, playwright_error)
-                        elif login.password:
-                            steps.outcome(sign_in_headless(page, login, filled, playwright_error))
-                    elif login.password and headless:
+                    href = str(page.url)
+                    if login.username and login.trusted_page(href):
+                        if headless and not login.password:
+                            pass  # nothing to type without a window but the saved password
+                        elif headless or login.password_page(href):
+                            outcome = sign_in_headless(page, typing, filled, playwright_error)
+                            if outcome == "manual" and typing is not login:
+                                outcome = "again"  # the password was already submitted once
+                            steps.outcome(outcome)
+                            if outcome == "password":
+                                typing = replace(login, password="")
+                            if not headless and outcome in ("manual", "again", "stuck"):
+                                # fill only: the person types the rest (or the button waits)
+                                prefill_username(
+                                    page, login.username, prefilled, playwright_error, href
+                                )
+                            if typing is not login:
+                                shown = _asked_again(page, login, playwright_error)
+                                again = again + 1 if shown else 0
+                                if again == ASKED_AGAIN_POLLS:
+                                    steps.note(ASKED_AGAIN)
+                        else:  # a plain-HTTP page: the username only, and not submitted
+                            prefill_username(page, login.username, prefilled, playwright_error)
+                    elif login.password:
                         steps.note("not a trusted sign-in page: nothing typed (see signin_hosts)")
                     page.wait_for_timeout(500)
                 steps.note(f"gave up after {int(timeout)} s without the session cookies")
@@ -332,9 +353,41 @@ def _shown_host(url: str) -> str:
     return (parts.hostname or "") + (f":{parts.port}" if parts.port else "")
 
 
+ASKED_AGAIN = "the sign-in page asked for the password again (a wrong password?)"
+"""Traced when a password box without the submitted password shows after the submission."""
+ASKED_AGAIN_POLLS = 2
+"""Polls (half a second each) such a box must show for, so a page being replaced is not it."""
+
+ASKED_AGAIN_SCRIPT = """(href) => {
+  if (location.href !== href) return false;
+  const code = /(^|[-_ ])(otp|totp|mfa|2fa|passcode|verification|code)([-_ ]|$)/i;
+  const boxes = Array.from(document.querySelectorAll("input[type=password]")).filter(
+    (el) => el.offsetParent !== null && !el.disabled
+  );
+  if (boxes.some((el) => /one-time-code|new-password/i.test(el.autocomplete || "") ||
+      code.test(el.name) || code.test(el.id))) return false;  // 2FA or a new password
+  return boxes.length === 1 && boxes[0].value === "";
+}"""
+"""Whether the page (still at ``href``) shows one empty sign-in password box: asked again."""
+
+
+def _asked_again(page: Any, login: BrowserLogin, error: type[Exception]) -> bool:
+    """Whether a trusted sign-in page asks for the password again (no secret is passed)."""
+    href = str(page.url)
+    if not login.password_page(href):
+        return False
+    try:
+        return bool(page.evaluate(ASKED_AGAIN_SCRIPT, href))
+    except error:
+        return False
+
+
 OUTCOMES = {
     "username": "typed the username and submitted",
     "password": "typed the password and submitted",
+    "manual": "waiting: type the password in the window (none was given)",
+    "again": "stopped: the sign-in page asked for the password again (a wrong password?)",
+    "typing": "waiting: the password box already has text; it is left as it is",
     "challenge": "stopped: a one-time-code (2FA) page; run auth login to enter the code",
     "unclear": "stopped: a page with several or new-password boxes",
     "other-account": "stopped: the form names another account",
@@ -347,12 +400,24 @@ OUTCOMES = {
 }
 """What each ``sign_in_headless`` outcome means, for a trace."""
 
+WINDOW_OUTCOMES = {
+    "challenge": "waiting: a one-time-code (2FA) page: enter the code in the window",
+    "done": "waiting: this page was already submitted once: finish it in the window",
+    "limit": "waiting: reached sign_in_attempts: finish signing in in the window",
+    "again": "waiting: the password was submitted once: type it in the window if it was wrong",
+    "unsafe": "warning: this form would send the password to an untrusted or plain-HTTP page, "
+    "or in its URL; check the address before typing it",
+}
+"""The outcomes that read differently while a window is open for the person."""
+
 
 @dataclass(slots=True)
 class Steps:
     """Tell a trace what a sign-in does, once per change (pages without their query)."""
 
     trace: Callable[[str], Any] | None
+    window: bool = False
+    """A window is open: stops hand over to the person rather than end the sign-in."""
     last: str = ""
     url: str = ""
 
@@ -368,8 +433,13 @@ class Steps:
             self.note(f"page {shown}")
 
     def outcome(self, outcome: str) -> None:
-        if outcome in OUTCOMES:
-            self.note(OUTCOMES[outcome])
+        if self.window and outcome in WINDOW_OUTCOMES:
+            self.note(WINDOW_OUTCOMES[outcome])
+        elif outcome in OUTCOMES:
+            text = OUTCOMES[outcome]
+            if self.window and text.startswith("stopped:"):
+                text = "waiting:" + text.removeprefix("stopped:") + ": finish in the window"
+            self.note(text)
 
 
 def guard_password(context: Any, login: BrowserLogin) -> None:
@@ -441,15 +511,18 @@ PREFILL_SCRIPT = """(box, [name, href]) => {
 """Fill ``box`` only if its document is still the checked page and the box is still empty."""
 
 
-def prefill_username(page: Any, username: str, filled: set[str], error: type[Exception]) -> bool:
+def prefill_username(
+    page: Any, username: str, filled: set[str], error: type[Exception], checked: str = ""
+) -> bool:
     """Type ``username`` into the page's empty, visible username field, once per URL.
 
     The caller has checked that ``page.url`` is trusted; the fill itself re-checks, in
     the same step, that the field's document is still at that URL and the field is
     still empty, so a navigation or the person's typing in between wins. Best effort: a
     page without such a field is left for the person. Return whether a field was filled.
+    ``checked`` is the URL the caller trusted, when the page may have moved since.
     """
-    href = str(page.url)
+    href = checked or str(page.url)
     url = href.split("?", 1)[0]
     if url in filled:
         return False
@@ -489,6 +562,7 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
   if (!user && !pass) return { outcome: "none" };
   const step = pass ? "password" : "username";
   if (done.includes(step)) return { outcome: "done" };
+  if (pass && pass.value) return { outcome: "typing" };  // the person's, never overwritten
   const strong = "input[autocomplete~='username'], input[name='username'], " +
     "input[name='loginfmt'], input[id='username']";
   // a password only on a sign-in page; a username alone also where the box says so
@@ -588,6 +662,10 @@ def sign_in_headless(
             return outcome
         if not login.password_page(str(plan.get("dest"))):
             return "unsafe"
+        if outcome == "password" and not login.password:
+            if str(plan.get("method") or "").lower() != "post":
+                return "unsafe"  # the person's password would go in the URL
+            return "manual"  # a window, and the person types it
         if plan.get("blocked"):
             return "stuck"  # a button waiting for validation or a CAPTCHA
         sent = page.evaluate(SIGN_IN_SCRIPT, ["submit", *base, plan, flag])
@@ -802,17 +880,23 @@ class BrowserSession:
             RENEWAL_SCOPE: self.login.password_scope,
         }
 
-    def sign_in(self) -> list[Cookie]:
-        """Open a browser window for the person to sign in; save and return the cookies."""
+    def sign_in(
+        self, password: str = "", trace: Callable[[str], Any] | None = None
+    ) -> list[Cookie]:
+        """Open a browser window for the person to sign in; save and return the cookies.
+
+        The window types the username and submits it, and ``password`` too when given
+        (the same checks as renewal); the person does the rest, such as a 2FA code.
+        ``trace`` is told each step.
+        """
+        login = replace(self.login, password=password, trace=trace or self.login.trace)
         if self.ephemeral:
             with tempfile.TemporaryDirectory(prefix="codapact-browser-") as scratch:
                 cookies = self.capture(
-                    self.login, Path(scratch), False, INTERACTIVE_TIMEOUT, self.browser
+                    login, Path(scratch), False, INTERACTIVE_TIMEOUT, self.browser
                 )
         else:
-            cookies = self.capture(
-                self.login, self.directory, False, INTERACTIVE_TIMEOUT, self.browser
-            )
+            cookies = self.capture(login, self.directory, False, INTERACTIVE_TIMEOUT, self.browser)
         if not cookies:
             raise AuthError(
                 f"sign-in did not finish within {int(INTERACTIVE_TIMEOUT)} seconds "

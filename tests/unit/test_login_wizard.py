@@ -230,7 +230,7 @@ def test_wizard_asks_for_the_site_scheme_and_username(tmp_path: Path) -> None:
     assert labels == [
         f"Base URL (like {PLACEHOLDER}): ",
         "Choose 1-2 [1]: ",
-        "basic username: ",
+        'Username (scheme "basic"): ',
         "Save the password (memory)? [y/N]: ",
     ]
     assert isinstance(auth.err, io.StringIO)
@@ -255,9 +255,9 @@ def test_wizard_asks_for_the_site_scheme_and_username(tmp_path: Path) -> None:
     assert labels == [
         "Base URL [https://mysite.atlassian.net]: ",
         "Choose 1-2 [1]: ",
-        "basic username [amy@x.test]: ",
+        'Username (scheme "basic") [amy@x.test]: ',
         "Save the password (memory)? [y/N]: ",
-        "basic password: ",
+        'Password (scheme "basic"): ',
     ]
     assert inner.items == {
         "default:basic": {
@@ -286,7 +286,7 @@ def test_wizard_choices_by_number_name_and_default() -> None:
 def test_wizard_skips_what_the_command_line_or_environment_gives() -> None:
     auth, labels, _, index = wizard(["pw"])
     result = auth.run(login(scheme="basic", username="amy", save_secret=True, base_url="site.test"))
-    assert result["base_url"] == "https://site.test" and labels == ["basic password: "]
+    assert result["base_url"] == "https://site.test" and labels == ['Password (scheme "basic"): ']
     assert index.settings("default")["base_url"] == "https://site.test"
     env, labels, _, _ = wizard(["", "amy", "n"], source="env ACME_BASE_URL")
     env.base_url = "e.test/"
@@ -314,7 +314,7 @@ def test_without_a_terminal_login_keeps_its_old_behaviour() -> None:
     with pytest.raises(AuthError, match="choose a scheme with --scheme"):
         auth.run(login())
     auth.run(login(scheme="basic"))
-    assert labels == ["basic username: ", "basic password: "]
+    assert labels == ['Username (scheme "basic"): ', 'Password (scheme "basic"): ']
     assert inner.items["default:basic"]["secret"] == "pw"
     assert index.settings("default") == {"scheme": "basic", "username.basic": "amy"}
     unsaved, _, inner, _ = wizard(
@@ -527,38 +527,55 @@ def test_helpers() -> None:
     assert _normal_url("http://localhost:8080") == "http://localhost:8080"
 
 
-def test_capture_fills_the_username_only_in_a_window(
+def test_capture_types_into_the_window_and_renewal_only_with_a_password(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from codapact.runtime import browser
     from tests.unit.test_browser_capture import LOGIN, fake_playwright, jar
 
-    calls: list[tuple[str, bool]] = []
+    typed: list[tuple[str, str]] = []
     monkeypatch.setattr(
         browser,
-        "prefill_username",
-        lambda page, username, filled, error: calls.append((username, bool(filled))),
+        "sign_in_headless",
+        lambda page, login_, filled, error: (
+            typed.append((login_.username, login_.password)) or "username"
+        ),
     )
     named = replace(LOGIN, username="amy")
     fake_playwright(monkeypatch, [jar(other="1"), jar(tenant_session_token="abc")])
     browser.playwright_capture(named, tmp_path / "p", False, 5.0, "chromium")
-    assert calls == [("amy", False)]
+    assert typed == [("amy", "")]  # a window submits the username even without a password
     fake_playwright(monkeypatch, [jar(other="1"), jar(tenant_session_token="abc")])
     browser.playwright_capture(named, tmp_path / "p", True, 5.0, "chromium")
-    assert calls == [("amy", False)]  # never while renewing headlessly
-    typed: list[str] = []
-    monkeypatch.setattr(
-        browser,
-        "sign_in_headless",
-        lambda page, login_, filled, error: typed.append(login_.password) or "password",
-    )
-    fake_playwright(monkeypatch, [jar(other="1"), jar(tenant_session_token="abc")])
-    browser.playwright_capture(named, tmp_path / "p", True, 5.0, "chromium")
-    assert typed == []  # no saved password: nothing to type
-    fake_playwright(monkeypatch, [jar(other="1"), jar(tenant_session_token="abc")])
-    browser.playwright_capture(replace(named, password="pw"), tmp_path / "p", True, 5.0, None)
-    assert typed == ["pw"] and calls == [("amy", False)]
+    assert typed == [("amy", "")]  # renewal types nothing without a saved password
+    for headless in (True, False):
+        fake_playwright(monkeypatch, [jar(other="1"), jar(tenant_session_token="abc")])
+        browser.playwright_capture(
+            replace(named, password="pw"), tmp_path / "p", headless, 5.0, None
+        )
+    assert typed[1:] == [("amy", "pw"), ("amy", "pw")]
     assert "pw" not in repr(replace(named, password="pw"))
+
+
+def test_capture_prefills_a_plain_http_page_without_submitting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codapact.runtime import browser
+    from tests.unit.test_browser_capture import fake_playwright, jar
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        browser, "prefill_username", lambda page, username, filled, error: calls.append(username)
+    )
+    monkeypatch.setattr(browser, "sign_in_headless", lambda *a: pytest.fail("submitted"))
+    login = BrowserLogin(
+        "http://acme.example.net/", ("sid",), domain="acme.example.net", username="amy"
+    )
+    fake_playwright(
+        monkeypatch, [jar(other="1"), jar(sid="abc")], land_on="http://acme.example.net/login"
+    )
+    browser.playwright_capture(login, tmp_path / "p", False, 5.0, "chromium")
+    assert calls == ["amy"]
 
 
 def test_empty_answer_takes_the_default() -> None:
@@ -1366,3 +1383,69 @@ def test_auth_renew_stays_on_the_profile_site_and_quiet_for_json(tmp_path: Path)
     ]
     quiet.run(login(scheme="session", base_url="https://a.test"))
     assert inner.items["default:session"]["renewal_password"] == "pw"
+
+
+def test_window_sign_in_types_the_wizard_password_and_shows_each_step(tmp_path: Path) -> None:
+    from codapact.runtime.browser import ASKED_AGAIN
+
+    auth, _, inner, index = browser_wizard(["https://a.test", "2", "amy", "y", "pw"], tmp_path)
+    provider = next(p for p in auth.chain.providers if isinstance(p, BrowserAuth))
+    seen: list[tuple[str, str, bool]] = []
+    cookie = {"name": "sid", "value": "v", "domain": "a.test", "path": "/"}
+
+    def capture(login_: BrowserLogin, _dir: Path, headless: bool, *_: Any) -> list[Any]:
+        seen.append((login_.username, login_.password, headless))
+        assert login_.trace is not None
+        login_.trace("waiting: a one-time-code (2FA) page: enter the code in the window")
+        return [cookie]
+
+    provider.capture = capture
+    result = auth.run(login())
+    assert seen == [("amy", "pw", False)]
+    assert result["password"] == "saved for renewal without a window (memory)"
+    stream = auth.err
+    assert isinstance(stream, io.StringIO)
+    err = stream.getvalue()
+    assert "It types the username and password for you" in err
+    assert "  waiting: a one-time-code (2FA) page: enter the code in the window\n" in err
+    assert "pw" not in err.replace("password", "")
+
+    # the page asked for the password again: the person typed another, so it is not kept
+    def rejected(login_: BrowserLogin, *_: Any) -> list[Any]:
+        assert login_.trace is not None
+        login_.trace(ASKED_AGAIN)
+        return [cookie]
+
+    again, _, _, _ = browser_wizard(["", "", "", "y", "wrong"], tmp_path, index=index, inner=inner)
+    next(p for p in again.chain.providers if isinstance(p, BrowserAuth)).capture = rejected
+    assert again.run(login())["password"] == (
+        "not saved: the sign-in page rejected it; run auth login"
+    )
+    assert inner.items["default:session"]["renewal_password"] == "pw"
+
+
+def test_auth_renew_fresh_starts_from_an_empty_profile(tmp_path: Path) -> None:
+    from tests.unit.test_extensions import DiskLikeStore
+
+    auth, _, _, _ = browser_wizard(
+        ["https://a.test", "2", "amy", "y", "pw"], tmp_path, inner=DiskLikeStore()
+    )
+    auth.run(login())
+    provider = next(p for p in auth.chain.providers if isinstance(p, BrowserAuth))
+    directory = provider.directory(SESSION, auth.profile or None)
+    (directory / "Default").mkdir(parents=True)
+    (directory / "Default" / "Local Storage").write_text("refresh token")
+    existed: list[bool] = []
+    provider.capture = lambda login_, where, *_: existed.append(where.exists()) or []
+    with pytest.raises(AuthError, match="renewal failed"):
+        auth.run(argparse.Namespace(auth_action="renew", scheme="session", fresh=True))
+    assert existed == [False]  # the whole profile went, storage too
+    # without a usable password, --fresh would only delete the profile: refused
+    auth.run(argparse.Namespace(auth_action="logout", scheme="session"))
+    (directory / "Default").mkdir(parents=True)
+    with pytest.raises(AuthError, match="--fresh needs a saved password"):
+        auth.run(argparse.Namespace(auth_action="renew", scheme="session", fresh=True))
+    assert (directory / "Default").exists()
+    stream = auth.err
+    assert isinstance(stream, io.StringIO)
+    assert "  started from an empty browser profile (a new device)\n" in stream.getvalue()

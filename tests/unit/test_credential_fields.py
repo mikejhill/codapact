@@ -83,10 +83,10 @@ def test_login_prompts_for_each_field_and_saves_them_together() -> None:
         "fields": ["login_url", "username", "password"],
     }
     assert labels == [
-        "portal login_url (page that sets the cookie): ",
-        "portal username: ",
-        "secret:portal password: ",
-        "portal domain (optional): ",
+        'login_url (scheme "portal") (page that sets the cookie): ',
+        'username (scheme "portal"): ',
+        'secret:password (scheme "portal"): ',
+        'domain (scheme "portal") (optional): ',
     ]
     assert store.load("portal") == {
         "type": "fields",
@@ -102,7 +102,7 @@ def test_login_offers_saved_values_and_takes_non_secret_fields_as_arguments() ->
     )
     commands, labels = _commands(store, ["", "new-pw", "corp.test"])
     commands.run(_args("login", field=["username=mike"]))
-    assert labels[0] == "portal login_url (page that sets the cookie) [https://old]: "
+    assert labels[0] == 'login_url (scheme "portal") (page that sets the cookie) [https://old]: '
     assert (store.load("portal") or {})["fields"] == {
         "login_url": "https://old",
         "username": "mike",

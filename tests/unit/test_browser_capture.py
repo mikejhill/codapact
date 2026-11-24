@@ -15,6 +15,7 @@ import pytest
 from codapact.core.errors import ConfigError, PluginError
 from codapact.model.api import AuthKind, AuthScheme
 from codapact.runtime.browser import (
+    OUTCOMES,
     BrowserAuth,
     BrowserLogin,
     browser_root,
@@ -50,6 +51,11 @@ class FakePage:
     def __init__(self, land_on: str) -> None:
         self.url = "about:blank"
         self.land_on = land_on
+        self.retyping = False  # what ASKED_AGAIN_SCRIPT finds
+
+    def evaluate(self, script: str, href: str) -> bool:
+        assert script.startswith("(href) =>") and href == self.url  # never the password
+        return self.retyping
 
     def goto(self, url: str) -> None:
         if self.land_on == "boom":
@@ -68,6 +74,10 @@ class FakeContext:
         self.fail_close = fail_close
         self.closed = False
         self.routes: list[Any] = []
+        self.cleared = 0
+
+    def clear_cookies(self) -> None:
+        self.cleared += 1
 
     def route(self, pattern: str, handler: Any) -> None:
         assert pattern == "**/*"
@@ -487,6 +497,25 @@ def step(outcome: str, dest: str = "https://id.example.com/login", method: str =
     return {"outcome": outcome, "dest": dest, "method": method}
 
 
+def test_without_a_password_the_password_step_is_left_to_the_person() -> None:
+    login = BrowserLogin(
+        SITE + "/",
+        ("t",),
+        domain="acme.example.net",
+        username="amy",
+        signin_hosts=("id.example.com",),
+    )
+    page = FormPage("https://id.example.com/login", step("password"))
+    assert sign_in_headless(page, login, set(), FakeError) == "manual"
+    assert [c[0] for c in page.calls] == ["inspect"]  # nothing submitted
+    # a form posting elsewhere is a warning, never "type the password"
+    offsite = FormPage("https://id.example.com/login", step("password", "https://evil.test/"))
+    assert sign_in_headless(offsite, login, set(), FakeError) == "unsafe"
+    # a GET form would put what the person types in the URL
+    get = FormPage("https://id.example.com/login", step("password", method="get"))
+    assert sign_in_headless(get, login, set(), FakeError) == "unsafe"
+
+
 def test_headless_sign_in_submits_each_page_step_once() -> None:
     login = replace(
         BrowserLogin(SITE + "/", ("t",), domain="acme.example.net", username="amy"),
@@ -697,6 +726,66 @@ def test_capture_traces_each_step(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     playwright_capture(LOGIN, tmp_path / "p", True, 3.0, "chromium")  # no trace: silent
 
 
+def test_a_window_hands_each_stop_to_the_person(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codapact.runtime import browser as module
+
+    told: list[str] = []
+    prefilled: list[str] = []
+    outcomes = iter(["username", "manual", "unclear", "stuck", "unsafe", "challenge"])
+    monkeypatch.setattr(module, "sign_in_headless", lambda *_: next(outcomes, "challenge"))
+    monkeypatch.setattr(module, "prefill_username", lambda page, name, *_: prefilled.append(name))
+    named = replace(LOGIN, username="amy", trace=told.append)
+    fake_playwright(monkeypatch, [jar(other="1")], land_on="https://acme.example.net/login")
+    assert playwright_capture(named, tmp_path / "p", False, 2.2, "chromium") == []
+    assert told[1:7] == [
+        "typed the username and submitted",
+        "waiting: type the password in the window (none was given)",
+        "waiting: a page with several or new-password boxes: finish in the window",
+        "waiting: no form, or its submit button is disabled (a CAPTCHA?): finish in the window",
+        (
+            "warning: this form would send the password to an untrusted or plain-HTTP page, "
+            "or in its URL; check the address before typing it"
+        ),
+        "waiting: a one-time-code (2FA) page: enter the code in the window",
+    ]
+    # filled, not submitted: beside the password the person types, or a disabled button
+    assert prefilled == ["amy", "amy"]
+
+
+def test_the_password_goes_once_and_a_retyped_box_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codapact.runtime import browser as module
+
+    passwords: list[str] = []
+
+    def submitted(page: Any, login: Any, filled: set[str], error: Any) -> str:
+        passwords.append(login.password)
+        if not login.password:
+            page.retyping = True  # the page came back with an empty password box
+            return "manual"
+        return "password"
+
+    told: list[str] = []
+    prefilled: list[str] = []
+    monkeypatch.setattr(module, "sign_in_headless", submitted)
+    monkeypatch.setattr(module, "prefill_username", lambda page, name, *_: prefilled.append(name))
+    named = replace(LOGIN, username="amy", password="pw", trace=told.append)
+    fake_playwright(monkeypatch, [jar(other="1")], land_on="https://acme.example.net/login")
+    assert playwright_capture(named, tmp_path / "p", False, 2.0, "chromium") == []
+    assert passwords[0] == "pw" and set(passwords[1:]) == {""}  # submitted once only
+    assert told.count("typed the password and submitted") == 1
+    assert "waiting: the password was submitted once: type it in the window if it was wrong" in told
+    assert module.ASKED_AGAIN in told
+    assert prefilled and set(prefilled) == {"amy"}
+    told.clear()
+    fake_playwright(monkeypatch, [jar(other="1")], land_on="https://acme.example.net/login")
+    playwright_capture(named, tmp_path / "p", True, 1.2, "chromium")
+    assert OUTCOMES["again"] in told  # renewal: a stop, so the password is paused
+
+
 def test_guard_tells_the_trace_what_it_blocked() -> None:
     told: list[str] = []
     login = replace(
@@ -819,3 +908,42 @@ def test_renew_keeps_reasons_and_paused_passwords(tmp_path: Path) -> None:
     script.append((["page https://x.test/"], []))
     session.save_password("pw")
     assert session.renew() == "failed: page https://x.test/"
+
+
+def test_a_username_only_filled_does_not_count_as_a_submission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codapact.runtime import browser as module
+
+    outcomes: list[str] = []
+
+    def disabled_until_filled(page: Any, login: Any, filled: set[str], error: Any) -> str:
+        outcome = "stuck" if not outcomes else ("limit" if filled else "username")
+        if outcome == "username":
+            filled.add(f"username {page.url}")
+        outcomes.append(outcome)
+        return outcome
+
+    monkeypatch.setattr(module, "sign_in_headless", disabled_until_filled)
+    monkeypatch.setattr(
+        module, "prefill_username", lambda page, name, done, error, href: done.add(href)
+    )
+    named = replace(LOGIN, username="amy", sign_in_attempts=1)
+    fake_playwright(monkeypatch, [jar(other="1")], land_on="https://acme.example.net/login")
+    playwright_capture(named, tmp_path / "p", False, 1.2, "chromium")
+    assert outcomes[:2] == ["stuck", "username"]  # the fill did not use up the one attempt
+
+
+def test_asked_again_only_looks_at_trusted_pages_that_stay() -> None:
+    from codapact.runtime.browser import _asked_again
+
+    class Gone:
+        url = "https://acme.example.net/login"
+
+        def evaluate(self, script: str, href: str) -> bool:
+            raise FakeError("Execution context was destroyed")
+
+    assert _asked_again(Gone(), LOGIN, FakeError) is False
+    elsewhere = Gone()
+    elsewhere.url = "https://evil.test/login"  # never evaluated off-trust
+    assert _asked_again(elsewhere, LOGIN, FakeError) is False
