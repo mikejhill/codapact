@@ -2,6 +2,13 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.17.0](https://github.com/mikejhill/codapact/compare/v0.16.0...v0.17.0) (2026-11-24)
+
+
+### Features
+
+* **auth:** the sign-in window types the username and password; auth renew --fresh ([#83](https://github.com/mikejhill/codapact/issues/83)) ([86512f7](https://github.com/mikejhill/codapact/commit/86512f7d55eac297d48fe98f488d7b181212e7da))
+
 ## [0.16.0](https://github.com/mikejhill/codapact/compare/v0.15.0...v0.16.0) (2026-11-22)
 
 
