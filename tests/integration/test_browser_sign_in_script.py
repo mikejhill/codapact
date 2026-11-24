@@ -132,6 +132,13 @@ def test_sign_in_script_on_real_forms(browser: Any) -> None:
             page.wait_for_timeout(200)
     finally:
         page.close()
+    page = browser.new_page()
+    try:  # a window without a password leaves the password box to the person
+        page.goto(origin + "/login/csrf")
+        no_password = replace(_login(origin), password="")
+        assert sign_in_headless(page, no_password, set(), sync_api.Error) == "manual"
+    finally:
+        page.close()
         site.shutdown()
     bodies = [urllib.parse.parse_qs(body) for _, body in site.posts]
     # only the CSRF form and the GET form (posted instead) sent the password, both by POST

@@ -576,6 +576,18 @@ command exits 3 and says so. `auth status` shows `saved username NAME (password 
 needed)`. `auth logout --scheme NAME` forgets that scheme's username too. Declared `fields` are always
 saved; `--save-secret` does not apply to them.
 
+#### Browser schemes: what the sign-in window does
+
+`auth login` opens a browser window and prints each step to stderr while it is open (not with
+`--error-format json`). With a username, the window types it and submits it, then types and
+submits the password too when you gave one (see below), with the same checks as a renewal.
+Anything else is yours to finish in the window: a 2FA code (`waiting: a one-time-code (2FA)
+page: enter the code in the window`), a CAPTCHA, a consent page, or a password you did not
+give (`waiting: type the password in the window`). The window closes by itself once the
+session cookies arrive, or after five minutes. If the password box comes back after the
+password was submitted (a wrong password), the step says so and that password is not saved;
+type the right one in the window.
+
 #### Browser schemes: renewing without a window
 
 By default a browser scheme stores no password: the identity provider's own session lives in
@@ -611,10 +623,13 @@ repeated attempts) until the next `auth login`, and `auth status` shows why. Wit
 saved password only helps while the identity provider remembers the browser; otherwise the
 code page stops the renewal and `auth login` opens a window for the code.
 
-`<program> auth renew [--scheme NAME]` runs that renewal now and prints each step to stderr:
+`<program> auth renew [--scheme NAME] [--fresh]` runs that renewal now and prints each step to stderr:
 the pages visited (without their query), what was typed (never the values), and why it
 stopped, for example `stopped: a one-time-code (2FA) page` or `waiting: this page was
-already submitted (a wrong password stays here)`. It exits 3 when the renewal fails. `auth status` shows
+already submitted (a wrong password stays here)`. It exits 3 when the renewal fails.
+`--fresh` first clears the browser profile's cookies, as on a new device, so the renewal
+runs the whole sign-in (password, then any 2FA page) instead of reusing the identity
+provider's session; if it fails, run `auth login` to sign in again. `auth status` shows
 `renewal: saved password, no window needed`; `auth login --no-save-secret`, answering `n`,
 or `auth logout --scheme NAME` forgets it. Without a terminal or a flag, `auth login` leaves
 a saved password as it is.

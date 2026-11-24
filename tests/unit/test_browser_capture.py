@@ -68,6 +68,10 @@ class FakeContext:
         self.fail_close = fail_close
         self.closed = False
         self.routes: list[Any] = []
+        self.cleared = 0
+
+    def clear_cookies(self) -> None:
+        self.cleared += 1
 
     def route(self, pattern: str, handler: Any) -> None:
         assert pattern == "**/*"
@@ -695,6 +699,58 @@ def test_capture_traces_each_step(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     playwright_capture(named, tmp_path / "p", True, 3.0, "chromium")
     assert told[-1] == "signed in: got the session cookies"
     playwright_capture(LOGIN, tmp_path / "p", True, 3.0, "chromium")  # no trace: silent
+
+
+def test_a_window_hands_each_stop_to_the_person(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codapact.runtime import browser as module
+
+    told: list[str] = []
+    prefilled: list[str] = []
+    outcomes = iter(["username", "manual", "unclear", "challenge"])
+    monkeypatch.setattr(module, "sign_in_headless", lambda *_: next(outcomes, "challenge"))
+    monkeypatch.setattr(module, "prefill_username", lambda page, name, *_: prefilled.append(name))
+    named = replace(LOGIN, username="amy", trace=told.append)
+    fake_playwright(monkeypatch, [jar(other="1")], land_on="https://acme.example.net/login")
+    assert playwright_capture(named, tmp_path / "p", False, 2.2, "chromium") == []
+    assert told[1:5] == [
+        "typed the username and submitted",
+        "waiting: type the password in the window (none was given)",
+        "waiting: a page with several or new-password boxes: finish in the window",
+        "waiting: a one-time-code (2FA) page: enter the code in the window",
+    ]
+    assert prefilled == ["amy"]  # the box beside the password the person types
+
+
+def test_a_password_box_that_stays_is_reported_and_fresh_clears_cookies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codapact.runtime import browser as module
+
+    def submitted(page: Any, login: Any, filled: set[str], error: Any) -> str:
+        if f"password {page.url}" in filled:
+            return "done"
+        filled.add(f"password {page.url}")
+        return "password"
+
+    told: list[str] = []
+    monkeypatch.setattr(module, "sign_in_headless", submitted)
+    named = replace(LOGIN, username="amy", password="pw", trace=told.append, fresh=True)
+    launches: list[Any] = []
+    real = FakeContext.__init__
+
+    def init(self: FakeContext, *args: Any) -> None:
+        real(self, *args)
+        launches.append(self)
+
+    monkeypatch.setattr(FakeContext, "__init__", init)
+    fake_playwright(monkeypatch, [jar(other="1")], land_on="https://acme.example.net/login")
+    assert playwright_capture(named, tmp_path / "p", False, 4.0, "chromium") == []
+    assert told[0] == "cleared the browser profile's cookies (a new device)"
+    assert launches[0].cleared == 1
+    assert module.ASKED_AGAIN in told
+    assert told.count("typed the password and submitted") == 1
 
 
 def test_guard_tells_the_trace_what_it_blocked() -> None:

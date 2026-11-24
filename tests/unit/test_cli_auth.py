@@ -222,10 +222,17 @@ def test_login_prompts_and_messages() -> None:
     assert store.load("login") == {"type": "basic", "username": "bob", "secret": "pw"}
     auth.run(args("login", scheme="token"))
     assert store.load("token") == {"type": "token", "secret": "pw"}
-    assert labels == ["login username: ", "login password: ", "token token: "]
+    assert labels == [
+        'Username (scheme "login"): ',
+        'Password (scheme "login"): ',
+        'Token (scheme "token"): ',
+    ]
     labels.clear()
     auth.run(args("login", scheme="login", username="amy"))
-    assert labels == ["login password: "] and (store.load("login") or {})["username"] == "amy"
+    assert (
+        labels == ['Password (scheme "login"): ']
+        and (store.load("login") or {})["username"] == "amy"
+    )
     piped = commands(store, stdin="  from-stdin \n")
     piped.run(args("login", scheme="token", with_token=True))
     assert store.load("token") == {"type": "token", "secret": "from-stdin"}

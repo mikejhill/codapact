@@ -54,7 +54,7 @@ from codapact.core.net import validate_url
 from codapact.model.api import Api, AuthKind, AuthScheme, OAuthFlowKind
 from codapact.runtime.abstractions import Credential, Transport
 from codapact.runtime.auth import ChainAuth
-from codapact.runtime.browser import RENEWAL_PASSWORD, BrowserAuth, shown_url
+from codapact.runtime.browser import ASKED_AGAIN, RENEWAL_PASSWORD, BrowserAuth, shown_url
 from codapact.runtime.credentials import (
     AskedPassword,
     credential_fields,
@@ -158,6 +158,12 @@ def add_auth_commands(
         "why it stopped (a 2FA page, a wrong password, a timeout).",
     )
     renew.add_argument("--scheme", help="credential scheme (default: the only one)")
+    renew.add_argument(
+        "--fresh",
+        action="store_true",
+        help="clear the browser profile's cookies first, as on a new device, to test a full "
+        "sign-in (if it fails, auth login signs in again)",
+    )
     profiles = actions.add_parser(
         "profiles",
         help="list saved-login profiles and the default",
@@ -199,7 +205,7 @@ class AuthCommands:
     base_url: str = ""
     """The base URL in effect for this command (used when the environment sets it)."""
     show_steps: bool = True
-    """Whether ``auth renew`` prints each step to ``err`` (not with JSON errors)."""
+    """Whether browser sign-in and renewal print each step to ``err`` (not with JSON errors)."""
 
     def run(self, args: argparse.Namespace) -> Any:
         """Return the data to render for ``args.auth_action`` (never a secret)."""
@@ -216,7 +222,7 @@ class AuthCommands:
         if action == "logout":
             return self.logout(args.scheme)
         if action == "renew":
-            return self.renew(args.scheme)
+            return self.renew(args.scheme, fresh=bool(getattr(args, "fresh", False)))
         new = bool(getattr(args, "new", False))
         if new:
             self.store = self._new_profile(getattr(args, "profile", None))
@@ -555,7 +561,7 @@ class AuthCommands:
             rows.append(row)
         return rows
 
-    def renew(self, name: str | None) -> dict[str, Any]:
+    def renew(self, name: str | None, *, fresh: bool = False) -> dict[str, Any]:
         """Renew a browser session now, telling ``err`` each step; fail if it did not work."""
         saved = self.profiles.settings(self.profile_name)
         scheme = self._choose_scheme(name, saved)
@@ -583,7 +589,7 @@ class AuthCommands:
         state = browser.paused() or ("saved" if has_secret else "none")
         show(f"renewing {scheme.name} at {shown_url(browser.login.login_url)}")
         show(f"saved password: {state}")
-        outcome = replace(browser, login=replace(browser.login, trace=show)).renew()
+        outcome = replace(browser, login=replace(browser.login, trace=show, fresh=fresh)).renew()
         if outcome == "unavailable":
             raise AuthError(
                 f"nothing to renew from: no browser profile or saved password; run "
@@ -683,23 +689,37 @@ class AuthCommands:
         if browser is not None:
             previous = saved.get(key, "")
             password = self._renewal_password(scheme, args, username or "", previous)
+            err = self.err if self.show_steps else None
+            seen: list[str] = []
+
+            def show(text: str) -> None:
+                seen.append(text)
+                if err is not None:
+                    print(f"  {text}", file=err)
+
             if self.err is not None:
+                typed = " and password" if password else ""
                 print(
-                    f"Sign in to {browser.login.domain} in the browser window that opens; "
-                    "it closes by itself once you are signed in.",
+                    f"Sign in to {browser.login.domain} in the browser window that opens. "
+                    + (f"It types the username{typed} for you; " if username else "")
+                    + "you finish anything else, such as a 2FA code. "
+                    "It closes by itself once you are signed in.",
                     file=self.err,
                 )
             # another account: a clean browser profile, so the old account's cookies are not
             # taken for the new one's session (the old profile comes back if this fails)
             with self._fresh_browser(scheme, bool(previous) and username != previous):
-                cookies = browser.sign_in()
+                cookies = browser.sign_in(password or "", show)
             result = {
                 "scheme": scheme.name,
                 "signed_in": browser.login.domain,
                 "cookies": sorted({str(c["name"]) for c in cookies}),
                 "saved": _location(self.store, scheme.name),
             }
-            if password is not None:  # only once the sign-in worked
+            if password and ASKED_AGAIN in seen:
+                # the page asked again and the person typed another one: keep the old state
+                result["password"] = "not saved: the sign-in page rejected it; run auth login"  # noqa: S105 (a message)
+            elif password is not None:  # only once the sign-in worked
                 browser.save_password(password or None)
                 where = _location(self.store, scheme.name)
                 result["password"] = (
@@ -718,7 +738,9 @@ class AuthCommands:
             default = saved.get(key, "")
             shown = f" [{default}]" if default else ""
             username = (
-                args.username or self.prompt(f"{scheme.name} username{shown}: ").strip() or default
+                args.username
+                or self.prompt(f"Username {_scheme(scheme.name)}{shown}: ").strip()
+                or default
             )
             if not username:
                 raise AuthError("a username is required")
@@ -731,12 +753,12 @@ class AuthCommands:
                     "username": username,
                     "password": "not saved: asked when a command needs it",
                 }
-            password = self._read_secret(args.with_token, f"{scheme.name} password: ")
+            password = self._read_secret(args.with_token, f"Password {_scheme(scheme.name)}: ")
             self.store.save(
                 scheme.name, {"type": "basic", "username": username, "secret": password}
             )
         else:
-            secret = self._read_secret(args.with_token, f"{scheme.name} token: ")
+            secret = self._read_secret(args.with_token, f"Token {_scheme(scheme.name)}: ")
             self.store.save(scheme.name, {"type": "token", "secret": secret})
         return {"scheme": scheme.name, "saved": _location(self.store, scheme.name)}
 
@@ -811,7 +833,7 @@ class AuthCommands:
             raise AuthError("saving the password needs a username: pass --username")
         if not (args.with_token or self.interactive):
             raise AuthError("--save-secret needs a terminal, or --with-token to read stdin")
-        return self._read_secret(args.with_token, f"{scheme.name} password: ", exact=True)
+        return self._read_secret(args.with_token, f"Password {_scheme(scheme.name)}: ", exact=True)
 
     def _sign_in_username(self, args: argparse.Namespace, default: str) -> str:
         """The username to fill in on the browser sign-in page (optional)."""
@@ -848,7 +870,7 @@ class AuthCommands:
         current = credential_fields(scheme.name, spec, self.prefix, {}, self.store)
         values: dict[str, str] = {}
         for name, options in spec.items():
-            label = f"{scheme.name} {name}"
+            label = f"{name} {_scheme(scheme.name)}"
             if options.get("help"):
                 label += f" ({options['help']})"
             if options.get("optional"):
@@ -930,6 +952,11 @@ def _status(source: str | None) -> str:
 def _record_keys(scheme: str) -> tuple[str, str]:
     """The store keys a scheme's login can occupy: its credential and a plugin session."""
     return scheme, session_key(scheme)
+
+
+def _scheme(name: str) -> str:
+    """How a prompt names the credential scheme it asks for: ``(scheme "name")``."""
+    return f'(scheme "{name}")'
 
 
 def _location(store: TokenStore, key: str | None = None) -> str:

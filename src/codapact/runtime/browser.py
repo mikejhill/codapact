@@ -106,11 +106,13 @@ class BrowserLogin:
     username: str = ""
     """Filled into the empty username or email box of trusted sign-in pages (optional)."""
     password: str = field(default="", repr=False)
-    """With ``username``, typed into trusted sign-in pages by headless renewal (optional)."""
+    """With ``username``, typed into trusted sign-in pages (renewal, or ``auth login``)."""
     sign_in_attempts: int = 3
     """At most this many form submissions per headless renewal (``sign_in_attempts``)."""
     trace: Callable[[str], Any] | None = field(default=None, repr=False, compare=False)
     """Told each step of a sign-in (pages, submissions, why it stopped); never secrets."""
+    fresh: bool = field(default=False, compare=False)
+    """Clear the browser profile's cookies first, as on a new device (``auth renew --fresh``)."""
 
     @classmethod
     def from_settings(
@@ -276,7 +278,7 @@ def playwright_capture(
     with api.sync_playwright() as playwright:
         for choice in choices:
             options: dict[str, Any] = {"headless": headless}
-            guarded = headless and bool(login.password and login.username)
+            guarded = bool(login.password and login.username)
             if guarded:
                 options["service_workers"] = "block"  # so every request passes the guard
             if choice != "chromium":
@@ -287,25 +289,39 @@ def playwright_capture(
                 errors.append(f"{choice}: {str(error).splitlines()[0]}")
                 continue
             try:
+                steps = Steps(login.trace, window=not headless)
                 if guarded:
                     guard_password(context, login)
+                if login.fresh:
+                    context.clear_cookies()
+                    steps.note("cleared the browser profile's cookies (a new device)")
                 page = context.pages[0] if context.pages else context.new_page()
                 page.goto(login.login_url)
                 deadline = time.monotonic() + timeout
                 filled: set[str] = set()
-                steps = Steps(login.trace)
+                again = 0  # polls the submitted password box has stayed on screen
                 while time.monotonic() < deadline:
                     steps.page(str(page.url))
                     found = session_cookies(context.cookies(), login)
                     if found and _on_host(page.url, login.domain):
                         steps.note("signed in: got the session cookies")
                         return found
-                    if login.username and login.trusted_page(page.url):
-                        if not headless:
+                    href = str(page.url)
+                    if login.username and login.trusted_page(href):
+                        if headless and not login.password:
+                            pass  # nothing to type without a window but the saved password
+                        elif headless or login.password_page(href):
+                            outcome = sign_in_headless(page, login, filled, playwright_error)
+                            steps.outcome(outcome)
+                            if outcome == "manual":
+                                prefill_username(page, login.username, filled, playwright_error)
+                            resent = outcome == "done" and f"password {href}" in filled
+                            again = again + 1 if resent else 0
+                            if again == ASKED_AGAIN_POLLS:
+                                steps.note(ASKED_AGAIN)
+                        else:  # a plain-HTTP page: the username only, and not submitted
                             prefill_username(page, login.username, filled, playwright_error)
-                        elif login.password:
-                            steps.outcome(sign_in_headless(page, login, filled, playwright_error))
-                    elif login.password and headless:
+                    elif login.password:
                         steps.note("not a trusted sign-in page: nothing typed (see signin_hosts)")
                     page.wait_for_timeout(500)
                 steps.note(f"gave up after {int(timeout)} s without the session cookies")
@@ -332,9 +348,15 @@ def _shown_host(url: str) -> str:
     return (parts.hostname or "") + (f":{parts.port}" if parts.port else "")
 
 
+ASKED_AGAIN = "the sign-in page asked for the password again (a wrong password?)"
+"""Traced when the password box stays after the password was submitted."""
+ASKED_AGAIN_POLLS = 6
+"""Polls (half a second each) before a submitted password box counts as asked again."""
+
 OUTCOMES = {
     "username": "typed the username and submitted",
     "password": "typed the password and submitted",
+    "manual": "waiting: type the password in the window (none was given)",
     "challenge": "stopped: a one-time-code (2FA) page; run auth login to enter the code",
     "unclear": "stopped: a page with several or new-password boxes",
     "other-account": "stopped: the form names another account",
@@ -347,12 +369,21 @@ OUTCOMES = {
 }
 """What each ``sign_in_headless`` outcome means, for a trace."""
 
+WINDOW_OUTCOMES = {
+    "challenge": "waiting: a one-time-code (2FA) page: enter the code in the window",
+    "done": "waiting: this page was already submitted once: finish it in the window",
+    "limit": "waiting: reached sign_in_attempts: finish signing in in the window",
+}
+"""The outcomes that read differently while a window is open for the person."""
+
 
 @dataclass(slots=True)
 class Steps:
     """Tell a trace what a sign-in does, once per change (pages without their query)."""
 
     trace: Callable[[str], Any] | None
+    window: bool = False
+    """A window is open: stops hand over to the person rather than end the sign-in."""
     last: str = ""
     url: str = ""
 
@@ -368,8 +399,13 @@ class Steps:
             self.note(f"page {shown}")
 
     def outcome(self, outcome: str) -> None:
-        if outcome in OUTCOMES:
-            self.note(OUTCOMES[outcome])
+        if self.window and outcome in WINDOW_OUTCOMES:
+            self.note(WINDOW_OUTCOMES[outcome])
+        elif outcome in OUTCOMES:
+            text = OUTCOMES[outcome]
+            if self.window and text.startswith("stopped:"):
+                text = "waiting:" + text.removeprefix("stopped:") + ": finish in the window"
+            self.note(text)
 
 
 def guard_password(context: Any, login: BrowserLogin) -> None:
@@ -586,6 +622,8 @@ def sign_in_headless(
         outcome = str(plan.get("outcome")) if isinstance(plan, dict) else "none"
         if outcome not in ("username", "password"):
             return outcome
+        if outcome == "password" and not login.password:
+            return "manual"  # a window, and the person types it
         if not login.password_page(str(plan.get("dest"))):
             return "unsafe"
         if plan.get("blocked"):
@@ -802,17 +840,23 @@ class BrowserSession:
             RENEWAL_SCOPE: self.login.password_scope,
         }
 
-    def sign_in(self) -> list[Cookie]:
-        """Open a browser window for the person to sign in; save and return the cookies."""
+    def sign_in(
+        self, password: str = "", trace: Callable[[str], Any] | None = None
+    ) -> list[Cookie]:
+        """Open a browser window for the person to sign in; save and return the cookies.
+
+        The window types the username and submits it, and ``password`` too when given
+        (the same checks as renewal); the person does the rest, such as a 2FA code.
+        ``trace`` is told each step.
+        """
+        login = replace(self.login, password=password, trace=trace or self.login.trace)
         if self.ephemeral:
             with tempfile.TemporaryDirectory(prefix="codapact-browser-") as scratch:
                 cookies = self.capture(
-                    self.login, Path(scratch), False, INTERACTIVE_TIMEOUT, self.browser
+                    login, Path(scratch), False, INTERACTIVE_TIMEOUT, self.browser
                 )
         else:
-            cookies = self.capture(
-                self.login, self.directory, False, INTERACTIVE_TIMEOUT, self.browser
-            )
+            cookies = self.capture(login, self.directory, False, INTERACTIVE_TIMEOUT, self.browser)
         if not cookies:
             raise AuthError(
                 f"sign-in did not finish within {int(INTERACTIVE_TIMEOUT)} seconds "
