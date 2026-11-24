@@ -491,6 +491,19 @@ def step(outcome: str, dest: str = "https://id.example.com/login", method: str =
     return {"outcome": outcome, "dest": dest, "method": method}
 
 
+def test_without_a_password_the_password_step_is_left_to_the_person() -> None:
+    login = BrowserLogin(
+        SITE + "/",
+        ("t",),
+        domain="acme.example.net",
+        username="amy",
+        signin_hosts=("id.example.com",),
+    )
+    page = FormPage("https://id.example.com/login", step("password"))
+    assert sign_in_headless(page, login, set(), FakeError) == "manual"
+    assert [c[0] for c in page.calls] == ["inspect"]  # nothing submitted
+
+
 def test_headless_sign_in_submits_each_page_step_once() -> None:
     login = replace(
         BrowserLogin(SITE + "/", ("t",), domain="acme.example.net", username="amy"),
