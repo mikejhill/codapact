@@ -229,3 +229,36 @@ def test_the_window_types_once_and_notices_a_rejected_password(tmp_path: Path) -
         assert "the sign-in page asked for the password again (a wrong password?)" in told
     finally:
         site.shutdown()
+
+
+def test_asked_again_tells_a_password_retry_from_2fa(browser: Any) -> None:
+    from codapact.runtime.browser import ASKED_AGAIN_SCRIPT
+
+    pages: dict[str, str] = {
+        "/again": FORM.format("<input name=username><input type=password name=p>"),
+        "/code": FORM.format('<input type=password autocomplete="one-time-code" name=c>'),
+        "/otp": FORM.format("<input type=password name=otp_code>"),
+        "/new": FORM.format('<input type=password autocomplete="new-password" name=n>'),
+        "/typed": FORM.format('<input type=password name=p value="x">'),
+    }
+    site = _serve(pages)
+    origin = f"http://127.0.0.1:{site.server_port}"
+    try:
+        page = browser.new_page()
+        try:
+            found = {}
+            for path in pages:
+                page.goto(origin + path)
+                found[path] = page.evaluate(ASKED_AGAIN_SCRIPT, page.url)
+            assert found == {
+                "/again": True,
+                "/code": False,
+                "/otp": False,
+                "/new": False,
+                "/typed": False,
+            }
+            assert page.evaluate(ASKED_AGAIN_SCRIPT, origin + "/again") is False  # moved on
+        finally:
+            page.close()
+    finally:
+        site.shutdown()

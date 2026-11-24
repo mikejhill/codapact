@@ -1424,7 +1424,7 @@ def test_window_sign_in_types_the_wizard_password_and_shows_each_step(tmp_path: 
     assert inner.items["default:session"]["renewal_password"] == "pw"
 
 
-def test_auth_renew_fresh_clears_the_profile_cookies(tmp_path: Path) -> None:
+def test_auth_renew_fresh_starts_from_an_empty_profile(tmp_path: Path) -> None:
     from tests.unit.test_extensions import DiskLikeStore
 
     auth, _, _, _ = browser_wizard(
@@ -1432,10 +1432,14 @@ def test_auth_renew_fresh_clears_the_profile_cookies(tmp_path: Path) -> None:
     )
     auth.run(login())
     provider = next(p for p in auth.chain.providers if isinstance(p, BrowserAuth))
-    fresh: list[bool] = []
-    provider.capture = lambda login_, *_: fresh.append(login_.fresh) or []
+    directory = provider.directory(SESSION, auth.profile or None)
+    (directory / "Default").mkdir(parents=True)
+    (directory / "Default" / "Local Storage").write_text("refresh token")
+    existed: list[bool] = []
+    provider.capture = lambda login_, where, *_: existed.append(where.exists()) or []
     with pytest.raises(AuthError, match="renewal failed"):
         auth.run(argparse.Namespace(auth_action="renew", scheme="session", fresh=True))
-    with pytest.raises(AuthError, match="renewal failed"):
-        auth.run(argparse.Namespace(auth_action="renew", scheme="session"))
-    assert fresh == [True, False]
+    assert existed == [False]  # the whole profile went, storage too
+    stream = auth.err
+    assert isinstance(stream, io.StringIO)
+    assert "  started from an empty browser profile (a new device)\n" in stream.getvalue()

@@ -111,8 +111,6 @@ class BrowserLogin:
     """At most this many form submissions per headless renewal (``sign_in_attempts``)."""
     trace: Callable[[str], Any] | None = field(default=None, repr=False, compare=False)
     """Told each step of a sign-in (pages, submissions, why it stopped); never secrets."""
-    fresh: bool = field(default=False, compare=False)
-    """Empty the browser profile first, as on a new device (``auth renew --fresh``)."""
 
     @classmethod
     def from_settings(
@@ -271,9 +269,6 @@ def playwright_capture(
         raise AuthError(
             "browser sign-in needs Playwright: install codapact[browser] (pip install playwright)"
         ) from None
-    if login.fresh and directory.exists():
-        shutil.rmtree(directory)  # cookies, storage and all: a new device
-        _tell(login, "started from an empty browser profile (a new device)")
     directory.mkdir(parents=True, exist_ok=True)
     choices = (browser,) if browser else BROWSERS
     errors: list[str] = []
@@ -298,7 +293,8 @@ def playwright_capture(
                 page = context.pages[0] if context.pages else context.new_page()
                 page.goto(login.login_url)
                 deadline = time.monotonic() + timeout
-                filled: set[str] = set()
+                filled: set[str] = set()  # submitted steps (what sign_in_attempts counts)
+                prefilled: set[str] = set()  # pages whose username box was only filled
                 typing = login  # the password is submitted once; then the page is the person's
                 again = 0  # polls a password box has shown without the submitted password
                 while time.monotonic() < deadline:
@@ -320,14 +316,14 @@ def playwright_capture(
                                 typing = replace(login, password="")
                             if not headless and outcome in ("manual", "again", "stuck"):
                                 # fill only: the person types the rest (or the button waits)
-                                prefill_username(page, login.username, filled, playwright_error)
-                            if typing is not login and login.password_page(href):
-                                shown = _retyping(page, login.password, playwright_error)
+                                prefill_username(page, login.username, prefilled, playwright_error)
+                            if typing is not login:
+                                shown = _asked_again(page, login, playwright_error)
                                 again = again + 1 if shown else 0
                                 if again == ASKED_AGAIN_POLLS:
                                     steps.note(ASKED_AGAIN)
                         else:  # a plain-HTTP page: the username only, and not submitted
-                            prefill_username(page, login.username, filled, playwright_error)
+                            prefill_username(page, login.username, prefilled, playwright_error)
                     elif login.password:
                         steps.note("not a trusted sign-in page: nothing typed (see signin_hosts)")
                     page.wait_for_timeout(500)
@@ -360,15 +356,26 @@ ASKED_AGAIN = "the sign-in page asked for the password again (a wrong password?)
 ASKED_AGAIN_POLLS = 2
 """Polls (half a second each) such a box must show for, so a page being replaced is not it."""
 
-RETYPING_SCRIPT = """(secret) => Array.from(document.querySelectorAll("input[type=password]"))
-  .some((el) => el.offsetParent !== null && el.value !== secret)"""
-"""Whether a visible password box holds something other than the submitted password."""
+ASKED_AGAIN_SCRIPT = """(href) => {
+  if (location.href !== href) return false;
+  const code = /(^|[-_ ])(otp|totp|mfa|2fa|passcode|verification|code)([-_ ]|$)/i;
+  const boxes = Array.from(document.querySelectorAll("input[type=password]")).filter(
+    (el) => el.offsetParent !== null && !el.disabled
+  );
+  if (boxes.some((el) => /one-time-code|new-password/i.test(el.autocomplete || "") ||
+      code.test(el.name) || code.test(el.id))) return false;  // 2FA or a new password
+  return boxes.length === 1 && boxes[0].value === "";
+}"""
+"""Whether the page (still at ``href``) shows one empty sign-in password box: asked again."""
 
 
-def _retyping(page: Any, secret: str, error: type[Exception]) -> bool:
-    """Whether the (trusted, HTTPS) page shows a password box emptied or retyped."""
+def _asked_again(page: Any, login: BrowserLogin, error: type[Exception]) -> bool:
+    """Whether a trusted sign-in page asks for the password again (no secret is passed)."""
+    href = str(page.url)
+    if not login.password_page(href):
+        return False
     try:
-        return bool(page.evaluate(RETYPING_SCRIPT, secret))
+        return bool(page.evaluate(ASKED_AGAIN_SCRIPT, href))
     except error:
         return False
 

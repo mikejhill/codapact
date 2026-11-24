@@ -51,10 +51,10 @@ class FakePage:
     def __init__(self, land_on: str) -> None:
         self.url = "about:blank"
         self.land_on = land_on
-        self.retyping = False  # what RETYPING_SCRIPT finds
+        self.retyping = False  # what ASKED_AGAIN_SCRIPT finds
 
-    def evaluate(self, script: str, secret: str) -> bool:
-        assert script.startswith("(secret) =>") and secret == "pw"
+    def evaluate(self, script: str, href: str) -> bool:
+        assert script.startswith("(href) =>") and href == self.url  # never the password
         return self.retyping
 
     def goto(self, url: str) -> None:
@@ -783,20 +783,6 @@ def test_the_password_goes_once_and_a_retyped_box_is_reported(
     assert OUTCOMES["again"] in told  # renewal: a stop, so the password is paused
 
 
-def test_fresh_starts_from_an_empty_profile(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    profile = tmp_path / "p"
-    (profile / "Default").mkdir(parents=True)
-    (profile / "Default" / "Local Storage").write_text("refresh token")
-    told: list[str] = []
-    fake_playwright(monkeypatch, [jar(tenant_session_token="abc")])
-    named = replace(LOGIN, trace=told.append, fresh=True)
-    assert playwright_capture(named, profile, True, 2.0, "chromium")
-    assert told[0] == "started from an empty browser profile (a new device)"
-    assert profile.is_dir() and not (profile / "Default").exists()
-
-
 def test_guard_tells_the_trace_what_it_blocked() -> None:
     told: list[str] = []
     login = replace(
@@ -921,11 +907,40 @@ def test_renew_keeps_reasons_and_paused_passwords(tmp_path: Path) -> None:
     assert session.renew() == "failed: page https://x.test/"
 
 
-def test_a_page_that_navigates_away_is_not_retyping() -> None:
-    from codapact.runtime.browser import _retyping
+def test_a_username_only_filled_does_not_count_as_a_submission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codapact.runtime import browser as module
+
+    outcomes: list[str] = []
+
+    def disabled_until_filled(page: Any, login: Any, filled: set[str], error: Any) -> str:
+        outcome = "stuck" if not outcomes else ("limit" if filled else "username")
+        if outcome == "username":
+            filled.add(f"username {page.url}")
+        outcomes.append(outcome)
+        return outcome
+
+    monkeypatch.setattr(module, "sign_in_headless", disabled_until_filled)
+    monkeypatch.setattr(
+        module, "prefill_username", lambda page, name, done, error: done.add(page.url)
+    )
+    named = replace(LOGIN, username="amy", sign_in_attempts=1)
+    fake_playwright(monkeypatch, [jar(other="1")], land_on="https://acme.example.net/login")
+    playwright_capture(named, tmp_path / "p", False, 1.2, "chromium")
+    assert outcomes[:2] == ["stuck", "username"]  # the fill did not use up the one attempt
+
+
+def test_asked_again_only_looks_at_trusted_pages_that_stay() -> None:
+    from codapact.runtime.browser import _asked_again
 
     class Gone:
-        def evaluate(self, script: str, secret: str) -> bool:
+        url = "https://acme.example.net/login"
+
+        def evaluate(self, script: str, href: str) -> bool:
             raise FakeError("Execution context was destroyed")
 
-    assert _retyping(Gone(), "pw", FakeError) is False
+    assert _asked_again(Gone(), LOGIN, FakeError) is False
+    elsewhere = Gone()
+    elsewhere.url = "https://evil.test/login"  # never evaluated off-trust
+    assert _asked_again(elsewhere, LOGIN, FakeError) is False

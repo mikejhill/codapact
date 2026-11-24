@@ -589,7 +589,10 @@ class AuthCommands:
         state = browser.paused() or ("saved" if has_secret else "none")
         show(f"renewing {scheme.name} at {shown_url(browser.login.login_url)}")
         show(f"saved password: {state}")
-        outcome = replace(browser, login=replace(browser.login, trace=show, fresh=fresh)).renew()
+        if fresh:  # cookies, storage and all, inside the browser root only: a new device
+            provider.forget(scheme, self.profile or None)
+            show("started from an empty browser profile (a new device)")
+        outcome = replace(browser, login=replace(browser.login, trace=show)).renew()
         if outcome == "unavailable":
             raise AuthError(
                 f"nothing to renew from: no browser profile or saved password; run "
