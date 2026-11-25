@@ -2,6 +2,13 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.17.1](https://github.com/mikejhill/codapact/compare/v0.17.0...v0.17.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **auth:** skip sign-in boxes hidden with visibility:hidden ([#86](https://github.com/mikejhill/codapact/issues/86)) ([6eed777](https://github.com/mikejhill/codapact/commit/6eed777b3502f507455f0cf1052462510fca8277))
+
 ## [0.17.0](https://github.com/mikejhill/codapact/compare/v0.16.0...v0.17.0) (2026-11-24)
 
 
