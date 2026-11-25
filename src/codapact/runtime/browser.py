@@ -631,8 +631,13 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
     if (after.button && after.button.getAttribute("formmethod") !== null)
       after.button.formMethod = "post";
   }
-  if (after.button) after.button.click();
-  else form.requestSubmit();
+  if (after.button) {
+    // the browser clicks it (a trusted click, as a person's); id.atlassian.com refuses a
+    // password step submitted by page script
+    after.button.setAttribute(tag, `${mark}-submit`);
+    return { ...report(after), click: true };
+  }
+  form.requestSubmit();
   return report(after);
   })();
   if (mode === "submit" || (mode === "verify" && result.outcome !== "ok")) {
@@ -644,7 +649,10 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
       box.dispatchEvent(new Event("input", { bubbles: true }));
       box.dispatchEvent(new Event("change", { bubbles: true }));
     }
-    document.querySelectorAll(`[${tag}]`).forEach((el) => el.removeAttribute(tag));
+    const keep = result.click ? `${mark}-submit` : null;  // the button the browser clicks
+    document.querySelectorAll(`[${tag}]`).forEach((el) => {
+      if (el.getAttribute(tag) !== keep) el.removeAttribute(tag);
+    });
   }
   return result;
 }"""
@@ -703,6 +711,26 @@ def _clear_password(page: Any, login: BrowserLogin, mark: str, error: type[Excep
         pass  # the page moved on: the box is gone with it
 
 
+UNMARK_SCRIPT = f"""(mark) => document.querySelectorAll('[{FILL_TAG}]').forEach(
+  (el) => el.getAttribute('{FILL_TAG}') === mark && el.removeAttribute('{FILL_TAG}'))"""
+"""Take the submit button's mark off, if the page is still there."""
+
+
+def _click_submit(page: Any, mark: str, error: type[Exception]) -> None:
+    """Click the marked submit button with the browser's own input (a trusted click).
+
+    ``SIGN_IN_SCRIPT`` has checked the form and marked its button just before. A page
+    script's ``click()`` is an untrusted event, and some sign-in pages (id.atlassian.com)
+    refuse a password step submitted that way, as they refuse a password set by script.
+    """
+    button = page.locator(f'[{FILL_TAG}="{mark}-submit"]')
+    button.click(timeout=5000)
+    try:  # the page usually moved on, taking the mark with it; no waiting for the button
+        page.evaluate(UNMARK_SCRIPT, f"{mark}-submit")
+    except error:
+        pass
+
+
 def sign_in_headless(
     page: Any, login: BrowserLogin, filled: set[str], error: type[Exception]
 ) -> str:
@@ -759,6 +787,8 @@ def sign_in_headless(
             if not _type_box(page, mark, "pass", login.password, typing):
                 return "typing"  # the person's, never overwritten
         sent = page.evaluate(SIGN_IN_SCRIPT, ["submit", *base, plan, flag, mark])
+        if isinstance(sent, dict) and sent.pop("click", False):
+            _click_submit(page, mark, error)
     except error:
         if delivered:
             _clear_password(page, login, mark, error)

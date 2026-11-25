@@ -117,10 +117,14 @@ def serve(site: Site) -> Site:
                     '<div id=step style="visibility:hidden">'
                     "<input name=password id=password type=password autocomplete=current-password>"
                     "</div><input type=hidden name=typed id=typed>"
+                    "<input type=hidden name=clicked id=clicked>"
                     "<button>Continue</button></form>"
-                    # like id.atlassian.com: a password set by page script is refused
+                    # like id.atlassian.com: a password set, or a form submitted, by page
+                    # script is refused
                     "<script>document.getElementById('password').addEventListener("
                     "'input', (e) => { if (e.isTrusted) typed.value = '1'; });"
+                    "document.querySelector('button').addEventListener("
+                    "'click', (e) => { clicked.value = e.isTrusted ? '1' : ''; });"
                     "document.forms[0].addEventListener('submit', (e) => {"
                     "const step = document.getElementById('step');"
                     "if (step.style.visibility === 'hidden') {"
@@ -206,7 +210,8 @@ def serve(site: Site) -> Site:
                 target = "/login?" + urllib.parse.urlencode({"continue": "/", "email": email})
                 self.send(302, headers={"Location": target})
             elif path == "/login/password":
-                if site.one_page and form.get("typed", [""])[0] != "1":
+                trusted = all(form.get(f, [""])[0] == "1" for f in ("typed", "clicked"))
+                if site.one_page and not trusted:
                     error = "Something went wrong while attempting to validate your credentials."
                     query = {"continue": "/", "email": email, "error": error}
                     self.send(302, headers={"Location": "/login?" + urllib.parse.urlencode(query)})
