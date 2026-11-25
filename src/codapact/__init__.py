@@ -5,4 +5,4 @@ from importlib.metadata import PackageNotFoundError, version
 try:
     __version__ = version("codapact")
 except PackageNotFoundError:  # pragma: no cover - running from an unbuilt tree
-    __version__ = "0.17.1"
+    __version__ = "0.17.2"
