@@ -31,6 +31,7 @@ import fnmatch
 import importlib
 import json
 import re
+import secrets
 import shutil
 import sys
 import tempfile
@@ -541,7 +542,10 @@ def prefill_username(
     return False
 
 
-SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinPage]) => {
+SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinPage, mark]) => {
+  const tag = "data-codapact-fill";
+  const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+  const result = (() => {
   if (location.href !== href) return { outcome: "moved" };
   // laid out and not visibility:hidden (a password box kept hidden until the email is in)
   const laidOut = (el) =>
@@ -597,18 +601,16 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
     !!b && a.outcome === b.outcome && a.dest === b.dest && a.method === b.method;
   const before = plan();
   const report = ({ button, ...rest }) => rest;
-  const tag = "data-codapact-fill";
   if (mode === "inspect") {
     // mark the boxes for the browser's own typing (trusted input, as a password manager)
     document.querySelectorAll(`[${tag}]`).forEach((el) => el.removeAttribute(tag));
     const fill = [];
-    if (user && !user.value) { user.setAttribute(tag, "user"); fill.push("user"); }
-    if (pass) { pass.setAttribute(tag, "pass"); fill.push("pass"); }
+    if (user && !user.value) { user.setAttribute(tag, `${mark}-user`); fill.push("user"); }
+    if (pass) { pass.setAttribute(tag, `${mark}-pass`); fill.push("pass"); }
     return { ...report(before), fill };
   }
   if (!same(before, expect)) return { outcome: "changed" };
-  if (pass && pass.getAttribute(tag) !== "pass") return { outcome: "changed" };
-  const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+  if (pass && pass.getAttribute(tag) !== `${mark}-pass`) return { outcome: "changed" };
   const put = (el, value) => {
     set.call(el, value);
     el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -617,7 +619,6 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
   // only what the browser's typing did not already put there
   if (user && !user.value) put(user, name);
   if (pass && pass.value !== secret) put(pass, secret);
-  document.querySelectorAll(`[${tag}]`).forEach((el) => el.removeAttribute(tag));
   const after = plan();  // the fill's events may have changed the form
   if (!same(after, expect) || after.blocked) {
     if (pass) set.call(pass, "");
@@ -631,6 +632,15 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
   if (after.button) after.button.click();
   else form.requestSubmit();
   return report(after);
+  })();
+  if (mode === "submit") {
+    // nothing submitted: take back the password codapact typed into the marked box
+    const box = document.querySelector(`[${tag}="${mark}-pass"]`);
+    if (box && box.value === secret && !["username", "password"].includes(result.outcome))
+      set.call(box, "");
+    document.querySelectorAll(`[${tag}]`).forEach((el) => el.removeAttribute(tag));
+  }
+  return result;
 }"""
 """Inspect the checked page's sign-in form, or fill and submit it as inspected.
 
@@ -655,22 +665,35 @@ FILL_TAG = "data-codapact-fill"
 """The attribute ``SIGN_IN_SCRIPT`` marks the boxes with for the browser's own typing."""
 
 
-def _type_into(page: Any, fill: list[str], login: BrowserLogin) -> None:
+def _type_into(page: Any, fill: list[str], login: BrowserLogin, mark: str) -> bool:
     """Type into the marked boxes with the browser's input (trusted events, like autofill).
 
     Some sign-in pages (id.atlassian.com) refuse a password set by page script; the
     browser's own text input is what a person's typing or a password manager produces.
-    The submit step re-checks the form and fills anything this left empty.
+    The marks carry a random ``mark`` set on the inspected document, so a page that
+    replaced it has no box to type into. A box that got text after inspection is left
+    as it is; for the password box that stops the step (False). Leaving each box
+    commits it (its ``change`` event). The submit step re-checks the form.
     """
-    for tag, value in (("user", login.username), ("pass", login.password)):
-        if tag in fill and value:
-            page.locator(f'[{FILL_TAG}="{tag}"]').fill(value, timeout=2000)
+    for kind, value in (("user", login.username), ("pass", login.password)):
+        if kind not in fill or not value:
+            continue
+        box = page.locator(f'[{FILL_TAG}="{mark}-{kind}"]')
+        if box.input_value(timeout=2000):
+            if kind == "pass":
+                return False  # the person's, never overwritten
+            continue  # a username typed meanwhile: the submit step checks its account
+        box.fill(value, timeout=2000)
+        box.blur(timeout=2000)
+    return True
 
 
-def _clear_password(page: Any, error: type[Exception]) -> None:
-    """Empty a password box typed into when the submission then failed (best effort)."""
+def _clear_password(page: Any, login: BrowserLogin, mark: str, error: type[Exception]) -> None:
+    """Empty the marked password box if it still holds the typed password (best effort)."""
     try:
-        page.locator(f'[{FILL_TAG}="pass"]').fill("", timeout=1000)
+        box = page.locator(f'[{FILL_TAG}="{mark}-pass"]')
+        if box.input_value(timeout=1000) == login.password:
+            box.fill("", timeout=1000)
     except error:
         pass  # the page moved on: the box is gone with it
 
@@ -697,9 +720,10 @@ def sign_in_headless(
     done = [step for step in ("username", "password") if f"{step} {href}" in filled]
     base = [login.username, login.password, href, list(USERNAME_FIELDS), done]
     flag = _sign_in_page(login, href)
+    mark = secrets.token_hex(8)  # binds the boxes to the inspected document
     fill: list[str] = []
     try:
-        plan = page.evaluate(SIGN_IN_SCRIPT, ["inspect", *base, None, flag])
+        plan = page.evaluate(SIGN_IN_SCRIPT, ["inspect", *base, None, flag, mark])
         outcome = str(plan.get("outcome")) if isinstance(plan, dict) else "none"
         if outcome not in ("username", "password"):
             return outcome
@@ -712,11 +736,12 @@ def sign_in_headless(
         if plan.get("blocked"):
             return "stuck"  # a button waiting for validation or a CAPTCHA
         fill = [str(tag) for tag in plan.pop("fill", None) or []]
-        _type_into(page, fill, login)
-        sent = page.evaluate(SIGN_IN_SCRIPT, ["submit", *base, plan, flag])
+        if not _type_into(page, fill, login, mark):
+            return "typing"
+        sent = page.evaluate(SIGN_IN_SCRIPT, ["submit", *base, plan, flag, mark])
     except error:
         if "pass" in fill:
-            _clear_password(page, error)
+            _clear_password(page, login, mark, error)
         return "error"
     outcome = str(sent.get("outcome")) if isinstance(sent, dict) else "none"
     if outcome in ("username", "password"):

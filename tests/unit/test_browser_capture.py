@@ -482,7 +482,7 @@ class FormPage:
 
     def evaluate(self, script: str, args: list[Any]) -> Any:
         assert script.startswith(
-            "([mode, name, secret, href, selectors, done, expect, signinPage]) =>"
+            "([mode, name, secret, href, selectors, done, expect, signinPage, mark]) =>"
         )
         self.calls.append(args)
         if self.plan == "raise":
@@ -952,20 +952,41 @@ def test_asked_again_only_looks_at_trusted_pages_that_stay() -> None:
 class TypingPage(FormPage):
     """A ``FormPage`` that records the browser's own typing into marked boxes."""
 
-    def __init__(self, url: str, plan: Any, fail_submit: bool = False, gone: bool = False) -> None:
+    def __init__(
+        self,
+        url: str,
+        plan: Any,
+        fail_submit: bool = False,
+        gone: bool = False,
+        meanwhile: str = "",
+    ) -> None:
         super().__init__(url, plan)
         self.typed: list[tuple[str, str]] = []
+        self.values: dict[str, str] = {}
+        self.selectors: set[str] = set()
         self.fail_submit = fail_submit
         self.gone = gone  # the box is gone by the time it is emptied
+        self.meanwhile = meanwhile  # a box that got text after inspection
 
     def locator(self, selector: str) -> Any:
         page = self
+        self.selectors.add(selector)
+        kind = selector.rsplit("-", 1)[-1].rstrip('"]')
 
         class Box:
+            def input_value(self, timeout: float) -> str:
+                if kind == page.meanwhile:
+                    return "typed by someone"
+                return page.values.get(kind, "")
+
             def fill(self, value: str, timeout: float) -> None:
                 if page.gone and not value:
                     raise FakeError("no such element")
-                page.typed.append((selector, value))
+                page.typed.append((kind, value))
+                page.values[kind] = value
+
+            def blur(self, timeout: float) -> None:
+                page.typed.append((kind, "(left)"))
 
         return Box()
 
@@ -973,6 +994,7 @@ class TypingPage(FormPage):
     def evaluate(self, script: str, args: list[Any]) -> Any:
         if args[0] == "submit":
             assert "fill" not in args[6]  # the plan goes back as inspected, minus the marks
+            assert args[8] == self.calls[0][8]  # the mark set at inspection
             if self.fail_submit:
                 raise FakeError("navigated away")
             return args[6]
@@ -987,13 +1009,23 @@ def test_the_browser_types_into_the_marked_boxes_before_submitting() -> None:
     )
     page = TypingPage("https://id.example.com/login", step("password"))
     assert sign_in_headless(page, login, set(), FakeError) == "password"
-    assert page.typed == [
-        ('[data-codapact-fill="user"]', "amy"),
-        ('[data-codapact-fill="pass"]', "pw"),
-    ]
+    assert page.typed == [("user", "amy"), ("user", "(left)"), ("pass", "pw"), ("pass", "(left)")]
+    mark = page.calls[0][8]
+    assert len(mark) == 16  # random, so a replacement document has no marked box
+    assert page.selectors == {
+        f'[data-codapact-fill="{mark}-user"]',
+        f'[data-codapact-fill="{mark}-pass"]',
+    }
     # a submission that fails empties the typed password again
     failing = TypingPage("https://id.example.com/login", step("password"), fail_submit=True)
     assert sign_in_headless(failing, login, set(), FakeError) == "error"
-    assert failing.typed[-1] == ('[data-codapact-fill="pass"]', "")
+    assert failing.typed[-1] == ("pass", "")
     gone = TypingPage("https://id.example.com/login", step("password"), True, gone=True)
     assert sign_in_headless(gone, login, set(), FakeError) == "error"  # still just an error
+    # text typed after inspection is never overwritten: a username is kept, a password stops
+    kept = TypingPage("https://id.example.com/login", step("password"), meanwhile="user")
+    assert sign_in_headless(kept, login, set(), FakeError) == "password"
+    assert [kind for kind, _ in kept.typed] == ["pass", "pass"]
+    theirs = TypingPage("https://id.example.com/login", step("password"), meanwhile="pass")
+    assert sign_in_headless(theirs, login, set(), FakeError) == "typing"
+    assert ("pass", "pw") not in theirs.typed
