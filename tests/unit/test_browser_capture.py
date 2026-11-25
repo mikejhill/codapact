@@ -8,7 +8,7 @@ import sys
 import types
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 
 import pytest
 
@@ -966,6 +966,7 @@ class TypingPage(FormPage):
 
         return Box()
 
+    @override
     def evaluate(self, script: str, args: list[Any]) -> Any:
         if args[0] == "submit":
             assert "fill" not in args[6]  # the plan goes back as inspected, minus the marks
