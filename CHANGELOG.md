@@ -2,6 +2,13 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.17.2](https://github.com/mikejhill/codapact/compare/v0.17.1...v0.17.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **auth:** type sign-in boxes with the browser's own input ([#88](https://github.com/mikejhill/codapact/issues/88)) ([3256bee](https://github.com/mikejhill/codapact/commit/3256bee30b25ffd57065b3395633d600e52fd43d))
+
 ## [0.17.1](https://github.com/mikejhill/codapact/compare/v0.17.0...v0.17.1) (2026-11-25)
 
 
