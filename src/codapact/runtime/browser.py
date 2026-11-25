@@ -364,7 +364,8 @@ ASKED_AGAIN_SCRIPT = """(href) => {
   if (location.href !== href) return false;
   const code = /(^|[-_ ])(otp|totp|mfa|2fa|passcode|verification|code)([-_ ]|$)/i;
   const boxes = Array.from(document.querySelectorAll("input[type=password]")).filter(
-    (el) => el.offsetParent !== null && !el.disabled
+    (el) => el.offsetParent !== null && getComputedStyle(el).visibility === "visible" &&
+      !el.disabled
   );
   if (boxes.some((el) => /one-time-code|new-password/i.test(el.autocomplete || "") ||
       code.test(el.name) || code.test(el.id))) return false;  // 2FA or a new password
@@ -542,7 +543,9 @@ def prefill_username(
 
 SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinPage]) => {
   if (location.href !== href) return { outcome: "moved" };
-  const laidOut = (el) => el && el.offsetParent !== null;
+  // laid out and not visibility:hidden (a password box kept hidden until the email is in)
+  const laidOut = (el) =>
+    !!el && el.offsetParent !== null && getComputedStyle(el).visibility === "visible";
   const shown = (el) => laidOut(el) && !el.disabled;
   const visible = (root, s) => Array.from(root.querySelectorAll(s)).filter(shown);
   const otp = /(^|[-_ ])(otp|totp|mfa|2fa|passcode|verification|code)([-_ ]|$)/i;

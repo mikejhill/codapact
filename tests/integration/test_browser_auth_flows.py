@@ -58,6 +58,7 @@ class Site:
     mfa: bool = False
     person_code: bool = False  # the "person" types the 2FA code in the window
     person_password: str = ""  # the "person" retypes this after a rejected password
+    one_page: bool = False  # id.atlassian.com: the password box waits, hidden, on the email page
     posts: list[tuple[str, dict[str, list[str]]]] = field(default_factory=list)
     sessions: set[str] = field(default_factory=set)
     identities: set[str] = field(default_factory=set)
@@ -107,6 +108,21 @@ def serve(site: Site) -> Site:
 
         def login_form(self, email: str = "", error: str = "") -> None:
             note = f"<p class=error>{html.escape(error)}</p>" if error else ""
+            if site.one_page and not email:
+                # one form; Continue only reveals the password box (laid out, visibility:hidden)
+                self.page(
+                    "Log in",
+                    note + '<form method=post action="/login/password">'
+                    "<input name=username id=username type=email autocomplete=username>"
+                    '<div id=step style="visibility:hidden">'
+                    "<input name=password id=password type=password autocomplete=current-password>"
+                    "</div><button>Continue</button></form>"
+                    "<script>document.forms[0].addEventListener('submit', (e) => {"
+                    "const step = document.getElementById('step');"
+                    "if (step.style.visibility === 'hidden') {"
+                    "e.preventDefault(); step.style.visibility = 'visible'; }});</script>",
+                )
+                return
             if not email:
                 self.page(
                     "Log in",
@@ -194,7 +210,9 @@ def serve(site: Site) -> Site:
                 else:
                     self.finish_sign_in(identity=True)
             elif path == "/login/verify":
-                if form.get("code", [""])[0] == totp(SECRET):
+                # this step's code or the last one's, as real sites allow (the page took 1 s)
+                now = time.time()
+                if form.get("code", [""])[0] in (totp(SECRET, now), totp(SECRET, now - 30)):
                     self.finish_sign_in(identity=True)
                 else:
                     self.send(302, headers={"Location": "/login/mfa"})
@@ -263,6 +281,22 @@ def test_password_renewal_then_single_sign_on_then_a_full_sign_in(
     site.posts.clear()
     assert "sid" in names(capture(login(site, told), profile))
     assert site.password_posts() == [PASSWORD]
+
+
+def test_a_password_box_hidden_on_the_email_page_waits_for_its_step(
+    site: Site, tmp_path: Path
+) -> None:
+    """id.atlassian.com lays the password box out hidden until the email is continued."""
+    site.one_page = True
+    site.mfa = True
+    site.person_code = True
+    told: list[str] = []
+    assert "sid" in names(capture(login(site, told), tmp_path / "p", headless=False))
+    assert site.password_posts() == [PASSWORD]  # one post, with the email and password
+    assert told.index("typed the username and submitted") < told.index(
+        "typed the password and submitted"
+    )
+    assert not any("already has text" in step for step in told)
 
 
 def test_a_wrong_password_is_sent_once_and_reported(site: Site, tmp_path: Path) -> None:
