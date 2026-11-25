@@ -1048,7 +1048,7 @@ def test_the_browser_types_into_the_marked_boxes_before_submitting() -> None:
     filled: set[str] = set()
     failing = TypingPage("https://id.example.com/login", step("password"), fail_submit=True)
     assert sign_in_headless(failing, login, filled, FakeError) == "password"
-    assert failing.typed[-1] == ("pass", "")
+    assert failing.typed[-2:] == [("pass", ""), ("pass", "(left)")]
     assert filled == {"password https://id.example.com/login"}
     # a form the username changed: the password is not typed at all
     moved = TypingPage("https://id.example.com/login", step("password"), verify="changed")
@@ -1080,7 +1080,7 @@ def test_the_browser_types_into_the_marked_boxes_before_submitting() -> None:
     lost = TypingPage("https://id.example.com/login", step("password"), click="fail")
     lost_filled: set[str] = set()
     assert sign_in_headless(lost, login, lost_filled, FakeError) == "password"
-    assert lost.typed[-1] == ("pass", "")
+    assert lost.typed[-2:] == [("pass", ""), ("pass", "(left)")]
     assert lost_filled == {"password https://id.example.com/login"}
     theirs = TypingPage("https://id.example.com/login", step("password"), meanwhile="pass")
     assert sign_in_headless(theirs, login, set(), FakeError) == "typing"
