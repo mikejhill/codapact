@@ -611,7 +611,8 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
   }
   if (!same(before, expect)) return { outcome: "changed" };
   if (pass && pass.getAttribute(tag) !== `${mark}-pass`) return { outcome: "changed" };
-  if (mode === "verify") return { outcome: "ok" };  // still as inspected: type the password
+  if (mode === "verify")  // still as inspected, and its button usable: type the password
+    return { outcome: before.blocked ? "stuck" : "ok" };
   const put = (el, value) => {
     set.call(el, value);
     el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -619,7 +620,8 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
   };
   // only what the browser's typing did not already put there
   if (user && !user.value) put(user, name);
-  if (pass && pass.value !== secret) put(pass, secret);
+  // the browser typed the password: a box the page emptied or changed is not refilled
+  if (pass && pass.value !== secret) return { outcome: "changed" };
   const after = plan();  // the fill's events may have changed the form
   if (!same(after, expect) || after.blocked) {
     return { outcome: after.blocked ? "stuck" : "changed" };
@@ -636,7 +638,8 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
   if (mode === "submit" || (mode === "verify" && result.outcome !== "ok")) {
     // nothing submitted: take back the password codapact typed into the marked box
     const box = document.querySelector(`[${tag}="${mark}-pass"]`);
-    if (box && box.value === secret && !["username", "password"].includes(result.outcome)) {
+    const unsent = !["username", "password"].includes(result.outcome);
+    if (mode === "submit" && box && box.value === secret && unsent) {
       set.call(box, "");  // and tell the page, so state copied from the box goes too
       box.dispatchEvent(new Event("input", { bubbles: true }));
       box.dispatchEvent(new Event("change", { bubbles: true }));
@@ -668,18 +671,23 @@ FILL_TAG = "data-codapact-fill"
 """The attribute ``SIGN_IN_SCRIPT`` marks the boxes with for the browser's own typing."""
 
 
-def _type_box(page: Any, mark: str, kind: str, value: str) -> bool:
+def _type_box(
+    page: Any, mark: str, kind: str, value: str, typing: Callable[[], None] | None = None
+) -> bool:
     """Type ``value`` into a marked box with the browser's input (trusted, like autofill).
 
     Some sign-in pages (id.atlassian.com) refuse a password set by page script; the
     browser's own text input is what a person's typing or a password manager produces.
     The marks carry a random ``mark`` set on the inspected document, so a page that
     replaced it has no box to type into. A box that already has text is left as it is
-    (False). Leaving the box commits it (its ``change`` event).
+    (False). ``typing`` runs just before the text goes in. Leaving the box commits it
+    (its ``change`` event).
     """
     box = page.locator(f'[{FILL_TAG}="{mark}-{kind}"]')
     if box.input_value(timeout=2000):
         return False
+    if typing:
+        typing()
     box.fill(value, timeout=2000)
     box.blur(timeout=2000)
     return True
@@ -742,11 +750,14 @@ def sign_in_headless(
                 if not isinstance(check, dict) or check.get("outcome") != "ok":
                     return str(check.get("outcome")) if isinstance(check, dict) else "none"
         if "pass" in fill:
-            if not _type_box(page, mark, "pass", login.password):
+
+            def typing() -> None:  # the page has the password from here on: counted first
+                nonlocal delivered
+                delivered = True
+                filled.add(f"password {href}")
+
+            if not _type_box(page, mark, "pass", login.password, typing):
                 return "typing"  # the person's, never overwritten
-            # the page has the password from here on: counted, never typed again
-            delivered = True
-            filled.add(f"password {href}")
         sent = page.evaluate(SIGN_IN_SCRIPT, ["submit", *base, plan, flag, mark])
     except error:
         if delivered:

