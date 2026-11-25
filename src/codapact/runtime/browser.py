@@ -581,12 +581,13 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
   const form = (pass || user).form;
   if (!form) return { outcome: "stuck" };
   const account = /^(user(_?name)?|e-?mail|login(_?(hint|name|id))?|loginfmt|identifier)$/i;
-  const accounts = selectors.flatMap((s) => matching(owned(form), s)).concat(
+  const accounts = () => selectors.flatMap((s) => matching(owned(form), s)).concat(
     owned(form).filter((el) => el.type === "hidden" && account.test(el.name || ""))
   );
   const wanted = name.trim().toLowerCase();
-  if (accounts.some((el) => el.value && el.value.trim().toLowerCase() !== wanted))
-    return { outcome: "other-account" };
+  const otherAccount = () =>
+    accounts().some((el) => el.value && el.value.trim().toLowerCase() !== wanted);
+  if (otherAccount()) return { outcome: "other-account" };
   const plan = () => {
     const button =
       matching(owned(form), "button[type=submit], input[type=submit], button:not([type])").find(
@@ -633,8 +634,26 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
   }
   if (after.button) {
     // the browser clicks it (a trusted click, as a person's); id.atlassian.com refuses a
-    // password step submitted by page script
-    after.button.setAttribute(tag, `${mark}-submit`);
+    // password step submitted by page script. The click comes a moment later, so the
+    // checks run again as it arrives, before the page's own handlers: anything changed
+    // in between (another account, the destination, the password) cancels it
+    const button = after.button;
+    const ready = plan();
+    const guard = (e) => {
+      if (!(e.target instanceof Node) || !button.contains(e.target)) return;
+      window.removeEventListener("click", guard, true);
+      delete window.__codapactGuard;
+      const now = plan();
+      const intact = !pass || (pass.isConnected && pass.value === secret);
+      if (location.href === href && !otherAccount() && same(now, ready) && !now.blocked &&
+          now.button === button && intact) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (pass && pass.value === secret) put(pass, "");
+    };
+    window.addEventListener("click", guard, true);
+    window.__codapactGuard = { mark, guard };
+    button.setAttribute(tag, `${mark}-submit`);
     return { ...report(after), click: true };
   }
   form.requestSubmit();
@@ -649,9 +668,10 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
       box.dispatchEvent(new Event("input", { bubbles: true }));
       box.dispatchEvent(new Event("change", { bubbles: true }));
     }
-    const keep = result.click ? `${mark}-submit` : null;  // the button the browser clicks
+    // the button the browser clicks, and the password to empty if that click fails
+    const keep = result.click ? [`${mark}-submit`, `${mark}-pass`] : [];
     document.querySelectorAll(`[${tag}]`).forEach((el) => {
-      if (el.getAttribute(tag) !== keep) el.removeAttribute(tag);
+      if (!keep.includes(el.getAttribute(tag))) el.removeAttribute(tag);
     });
   }
   return result;
@@ -711,9 +731,18 @@ def _clear_password(page: Any, login: BrowserLogin, mark: str, error: type[Excep
         pass  # the page moved on: the box is gone with it
 
 
-UNMARK_SCRIPT = f"""(mark) => document.querySelectorAll('[{FILL_TAG}]').forEach(
-  (el) => el.getAttribute('{FILL_TAG}') === mark && el.removeAttribute('{FILL_TAG}'))"""
-"""Take the submit button's mark off, if the page is still there."""
+UNMARK_SCRIPT = f"""(mark) => {{
+  document.querySelectorAll('[{FILL_TAG}]').forEach((el) => {{
+    if ((el.getAttribute('{FILL_TAG}') || '').startsWith(mark + '-'))
+      el.removeAttribute('{FILL_TAG}');
+  }});
+  const guard = window.__codapactGuard;
+  if (guard && guard.mark === mark) {{
+    window.removeEventListener('click', guard.guard, true);
+    delete window.__codapactGuard;
+  }}
+}}"""
+"""Take a step's marks and click check off, if the page is still there."""
 
 
 def _click_submit(page: Any, mark: str, error: type[Exception]) -> None:
@@ -723,12 +752,16 @@ def _click_submit(page: Any, mark: str, error: type[Exception]) -> None:
     script's ``click()`` is an untrusted event, and some sign-in pages (id.atlassian.com)
     refuse a password step submitted that way, as they refuse a password set by script.
     """
-    button = page.locator(f'[{FILL_TAG}="{mark}-submit"]')
-    button.click(timeout=5000)
-    try:  # the page usually moved on, taking the mark with it; no waiting for the button
-        page.evaluate(UNMARK_SCRIPT, f"{mark}-submit")
+    page.locator(f'[{FILL_TAG}="{mark}-submit"]').click(timeout=5000)
+    _unmark(page, mark, error)
+
+
+def _unmark(page: Any, mark: str, error: type[Exception]) -> None:
+    """Remove ``mark``'s boxes' marks and click check (best effort, no waiting)."""
+    try:
+        page.evaluate(UNMARK_SCRIPT, mark)
     except error:
-        pass  # mid-navigation: the old document and its mark are going away
+        pass  # mid-navigation: the old document goes, with its marks and check
 
 
 def sign_in_headless(
@@ -792,6 +825,8 @@ def sign_in_headless(
     except error:
         if delivered:
             _clear_password(page, login, mark, error)
+        _unmark(page, mark, error)  # a click that never came leaves no check behind
+        if delivered:
             return "password"  # it may have gone out (a change handler can submit)
         return "error"
     outcome = str(sent.get("outcome")) if isinstance(sent, dict) else "none"

@@ -68,6 +68,15 @@ PAGES = {
     "/login/gate": FORM.format("<input name=username id=u><input type=password name=p>")
     + '<script>u.addEventListener("input", () => {'
     ' document.querySelector("button").disabled = true; })</script>',
+    # an overlay covers the button: the click never lands, the typed password is emptied
+    "/login/covered": FORM.format("<input name=username><input type=password name=p>")
+    + '<div style="position:fixed;inset:0;background:#fff"></div>',
+    # the button's mousedown (just before the click) switches the hidden account: cancelled
+    "/login/picker": FORM.format(
+        "<input type=hidden name=username id=h><input name=email><input type=password name=p>"
+    )
+    + '<script>document.querySelector("button").addEventListener("mousedown",'
+    ' () => { h.value = "bob@corp.test"; })</script>',
 }
 EXPECTED = {
     "/login/mfa": "challenge",
@@ -86,6 +95,8 @@ EXPECTED = {
     "/login/late": "password",  # refused, but counted: the page saw the password
     "/login/consume": "password",  # counted, not refilled or submitted
     "/login/gate": "stuck",
+    "/login/covered": "password",  # counted: the page saw the password
+    "/login/picker": "password",
 }
 
 
@@ -145,6 +156,9 @@ def _login(origin: str) -> BrowserLogin:
     return replace(login, password="s3cret pw")
 
 
+UNSENT = ("/login/tenant", "/login/late", "/login/gate", "/login/covered", "/login/picker")
+
+
 def test_sign_in_script_on_real_forms(browser: Any) -> None:
     site = _serve(PAGES)
     origin = f"http://127.0.0.1:{site.server_port}"
@@ -154,7 +168,7 @@ def test_sign_in_script_on_real_forms(browser: Any) -> None:
             for path, expected in EXPECTED.items():
                 page.goto(origin + path)
                 assert sign_in_headless(page, _login(origin), set(), sync_api.Error) == expected
-                if path in ("/login/tenant", "/login/late", "/login/gate"):  # not submitted
+                if path in UNSENT:
                     assert page.input_value("input[name=p]") == ""  # never typed, or taken back
                     assert page.locator("[data-codapact-fill]").count() == 0
                 if path == "/login/late":  # the page was told: its copy is gone too

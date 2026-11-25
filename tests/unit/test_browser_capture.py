@@ -479,8 +479,12 @@ class FormPage:
         self.plan = plan
         self.submitted = submitted
         self.calls: list[list[Any]] = []
+        self.unmarked = ""
 
     def evaluate(self, script: str, args: list[Any]) -> Any:
+        if isinstance(args, str):  # a step's marks come off (UNMARK_SCRIPT)
+            self.unmarked = args
+            return None
         assert script.startswith(
             "([mode, name, secret, href, selectors, done, expect, signinPage, mark]) =>"
         )

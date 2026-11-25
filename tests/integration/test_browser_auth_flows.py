@@ -128,7 +128,9 @@ def serve(site: Site) -> Site:
                     "document.forms[0].addEventListener('submit', (e) => {"
                     "const step = document.getElementById('step');"
                     "if (step.style.visibility === 'hidden') {"
-                    "e.preventDefault(); step.style.visibility = 'visible'; }});</script>",
+                    "e.preventDefault(); step.style.visibility = 'visible';"
+                    # the password step needs its own trusted click
+                    " clicked.value = ''; }});</script>",
                 )
                 return
             if not email:
