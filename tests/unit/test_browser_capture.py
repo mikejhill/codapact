@@ -479,8 +479,12 @@ class FormPage:
         self.plan = plan
         self.submitted = submitted
         self.calls: list[list[Any]] = []
+        self.unmarked = ""
 
     def evaluate(self, script: str, args: list[Any]) -> Any:
+        if script.startswith("([mark, secret, failed])"):  # a step's marks come off
+            self.unmarked = args[0]
+            return False
         assert script.startswith(
             "([mode, name, secret, href, selectors, done, expect, signinPage, mark]) =>"
         )
@@ -960,8 +964,10 @@ class TypingPage(FormPage):
         gone: bool = False,
         meanwhile: str = "",
         verify: str = "ok",
+        click: str = "",
     ) -> None:
         super().__init__(url, plan)
+        self.click = click  # "": no button; "ok" / "fail" / "stays": the browser clicks it
         self.typed: list[tuple[str, str]] = []
         self.values: dict[str, str] = {}
         self.selectors: set[str] = set()
@@ -990,10 +996,20 @@ class TypingPage(FormPage):
             def blur(self, timeout: float) -> None:
                 page.typed.append((kind, "(left)"))
 
+            def click(self, timeout: float) -> None:
+                if page.click == "fail":
+                    raise FakeError("button gone")
+                page.typed.append((kind, "(clicked)"))
+
         return Box()
 
     @override
     def evaluate(self, script: str, args: list[Any]) -> Any:
+        if script.startswith("([mark, secret, failed])"):  # the step's marks come off
+            if self.click not in ("stays", "cancel"):
+                raise FakeError("navigated away")  # the marks went with the page
+            self.typed.append(("submit", "(unmarked)"))
+            return self.click == "cancel"  # nothing went out
         if args[0] == "verify":
             assert ("pass", "pw") not in self.typed  # checked after the username, before
             if self.verify == "raise":
@@ -1005,7 +1021,9 @@ class TypingPage(FormPage):
             assert args[8] == self.calls[0][8]  # the mark set at inspection
             if self.fail_submit:
                 raise FakeError("navigated away")
-            return {"outcome": "changed"} if self.verify == "refuse" else args[6]
+            if self.verify == "refuse":
+                return {"outcome": "changed"}
+            return {**args[6], "click": True} if self.click else args[6]
         return {**super().evaluate(script, args), "fill": ["user", "pass"]}
 
 
@@ -1030,7 +1048,7 @@ def test_the_browser_types_into_the_marked_boxes_before_submitting() -> None:
     filled: set[str] = set()
     failing = TypingPage("https://id.example.com/login", step("password"), fail_submit=True)
     assert sign_in_headless(failing, login, filled, FakeError) == "password"
-    assert failing.typed[-1] == ("pass", "")
+    assert failing.typed[-2:] == [("pass", ""), ("pass", "(left)")]
     assert filled == {"password https://id.example.com/login"}
     # a form the username changed: the password is not typed at all
     moved = TypingPage("https://id.example.com/login", step("password"), verify="changed")
@@ -1050,6 +1068,25 @@ def test_the_browser_types_into_the_marked_boxes_before_submitting() -> None:
     kept = TypingPage("https://id.example.com/login", step("password"), meanwhile="user")
     assert sign_in_headless(kept, login, set(), FakeError) == "password"
     assert [kind for kind, _ in kept.typed] == ["pass", "pass"]
+    # a form with a button: the browser clicks it (trusted), then takes the mark off
+    clicked = TypingPage("https://id.example.com/login", step("password"), click="ok")
+    assert sign_in_headless(clicked, login, set(), FakeError) == "password"
+    assert clicked.typed[-1] == ("submit", "(clicked)")
+    assert f'[data-codapact-fill="{clicked.calls[0][8]}-submit"]' in clicked.selectors
+    stays = TypingPage("https://id.example.com/login", step("password"), click="stays")
+    assert sign_in_headless(stays, login, set(), FakeError) == "password"
+    assert stays.typed[-2:] == [("submit", "(clicked)"), ("submit", "(unmarked)")]
+    # a click the page's check cancelled: not submitted, but the password was seen
+    cancelled = TypingPage("https://id.example.com/login", step("password"), click="cancel")
+    cancelled_filled: set[str] = set()
+    assert sign_in_headless(cancelled, login, cancelled_filled, FakeError) == "password"
+    assert cancelled_filled == {"password https://id.example.com/login"}
+    # a click that fails after the password was typed: emptied, counted, not retyped
+    lost = TypingPage("https://id.example.com/login", step("password"), click="fail")
+    lost_filled: set[str] = set()
+    assert sign_in_headless(lost, login, lost_filled, FakeError) == "password"
+    assert lost.typed[-2:] == [("pass", ""), ("pass", "(left)")]
+    assert lost_filled == {"password https://id.example.com/login"}
     theirs = TypingPage("https://id.example.com/login", step("password"), meanwhile="pass")
     assert sign_in_headless(theirs, login, set(), FakeError) == "typing"
     assert ("pass", "pw") not in theirs.typed
