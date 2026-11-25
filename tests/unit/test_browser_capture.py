@@ -952,16 +952,19 @@ def test_asked_again_only_looks_at_trusted_pages_that_stay() -> None:
 class TypingPage(FormPage):
     """A ``FormPage`` that records the browser's own typing into marked boxes."""
 
-    def __init__(self, url: str, plan: Any, fail_submit: bool = False) -> None:
+    def __init__(self, url: str, plan: Any, fail_submit: bool = False, gone: bool = False) -> None:
         super().__init__(url, plan)
         self.typed: list[tuple[str, str]] = []
         self.fail_submit = fail_submit
+        self.gone = gone  # the box is gone by the time it is emptied
 
     def locator(self, selector: str) -> Any:
         page = self
 
         class Box:
             def fill(self, value: str, timeout: float) -> None:
+                if page.gone and not value:
+                    raise FakeError("no such element")
                 page.typed.append((selector, value))
 
         return Box()
@@ -992,3 +995,5 @@ def test_the_browser_types_into_the_marked_boxes_before_submitting() -> None:
     failing = TypingPage("https://id.example.com/login", step("password"), fail_submit=True)
     assert sign_in_headless(failing, login, set(), FakeError) == "error"
     assert failing.typed[-1] == ('[data-codapact-fill="pass"]', "")
+    gone = TypingPage("https://id.example.com/login", step("password"), True, gone=True)
+    assert sign_in_headless(gone, login, set(), FakeError) == "error"  # still just an error
