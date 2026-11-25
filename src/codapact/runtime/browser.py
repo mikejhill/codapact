@@ -728,7 +728,7 @@ def _click_submit(page: Any, mark: str, error: type[Exception]) -> None:
     try:  # the page usually moved on, taking the mark with it; no waiting for the button
         page.evaluate(UNMARK_SCRIPT, f"{mark}-submit")
     except error:
-        pass
+        pass  # mid-navigation: the old document and its mark are going away
 
 
 def sign_in_headless(
