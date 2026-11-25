@@ -998,13 +998,14 @@ class TypingPage(FormPage):
             assert ("pass", "pw") not in self.typed  # checked after the username, before
             if self.verify == "raise":
                 raise FakeError("navigated away")
-            return {"outcome": self.verify}  # the password is typed
+            # the password is typed next ("refuse": the submit step refuses the form)
+            return {"outcome": "ok" if self.verify == "refuse" else self.verify}
         if args[0] == "submit":
             assert "fill" not in args[6]  # the plan goes back as inspected, minus the marks
             assert args[8] == self.calls[0][8]  # the mark set at inspection
             if self.fail_submit:
                 raise FakeError("navigated away")
-            return args[6]
+            return {"outcome": "changed"} if self.verify == "refuse" else args[6]
         return {**super().evaluate(script, args), "fill": ["user", "pass"]}
 
 
@@ -1037,6 +1038,11 @@ def test_the_browser_types_into_the_marked_boxes_before_submitting() -> None:
     assert ("pass", "pw") not in moved.typed
     gone = TypingPage("https://id.example.com/login", step("password"), True, gone=True)
     assert sign_in_headless(gone, login, set(), FakeError) == "password"
+    # a form refused after the password was typed: counted, so it is not typed again
+    refused = TypingPage("https://id.example.com/login", step("password"), verify="refuse")
+    refused_filled: set[str] = set()
+    assert sign_in_headless(refused, login, refused_filled, FakeError) == "password"
+    assert refused_filled == {"password https://id.example.com/login"}
     # a failure before the password was typed is just an error
     early = TypingPage("https://id.example.com/login", step("password"), verify="raise")
     assert sign_in_headless(early, login, set(), FakeError) == "error"
