@@ -639,23 +639,26 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
     // in between (another account, the destination, the password) cancels it
     const button = after.button;
     const ready = plan();
-    const guard = (e) => {
-      if (!(e.target instanceof Element)) return;
-      // a marked button that is not this one (a page that cloned the form) is refused too
-      const marked = e.target.closest(`[${tag}="${mark}-submit"]`);
-      if (!marked && !button.contains(e.target)) return;
-      window.removeEventListener("click", guard, true);
-      delete window.__codapactGuard;
+    let settled = false;  // the click (or a submission it set off) arrived and passed
+    const intact = (marked) => {
       const now = plan();
       const boxes = visible(document, "input[type=password]");
-      // the same step as checked: no 2FA box since, and the same one password box
+      // the same step as checked: no 2FA or new-password box since, the same password box
       const step = pass
         ? boxes.length === 1 && boxes[0] === pass && pass.form === form &&
-          pass.value === secret
+          pass.value === secret && !/new-password/i.test(pass.autocomplete || "")
         : boxes.length === 0;
-      if (marked === button && location.href === href && !challenge() && step &&
-          !otherAccount() && same(now, ready) && !now.blocked && now.button === button)
-        return;
+      return marked === button && location.href === href && !challenge() && step &&
+        !otherAccount() && same(now, ready) && !now.blocked && now.button === button;
+    };
+    const stop = () => {
+      window.removeEventListener("click", onClick, true);
+      window.removeEventListener("submit", onSubmit, true);
+      delete window.__codapactGuard;
+    };
+    let refused = false;  // once refused, the rest of this press is refused too
+    const cancel = (e) => {
+      refused = true;
       e.preventDefault();
       e.stopImmediatePropagation();
       window.__codapactCancelled = mark;
@@ -663,8 +666,28 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
         if (box.value === secret) put(box, "");
       });
     };
-    window.addEventListener("click", guard, true);
-    window.__codapactGuard = { mark, guard };
+    const onClick = (e) => {
+      if (!(e.target instanceof Element)) return;
+      // a marked button that is not this one (a page that cloned the form) is refused too
+      const marked = e.target.closest(`[${tag}="${mark}-submit"]`);
+      if (!marked && !button.contains(e.target)) return;
+      if (refused || !intact(marked)) return cancel(e);
+      settled = true;
+      window.removeEventListener("click", onClick, true);
+    };
+    // a page can also submit from the press itself (mousedown comes before click)
+    const onSubmit = (e) => {
+      const target = e.target;
+      if (!(target instanceof HTMLFormElement)) return;
+      const copy = target !== form && target.querySelector(`[${tag}="${mark}-submit"]`);
+      if (target !== form && !copy) return;
+      if (refused || !intact(copy ? copy : button)) return cancel(e);
+      settled = true;
+      stop();
+    };
+    window.addEventListener("click", onClick, true);
+    window.addEventListener("submit", onSubmit, true);
+    window.__codapactGuard = { mark, stop, pending: () => !settled };
     button.setAttribute(tag, `${mark}-submit`);
     return { ...report(after), click: true };
   }
@@ -744,43 +767,52 @@ def _clear_password(page: Any, login: BrowserLogin, mark: str, error: type[Excep
         pass  # the page moved on: the box is gone with it
 
 
-UNMARK_SCRIPT = f"""(mark) => {{
-  document.querySelectorAll('[{FILL_TAG}]').forEach((el) => {{
-    if ((el.getAttribute('{FILL_TAG}') || '').startsWith(mark + '-'))
-      el.removeAttribute('{FILL_TAG}');
-  }});
+UNMARK_SCRIPT = f"""([mark, secret, failed]) => {{
+  const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
   const guard = window.__codapactGuard;
-  if (guard && guard.mark === mark) {{
-    window.removeEventListener('click', guard.guard, true);
-    delete window.__codapactGuard;
-  }}
+  const pending = !!guard && guard.mark === mark && guard.pending();
+  if (guard && guard.mark === mark) guard.stop();
   const cancelled = window.__codapactCancelled === mark;
   delete window.__codapactCancelled;
-  return cancelled;
+  const unsent = failed || pending || cancelled;
+  document.querySelectorAll('[{FILL_TAG}]').forEach((el) => {{
+    if (!(el.getAttribute('{FILL_TAG}') || '').startsWith(mark + '-')) return;
+    // every marked copy of the password box, and the page told, when nothing went out
+    if (unsent && el.value === secret && el.getAttribute('{FILL_TAG}') === mark + '-pass') {{
+      set.call(el, '');
+      el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+      el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+    }}
+    el.removeAttribute('{FILL_TAG}');
+  }});
+  return unsent;
 }}"""
-"""Take a step's marks and click check off, if the page is still there; return whether
-the check cancelled the click."""
+"""Take a step's marks and click check off, if the page is still there. Return whether
+nothing went out: ``failed`` (the click failed), a click that never arrived (the check
+still waiting) or one the check cancelled; then the typed password is emptied too."""
 
 
-def _click_submit(page: Any, mark: str, error: type[Exception]) -> bool:
+def _click_submit(page: Any, mark: str, secret: str, error: type[Exception]) -> bool:
     """Click the marked submit button with the browser's own input (a trusted click).
 
     ``SIGN_IN_SCRIPT`` has checked the form and marked its button just before. A page
     script's ``click()`` is an untrusted event, and some sign-in pages (id.atlassian.com)
     refuse a password step submitted that way, as they refuse a password set by script.
-    Return whether the page's check cancelled the click.
+    Return whether nothing went out (the check cancelled the click, or it never arrived).
     """
     page.locator(f'[{FILL_TAG}="{mark}-submit"]').click(timeout=5000)
-    return _unmark(page, mark, error)
+    return _unmark(page, mark, secret, error)
 
 
-def _unmark(page: Any, mark: str, error: type[Exception]) -> bool:
-    """Remove ``mark``'s boxes' marks and click check (best effort, no waiting).
+def _unmark(
+    page: Any, mark: str, secret: str, error: type[Exception], failed: bool = False
+) -> bool:
+    """Remove ``mark``'s marks and click check (best effort, no waiting); see UNMARK_SCRIPT.
 
-    Return whether the check cancelled the click (the form changed after it was checked).
+    Return whether nothing went out (the typed password then emptied).
     """
     try:
-        return page.evaluate(UNMARK_SCRIPT, mark) is True
+        return page.evaluate(UNMARK_SCRIPT, [mark, secret, failed]) is True
     except error:
         return False  # mid-navigation: the click went, and the old document goes with it
 
@@ -842,12 +874,13 @@ def sign_in_headless(
                 return "typing"  # the person's, never overwritten
         sent = page.evaluate(SIGN_IN_SCRIPT, ["submit", *base, plan, flag, mark])
         if isinstance(sent, dict) and sent.pop("click", False):
-            if _click_submit(page, mark, error):
+            if _click_submit(page, mark, login.password, error):
                 sent = {"outcome": "changed"}  # not submitted after all
     except error:
         if delivered:
             _clear_password(page, login, mark, error)
-        _unmark(page, mark, error)  # a click that never came leaves no check behind
+        # every marked copy emptied too, and no check left behind for a click that never came
+        _unmark(page, mark, login.password, error, failed=True)
         if delivered:
             return "password"  # it may have gone out (a change handler can submit)
         return "error"

