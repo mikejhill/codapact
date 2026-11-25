@@ -116,8 +116,12 @@ def serve(site: Site) -> Site:
                     "<input name=username id=username type=email autocomplete=username>"
                     '<div id=step style="visibility:hidden">'
                     "<input name=password id=password type=password autocomplete=current-password>"
-                    "</div><button>Continue</button></form>"
-                    "<script>document.forms[0].addEventListener('submit', (e) => {"
+                    "</div><input type=hidden name=typed id=typed>"
+                    "<button>Continue</button></form>"
+                    # like id.atlassian.com: a password set by page script is refused
+                    "<script>document.getElementById('password').addEventListener("
+                    "'input', (e) => { if (e.isTrusted) typed.value = '1'; });"
+                    "document.forms[0].addEventListener('submit', (e) => {"
                     "const step = document.getElementById('step');"
                     "if (step.style.visibility === 'hidden') {"
                     "e.preventDefault(); step.style.visibility = 'visible'; }});</script>",
@@ -202,7 +206,11 @@ def serve(site: Site) -> Site:
                 target = "/login?" + urllib.parse.urlencode({"continue": "/", "email": email})
                 self.send(302, headers={"Location": target})
             elif path == "/login/password":
-                if form.get("password", [""])[0] != PASSWORD or email != EMAIL:
+                if site.one_page and form.get("typed", [""])[0] != "1":
+                    error = "Something went wrong while attempting to validate your credentials."
+                    query = {"continue": "/", "email": email, "error": error}
+                    self.send(302, headers={"Location": "/login?" + urllib.parse.urlencode(query)})
+                elif form.get("password", [""])[0] != PASSWORD or email != EMAIL:
                     query = {"continue": "/", "email": email, "error": "Incorrect password"}
                     self.send(302, headers={"Location": "/login?" + urllib.parse.urlencode(query)})
                 elif site.mfa:

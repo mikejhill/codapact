@@ -947,3 +947,47 @@ def test_asked_again_only_looks_at_trusted_pages_that_stay() -> None:
     elsewhere = Gone()
     elsewhere.url = "https://evil.test/login"  # never evaluated off-trust
     assert _asked_again(elsewhere, LOGIN, FakeError) is False
+
+
+class TypingPage(FormPage):
+    """A ``FormPage`` that records the browser's own typing into marked boxes."""
+
+    def __init__(self, url: str, plan: Any, fail_submit: bool = False) -> None:
+        super().__init__(url, plan)
+        self.typed: list[tuple[str, str]] = []
+        self.fail_submit = fail_submit
+
+    def locator(self, selector: str) -> Any:
+        page = self
+
+        class Box:
+            def fill(self, value: str, timeout: float) -> None:
+                page.typed.append((selector, value))
+
+        return Box()
+
+    def evaluate(self, script: str, args: list[Any]) -> Any:
+        if args[0] == "submit":
+            assert "fill" not in args[6]  # the plan goes back as inspected, minus the marks
+            if self.fail_submit:
+                raise FakeError("navigated away")
+            return args[6]
+        return {**super().evaluate(script, args), "fill": ["user", "pass"]}
+
+
+def test_the_browser_types_into_the_marked_boxes_before_submitting() -> None:
+    login = replace(
+        BrowserLogin(SITE + "/", ("t",), domain="acme.example.net", username="amy"),
+        password="pw",
+        signin_hosts=("id.example.com",),
+    )
+    page = TypingPage("https://id.example.com/login", step("password"))
+    assert sign_in_headless(page, login, set(), FakeError) == "password"
+    assert page.typed == [
+        ('[data-codapact-fill="user"]', "amy"),
+        ('[data-codapact-fill="pass"]', "pw"),
+    ]
+    # a submission that fails empties the typed password again
+    failing = TypingPage("https://id.example.com/login", step("password"), fail_submit=True)
+    assert sign_in_headless(failing, login, set(), FakeError) == "error"
+    assert failing.typed[-1] == ('[data-codapact-fill="pass"]', "")
