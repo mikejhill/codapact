@@ -611,6 +611,7 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
   }
   if (!same(before, expect)) return { outcome: "changed" };
   if (pass && pass.getAttribute(tag) !== `${mark}-pass`) return { outcome: "changed" };
+  if (mode === "verify") return { outcome: "ok" };  // still as inspected: type the password
   const put = (el, value) => {
     set.call(el, value);
     el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -621,7 +622,6 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
   if (pass && pass.value !== secret) put(pass, secret);
   const after = plan();  // the fill's events may have changed the form
   if (!same(after, expect) || after.blocked) {
-    if (pass) set.call(pass, "");
     return { outcome: after.blocked ? "stuck" : "changed" };
   }
   if (pass) {  // a password never goes in a URL, whatever the page asked for
@@ -633,11 +633,14 @@ SIGN_IN_SCRIPT = """([mode, name, secret, href, selectors, done, expect, signinP
   else form.requestSubmit();
   return report(after);
   })();
-  if (mode === "submit") {
+  if (mode === "submit" || (mode === "verify" && result.outcome !== "ok")) {
     // nothing submitted: take back the password codapact typed into the marked box
     const box = document.querySelector(`[${tag}="${mark}-pass"]`);
-    if (box && box.value === secret && !["username", "password"].includes(result.outcome))
-      set.call(box, "");
+    if (box && box.value === secret && !["username", "password"].includes(result.outcome)) {
+      set.call(box, "");  // and tell the page, so state copied from the box goes too
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      box.dispatchEvent(new Event("change", { bubbles: true }));
+    }
     document.querySelectorAll(`[${tag}]`).forEach((el) => el.removeAttribute(tag));
   }
   return result;
@@ -665,26 +668,20 @@ FILL_TAG = "data-codapact-fill"
 """The attribute ``SIGN_IN_SCRIPT`` marks the boxes with for the browser's own typing."""
 
 
-def _type_into(page: Any, fill: list[str], login: BrowserLogin, mark: str) -> bool:
-    """Type into the marked boxes with the browser's input (trusted events, like autofill).
+def _type_box(page: Any, mark: str, kind: str, value: str) -> bool:
+    """Type ``value`` into a marked box with the browser's input (trusted, like autofill).
 
     Some sign-in pages (id.atlassian.com) refuse a password set by page script; the
     browser's own text input is what a person's typing or a password manager produces.
     The marks carry a random ``mark`` set on the inspected document, so a page that
-    replaced it has no box to type into. A box that got text after inspection is left
-    as it is; for the password box that stops the step (False). Leaving each box
-    commits it (its ``change`` event). The submit step re-checks the form.
+    replaced it has no box to type into. A box that already has text is left as it is
+    (False). Leaving the box commits it (its ``change`` event).
     """
-    for kind, value in (("user", login.username), ("pass", login.password)):
-        if kind not in fill or not value:
-            continue
-        box = page.locator(f'[{FILL_TAG}="{mark}-{kind}"]')
-        if box.input_value(timeout=2000):
-            if kind == "pass":
-                return False  # the person's, never overwritten
-            continue  # a username typed meanwhile: the submit step checks its account
-        box.fill(value, timeout=2000)
-        box.blur(timeout=2000)
+    box = page.locator(f'[{FILL_TAG}="{mark}-{kind}"]')
+    if box.input_value(timeout=2000):
+        return False
+    box.fill(value, timeout=2000)
+    box.blur(timeout=2000)
     return True
 
 
@@ -710,7 +707,8 @@ def sign_in_headless(
     password box that appears on the same URL) is submitted at most once, and a renewal
     stops after ``login.sign_in_attempts`` submissions (MFA, a CAPTCHA or a wrong password
     are left for an interactive ``auth login``). Return what was submitted, or why
-    nothing was.
+    nothing was. Once the password is typed the step counts as submitted ("password"),
+    even if the form is then refused, so a rejected password is never typed again.
     """
     href = str(page.url)
     if len(filled) >= login.sign_in_attempts:
@@ -721,7 +719,7 @@ def sign_in_headless(
     base = [login.username, login.password, href, list(USERNAME_FIELDS), done]
     flag = _sign_in_page(login, href)
     mark = secrets.token_hex(8)  # binds the boxes to the inspected document
-    fill: list[str] = []
+    delivered = False
     try:
         plan = page.evaluate(SIGN_IN_SCRIPT, ["inspect", *base, None, flag, mark])
         outcome = str(plan.get("outcome")) if isinstance(plan, dict) else "none"
@@ -736,16 +734,30 @@ def sign_in_headless(
         if plan.get("blocked"):
             return "stuck"  # a button waiting for validation or a CAPTCHA
         fill = [str(tag) for tag in plan.pop("fill", None) or []]
-        if not _type_into(page, fill, login, mark):
-            return "typing"
+        if "user" in fill and login.username:
+            # a username typed meanwhile is kept; the checks below see its account
+            _type_box(page, mark, "user", login.username)
+            if "pass" in fill:  # the username's events may have changed the form
+                check = page.evaluate(SIGN_IN_SCRIPT, ["verify", *base, plan, flag, mark])
+                if not isinstance(check, dict) or check.get("outcome") != "ok":
+                    return str(check.get("outcome")) if isinstance(check, dict) else "none"
+        if "pass" in fill:
+            if not _type_box(page, mark, "pass", login.password):
+                return "typing"  # the person's, never overwritten
+            # the page has the password from here on: counted, never typed again
+            delivered = True
+            filled.add(f"password {href}")
         sent = page.evaluate(SIGN_IN_SCRIPT, ["submit", *base, plan, flag, mark])
     except error:
-        if "pass" in fill:
+        if delivered:
             _clear_password(page, login, mark, error)
+            return "password"  # it may have gone out (a change handler can submit)
         return "error"
     outcome = str(sent.get("outcome")) if isinstance(sent, dict) else "none"
     if outcome in ("username", "password"):
         filled.add(f"{outcome} {href}")
+    elif delivered:
+        return "password"  # refused and taken back, but the page saw it: not retried
     return outcome
 
 
