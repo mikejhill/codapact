@@ -161,3 +161,36 @@ def test_failed_write_leaves_no_temporary_file(tmp_path: Path) -> None:
     with pytest.raises(SkillError, match="cannot write"):
         _install(Skill("acme", {"SKILL.md": SKILL}), tmp_path, force=True)
     assert sorted(p.name for p in dest.iterdir()) == ["SKILL.md"]
+
+
+def _link(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=target.is_dir())
+    except OSError:  # Windows without symlink rights
+        pytest.skip("symlinks unavailable")
+
+
+def test_links_inside_the_skill_folder_are_refused_even_with_force(tmp_path: Path) -> None:
+    skill = Skill("acme", {"SKILL.md": SKILL, "references/a.md": b"a"})
+    _install(skill, tmp_path)
+    dest = tmp_path / "skills" / "acme"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "a.md").write_bytes(b"a")  # matches the recorded hash
+    (dest / "references" / "a.md").unlink()
+    (dest / "references").rmdir()
+    _link(dest / "references", outside)
+    newer = Skill("acme", {"SKILL.md": SKILL, "references/a.md": b"changed"})
+    for force in (False, True):
+        with pytest.raises(SkillError, match="is a link"):
+            _install(newer, tmp_path, force=force)
+    assert (outside / "a.md").read_bytes() == b"a"
+
+
+def test_a_linked_skill_folder_is_refused(tmp_path: Path) -> None:
+    (tmp_path / "skills").mkdir()
+    real = tmp_path / "real"
+    real.mkdir()
+    _link(tmp_path / "skills" / "acme", real)
+    with pytest.raises(SkillError, match="not a directory"):
+        _install(Skill("acme", {"SKILL.md": SKILL}), tmp_path, force=True)

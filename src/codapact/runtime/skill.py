@@ -150,6 +150,20 @@ def _edited(dest: Path, recorded: dict[str, str], incoming: dict[str, bytes]) ->
     return changed
 
 
+def _contained(dest: Path, rels: list[str]) -> None:
+    """Refuse paths whose folder, or any folder on the way, is a link out of ``dest``.
+
+    Checked even with ``force``: an install never writes or deletes outside its folder.
+    """
+    root = dest.resolve()
+    for rel in rels:
+        path = dest
+        for part in PurePosixPath(rel).parts:
+            path = path / part
+            if path.is_symlink() or (path.exists() and not path.resolve().is_relative_to(root)):
+                raise SkillError(f"{path} is a link; remove it and rerun")
+
+
 def _write(target: Path, data: bytes) -> None:
     """Replace ``target`` through a uniquely named temporary file in the same folder."""
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -178,7 +192,7 @@ def install(
         raise SkillError(f"{base} is not a directory")
     dest = base / skill.name
     result: dict[str, Any] = {"skill": skill.name, "path": str(dest), "files": sorted(skill.files)}
-    if dest.exists() and not dest.is_dir():
+    if dest.is_symlink() or (dest.exists() and not dest.is_dir()):
         raise SkillError(f"{dest} exists and is not a directory")
     recorded = _recorded(dest, program) if dest.is_dir() else None
     existing = dest.is_dir() and any(dest.iterdir())
@@ -201,6 +215,8 @@ def install(
         except OSError:
             continue  # missing or unreadable: the install will (re)write it
     stale = sorted(set(recorded or {}) - set(skill.files))
+    if dest.is_dir():
+        _contained(dest, [*skill.files, *stale, MARKER])
     unchanged = (
         current == skill.files
         and not [r for r in stale if (dest / r).exists()]

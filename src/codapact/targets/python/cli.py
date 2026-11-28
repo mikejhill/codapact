@@ -83,7 +83,7 @@ class PythonCliTarget:
 
 
 SKILL_TEMPLATE = Path(__file__).with_name("skill_template.md")
-_PLAIN_YAML = re.compile(r"[A-Za-z0-9`(][^\n]*")
+_PLAIN_YAML = re.compile(r"[A-Za-z0-9(][^\n]*[^:\s]|[A-Za-z0-9]")
 
 
 def _skill_files(

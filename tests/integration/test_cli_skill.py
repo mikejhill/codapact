@@ -73,6 +73,27 @@ def test_standard_skill_ships_and_installs(tmp_path: Path, monkeypatch: pytest.M
     assert all(not c["command"].startswith("skill") for c in catalog["commands"])
 
 
+@pytest.mark.parametrize(
+    ("description", "line"),
+    [
+        ("Manage pets:", 'description: "Manage pets:"'),
+        ("`petstore` pets", 'description: "`petstore` pets"'),
+        ("Manage pets # tag", 'description: "Manage pets # tag"'),
+        (
+            "Manage `petstore` pets, cats (and dogs).",
+            "description: Manage `petstore` pets, cats (and dogs).",
+        ),
+    ],
+)
+def test_descriptions_stay_valid_yaml(tmp_path: Path, description: str, line: str) -> None:
+    import yaml
+
+    root = _generate(_project(tmp_path, "{description: " + json.dumps(description) + "}"))
+    text = (root / "python/src/petstore/skill/SKILL.md").read_text(encoding="utf-8")
+    assert line in text.splitlines()
+    assert yaml.safe_load(text.split("---")[1])["description"] == description
+
+
 def test_custom_skill_folder_is_copied(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = _project(tmp_path, "{path: my-skill}")
     (project / "my-skill/references").mkdir(parents=True)
