@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from codapact.runtime.skill import MARKER, Skill, SkillError, install, skill_name
+from codapact.runtime.skill import MARKER, Skill, SkillError, bundled, install, skill_name
 
 SKILL = b"---\nname: acme\ndescription: x\n---\n\n# Acme\n"
 
@@ -80,3 +80,45 @@ def test_home_is_expanded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     result = install(Skill("acme", {"SKILL.md": SKILL}), "~/skills", program="acme", version="1")
     assert Path(result["path"]) == tmp_path / "skills" / "acme"
+
+
+def test_bundled_reads_the_package_skill(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    package = tmp_path / "acme_pkg"
+    (package / "skill" / "__pycache__").mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "skill" / "SKILL.md").write_bytes(SKILL)
+    (package / "skill" / ".hidden").write_text("x")
+    (package / "skill" / "__pycache__" / "x.pyc").write_bytes(b"x")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    skill = bundled("acme_pkg", "prog")
+    assert skill.name == "acme" and list(skill.files) == ["SKILL.md"] and "# Acme" in skill.text
+    with pytest.raises(SkillError, match="does not ship an agent skill"):
+        bundled("codapact", "codapact")
+
+
+def test_unreadable_marker_or_files_count_as_foreign_or_edited(tmp_path: Path) -> None:
+    skill = Skill("acme", {"SKILL.md": SKILL, "extra.md": b"e"})
+    _install(skill, tmp_path)
+    dest = tmp_path / "skills" / "acme"
+    (dest / "extra.md").unlink()  # deleting a file is not an edit
+    assert _install(skill, tmp_path)["status"] == "updated"
+    (dest / "extra.md").unlink()
+    (dest / "extra.md").mkdir()  # unreadable: treated as edited
+    with pytest.raises(SkillError, match="local changes"):
+        _install(skill, tmp_path)
+    (dest / "extra.md").rmdir()
+    (dest / MARKER).write_text('{"files": [1]}')
+    with pytest.raises(SkillError, match="not installed by"):
+        _install(skill, tmp_path)
+
+
+def test_destination_conflicts(tmp_path: Path) -> None:
+    (tmp_path / "skills").mkdir()
+    (tmp_path / "skills" / "acme").write_text("file")
+    with pytest.raises(SkillError, match="exists and is not a directory"):
+        _install(Skill("acme", {"SKILL.md": SKILL}), tmp_path)
+    (tmp_path / "skills" / "acme").unlink()
+    (tmp_path / "skills" / "acme").mkdir()
+    (tmp_path / "skills" / "acme" / "references").write_text("in the way")
+    with pytest.raises(SkillError, match="cannot write"):
+        _install(Skill("acme", {"SKILL.md": SKILL, "references/a.md": b"a"}), tmp_path, force=True)

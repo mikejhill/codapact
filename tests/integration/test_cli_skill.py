@@ -103,8 +103,29 @@ def test_without_cli_skill_there_is_no_command(tmp_path: Path, monkeypatch) -> N
         ("{path: missing.md}", "does not exist"),
         ("{path: x.md, description: y}", "cannot be combined"),
         ("[1]", "true or a mapping"),
+        ("{description: 3}", "non-empty string"),
+        ("{path: empty}", "has no SKILL.md"),
+        ("{path: latin1.md}", "cannot read"),
     ],
 )
 def test_invalid_settings(tmp_path: Path, skill: str, message: str) -> None:
+    project = _project(tmp_path, skill)
+    (project / "empty").mkdir()
+    (project / "latin1.md").write_bytes(b"caf\xe9")
     with pytest.raises(ConfigError, match=message):
-        _generate(_project(tmp_path, skill))
+        _generate(project)
+
+
+def test_true_and_a_single_file(tmp_path: Path) -> None:
+    root = _generate(_project(tmp_path / "a", "true"))
+    text = (root / "python/src/petstore/skill/SKILL.md").read_text(encoding="utf-8")
+    assert "description: Read and change Petstore data through the `petstore` CLI." in text
+    project = _project(tmp_path / "b", "{path: notes/my.md}")
+    (project / "notes").mkdir()
+    (project / "notes/my.md").write_text("---\nname: pets\n---\n", encoding="utf-8")
+    root = _generate(project)
+    assert (
+        (root / "python/src/petstore/skill/SKILL.md")
+        .read_text(encoding="utf-8")
+        .startswith("---\nname: pets")
+    )

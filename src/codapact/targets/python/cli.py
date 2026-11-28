@@ -98,8 +98,6 @@ def _skill_files(
     spec = request.options.get("skill")
     if not spec:
         return ()
-    if not isinstance(spec, dict):
-        raise PluginError("cli.skill must be true or a mapping")
     custom = spec.get("files")
     if custom:
         return tuple(GeneratedFile(f"{root}/skill/{rel}", text) for rel, text in custom.items())

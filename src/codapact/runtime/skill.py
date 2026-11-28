@@ -173,10 +173,7 @@ def install(
             temp.write_bytes(data)
             os.replace(temp, target)
         for rel in stale:  # files an older release shipped and this one dropped
-            try:
-                (dest / rel).unlink()
-            except FileNotFoundError:
-                pass
+            (dest / rel).unlink(missing_ok=True)
         marker = {
             "program": program,
             "version": version,
