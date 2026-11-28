@@ -26,6 +26,7 @@ from codapact.model.api import (
     HttpBinding,
     Operation,
     OperationKind,
+    login_check_problem,
 )
 from codapact.model.types import (
     Enum,
@@ -609,25 +610,32 @@ def _identity_rank(operation: Operation) -> int:
     return min(ranks, default=-1)
 
 
+# Verbs an operation name may start with before naming what it reads.
+_READ_VERBS = frozenset({"get", "read", "fetch", "show", "query", "describe", "retrieve"})
+
+
 def _about_caller(operation: Operation) -> bool:
     """Whether the response is the caller's own record (``GET /user``, ``/user/current``).
 
-    Over HTTP the last path segment decides (``/me/subscription`` is a subscription);
-    otherwise the operation name's last word (``viewer``, ``get_myself``).
+    Over HTTP the whole last path segment must be a caller word (``/featured-user`` and
+    ``/me/subscription`` are not); otherwise the whole name, less a read verb (``viewer``,
+    ``get_myself``, not ``get_featured_user``).
     """
     http = operation.binding(HttpBinding)
     if http is None:
         named = _words(operation.name)
-        return bool(named) and named[-1] in _CALLER_WORDS
+        while named and named[0] in _READ_VERBS:
+            named = named[1:]
+        return "".join(named) in _CALLER_WORDS
     segments = [s for s in http.path.split("/") if s]
-    if not segments or segments[-1].startswith("{"):
+    if not segments:
         return False
-    last = _words(segments[-1])
-    if last and (last[-1] in _CALLER_WORDS or "".join(last) in _CALLER_WORDS):
+    last = "".join(_words(segments[-1]))
+    if last in _CALLER_WORDS:
         return True
     # "/user/current", "/users/me/current": the current record of a caller collection.
-    parent = _words(segments[-2]) if len(segments) > 1 else []
-    return last == ["current"] and any(w in _CALLER_WORDS for w in parent)
+    parent = "".join(_words(segments[-2])) if len(segments) > 1 else ""
+    return last == "current" and parent in _CALLER_WORDS | {"users"}
 
 
 def login_check_operation(api: Api, scheme: str) -> str | None:
@@ -808,36 +816,38 @@ class Doctor:
         if skipped:
             return Check(label, "skip", skipped)
         operation = _operation(api, name)
-        if operation is not None and (
-            (scheme,) not in operation.auth.alternatives or operation.auth.anonymous_allowed
-        ):
-            why = (
-                "also answers anonymous callers"
-                if operation.auth.anonymous_allowed
-                else (f"does not accept {scheme} on its own")
-            )
-            return Check(label, "fail", f"cli.auth.{scheme}.check: {name} {why}", code=1)
+        problem = login_check_problem(operation, scheme) if operation is not None else None
+        if problem:
+            # Checked again here: CLIs generated before the generator refused these still run.
+            return Check(label, "fail", f"cli.auth.{scheme}.check: {name} {problem}", code=1)
         chosen = scheme in sessions
         where = _operation_label(operation, name)
         fix = self._relogin(api, scheme, where_from)
         try:
             result = call(name, scheme)
         except AuthError as error:
+            if error.upstream:
+                return Check(label, "fail", f"not verified: {where}: {error}", code=1)
             return Check(label, "fail", f"{where}: {error}", fix=fix)
         except ApiError as error:
+            # Only the status: a redirect target can carry a query-string credential.
+            status = f"HTTP {error.status}"
             if error.status == 403 and not chosen:
                 # A probe doctor picked may need rights this credential lacks; 403 alone
                 # does not say the credential is invalid.
                 return Check(
                     label,
                     "fail",
-                    f"not verified: {where} refused access (HTTP 403); name a check "
+                    f"not verified: {where} refused access ({status}); name a check "
                     f"every credential may call in cli.auth.{scheme}.check",
                     code=1,
                 )
+            if 300 <= error.status < 400 and not chosen:
+                # A picked probe may just redirect to a canonical or download URL.
+                return Check(label, "fail", f"not verified: {where} redirected ({status})", code=1)
             if error.status in (401, 403) or 300 <= error.status < 400:
-                return Check(label, "fail", f"rejected by {where}: {error}", fix=fix)
-            return Check(label, "fail", f"not verified: {where}: {error}", code=1)
+                return Check(label, "fail", f"rejected by {where} ({status})", fix=fix)
+            return Check(label, "fail", f"not verified: {where} ({status})", code=1)
         except ResponseTooLargeError as error:
             # The server answered; the answer was just too big to read.
             return Check(label, "fail", f"not verified: {where}: {error}", code=1)

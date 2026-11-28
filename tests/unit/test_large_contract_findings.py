@@ -529,16 +529,16 @@ def test_doctor_counts_a_redirect_as_reachable() -> None:
         (
             ApiError("get_myself", 401, None, None),
             "fail",
-            "rejected by GET /me: get_myself failed with HTTP 401",
+            "rejected by GET /me (HTTP 401)",
             3,
         ),
         (
-            ApiError("get_myself", 302, None, None, location="/login"),
+            ApiError("get_myself", 302, None, None, location="/x?api_key=SECRET"),
             "fail",
-            "redirected to /login",
+            "rejected by GET /me (HTTP 302)",
             3,
         ),
-        (ApiError("get_myself", 500, None, None), "fail", "not verified: GET /me: get_myself", 1),
+        (ApiError("get_myself", 500, None, None), "fail", "not verified: GET /me (HTTP 500)", 1),
         (ValidationError("x", "bad"), "fail", "not verified: GET /me: x: bad", 1),
         (TransportError("refused"), "fail", "not verified: GET /me: refused", 4),
         (ResponseTooLargeError(9), "fail", "not verified: GET /me: response exceeds 9 bytes", 1),
@@ -565,6 +565,7 @@ def test_doctor_login_check(raised: Exception | None, status: str, detail: str, 
     ).run(offline=False)
     login = {c.check: c for c in checks}["login: portal"]
     assert login.status == status and detail in login.detail
+    assert "SECRET" not in json.dumps(login.as_dict())
     if code == 3:
         assert login.fix == "replace the credential from environment (ACME_PORTAL)"
         assert login.as_dict()["fix"] == login.fix
@@ -761,7 +762,7 @@ def test_doctor_login_labels_and_sign_in_hints() -> None:
 
     where = cli_tools._Where
     check = doctor._login(api, "portal", refuse, None, where("saved login (keyring)", "work"))
-    assert check.detail.startswith("rejected by get_me: ")
+    assert check.detail == "rejected by get_me (HTTP 401)"
     assert check.fix == "sign in again: acme auth login --scheme portal --profile work"
     single = Api("A", "1", (custom,), auth_schemes=(BEARER,))
     check = doctor._login(single, "portal", refuse, None, where("", "default"))
@@ -784,6 +785,40 @@ def test_doctor_login_labels_and_sign_in_hints() -> None:
     assert check.detail.endswith("get_me also answers anonymous callers")
 
 
+def test_doctor_unverifiable_answers_from_a_picked_probe() -> None:
+    def redirect(operation: str, scheme: str) -> object:
+        raise ApiError(operation, 301, None, None, location="/canonical?key=SECRET")
+
+    login = {c.check: c for c in _doctor(_me_api(scheme=BEARER), call=redirect)}["login: portal"]
+    assert (login.detail, login.code, login.fix) == (
+        "not verified: GET /me redirected (HTTP 301)",
+        1,
+        "",
+    )
+
+    def issuer_down(operation: str, scheme: str) -> object:
+        error = AuthError("token endpoint failed with HTTP 503")
+        error.upstream = True
+        raise error
+
+    login = {c.check: c for c in _doctor(_me_api(scheme=BEARER), call=issuer_down)}["login: portal"]
+    assert (login.code, login.fix) == (1, "")
+    assert login.detail.startswith("not verified: GET /me: token endpoint")
+
+
+def test_doctor_refuses_an_old_check_that_writes() -> None:
+    writes = _op("reset_me", "POST", "/me/reset")
+    api = Api("A", "1", (writes,), auth_schemes=(BEARER,), servers=(Server("https://a.test"),))
+
+    def call(operation: str, scheme: str) -> object:
+        raise AssertionError("a write must never be called")
+
+    rows = {c.check: c for c in _doctor(api, call=call, sessions={"portal": "reset_me"})}
+    assert rows["login: portal"].detail == (
+        "cli.auth.portal.check: reset_me changes data; choose one that only reads"
+    )
+
+
 def test_doctor_403_on_a_picked_probe_is_not_a_bad_login() -> None:
     def forbid(operation: str, scheme: str) -> object:
         raise ApiError(operation, 403, None, None)
@@ -802,6 +837,10 @@ def test_doctor_403_on_a_picked_probe_is_not_a_bad_login() -> None:
         ("/myself", "get_myself", True),
         ("/user/current", "get_current", True),
         ("/me/subscription", "get_subscription", False),
+        ("/featured-user", "get_featured_user", False),
+        ("/users/current", "get_current", True),
+        ("", "get_myself", True),
+        ("", "get_featured_user", False),
         ("/subscriptions/current", "get_current", False),
         ("/users/{id}", "get_user", False),
         ("/", "get_root", False),

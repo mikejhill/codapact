@@ -55,6 +55,9 @@ class ResponseValidationWarning(UserWarning):
 class AuthError(ClientError):
     """No configured credentials satisfy the operation's auth requirement."""
 
+    upstream: bool = False
+    """True when a token service failed (HTTP 5xx), not the credential itself."""
+
 
 class ApiError(ClientError):
     """The server answered with a declared or undeclared failure status."""

@@ -640,7 +640,9 @@ class TokenEndpoint:
         form, headers = (client or ClientAuth("")).apply(dict(form))
         status, data = self.post(url, form, headers)
         if status >= 400 or "error" in data:
-            raise AuthError(_oauth_error(data, status))
+            error = AuthError(_oauth_error(data, status))
+            error.upstream = status >= 500
+            raise error
         return Token.from_response(data, self.clock())
 
     def discover(self, url: str) -> dict[str, Any]:

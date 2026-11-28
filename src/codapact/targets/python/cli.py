@@ -15,7 +15,7 @@ from pathlib import Path
 from codapact.commands.model import Arg, ArgKind, Command, CommandTree, Group
 from codapact.core.errors import PluginError, expect
 from codapact.core.naming import Name, env_variable
-from codapact.model.api import Api, AuthKind, HttpBinding, OperationKind
+from codapact.model.api import Api, AuthKind, login_check_problem
 from codapact.model.types import ListOf, Nullable, Record, Ref, ScalarKind, TypeExpr
 from codapact.plugins.protocol import GeneratedFile, GenerationRequest, GenerationResponse
 from codapact.targets.python.e2e import render_suite
@@ -264,14 +264,9 @@ def _check_operation(request: GenerationRequest, scheme: str, raw: object) -> st
             f"{where}: {operation.name} needs arguments ({', '.join(needed)}); "
             "choose an operation that runs without any"
         )
-    http = operation.binding(HttpBinding)
-    if operation.kind is not OperationKind.QUERY or (http and http.method.upper() != "GET"):
-        raise PluginError(f"{where}: {operation.name} changes data; choose one that only reads")
-    if (scheme,) not in operation.auth.alternatives:
-        raise PluginError(f"{where}: {operation.name} does not accept {scheme} on its own")
-    if operation.auth.anonymous_allowed:
-        # An anonymous answer would pass with an expired credential.
-        raise PluginError(f"{where}: {operation.name} also answers anonymous callers")
+    problem = login_check_problem(operation, scheme)
+    if problem:
+        raise PluginError(f"{where}: {operation.name} {problem}")
     return operation.name
 
 

@@ -441,8 +441,9 @@ path. The call sends only that scheme's credential. A 401, 403, redirect or `exp
 the `login: <scheme>` check with exit code 3 and says where to replace the credential;
 any other error fails it as "not verified" (exit 4 when the API is unreachable, else 1).
 The row names the caller (`as id ...`) only when the route returns the caller's own record.
-A 403 from an operation doctor picked itself fails as "not verified" (exit 1), since it may
-just lack rights; name a `check` every credential may call.
+A 403 or redirect from an operation doctor picked itself, or a token service error (HTTP 5xx),
+fails as "not verified" (exit 1) with no repair hint; name a `check` every credential may
+call. Details give the HTTP status only, never a redirect target.
 The row's `fix` (printed in full under the table) says where to replace the credential: the
 environment variable or command it came from, or `auth login` with `--scheme`/`--profile`.
 `--dry-run` skips the call, and the credential chain is resolved once for the whole run. When
