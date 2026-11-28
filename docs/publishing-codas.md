@@ -70,7 +70,66 @@ Follow [codapact-ynab](https://github.com/mikejhill/codapact-ynab):
   [Agent skill](configuration.md#agent-skill) and
   [create-coda-skill](../extras/agent-plugin/skills/create-coda-skill/SKILL.md)).
 
+- `.github/workflows/release.yml`: release-please and trusted publishing, with the
+  standard [release token](#release-token).
+
 Run a coda through `uvx`; do not document `uv tool install` as the way to run it.
+
+## Releases
+
+Every repository the project publishes (Codapact, adflux, and each coda) releases the same
+way, and no release needs anyone's approval:
+
+1. Conventional Commit squash merges land on `main`.
+2. `release.yml` runs release-please, which opens or updates the release pull request.
+3. The release pull request's checks run and pass; it is merged like any other pull request.
+4. The merge tags the release, and `release.yml` runs CI, builds, and publishes to PyPI
+   through trusted publishing (environment `pypi`, no protection rules).
+
+### Release token
+
+The `release-please` step in `release.yml` takes its token from the release GitHub App when
+the repository has one, and from `GITHUB_TOKEN` otherwise:
+
+```yaml
+- id: app-token
+  if: vars.RELEASE_APP_CLIENT_ID != ''
+  uses: actions/create-github-app-token@<sha> # v3.x
+  with:
+    client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+    private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+    permission-contents: write
+    permission-pull-requests: write
+    permission-issues: write
+- id: release
+  uses: googleapis/release-please-action@<sha> # v5.x
+  with:
+    token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+- name: Start CI for release pull request
+  if: steps.release.outputs.prs_created == 'true' && steps.app-token.outcome != 'success'
+  run: gh workflow run ci.yml --ref "$branch"   # and codeql.yml where the repo has one
+```
+
+- **With the App** (preferred): release-please pushes as the App, so the release pull
+  request's own `pull_request` checks start normally.
+- **Without it**: GitHub holds `pull_request` runs for pushes made with `GITHUB_TOKEN` as
+  "approval required". `release.yml` dispatches the same workflows on the release branch
+  instead; those runs report the required checks for the branch head, so the pull request
+  still merges without approval. The held runs show on the pull request but block nothing.
+
+The job needs `actions: write` for the dispatch fallback. Copy the block from an existing
+repository's `release.yml` so the pinned action SHAs match.
+
+### Release App setup
+
+One GitHub App serves every repository:
+
+- Permissions: Contents, Pull requests, and Issues read and write; no webhook.
+- Installed on the owner account for each repository that releases.
+- Each repository has variable `RELEASE_APP_CLIENT_ID` (the App's client ID) and secret
+  `RELEASE_APP_PRIVATE_KEY` (a private key of the App).
+
+A repository without them uses the fallback above; nothing else changes.
 
 ## README
 

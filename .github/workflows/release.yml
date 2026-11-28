@@ -22,22 +22,34 @@ jobs:
       created: ${{ steps.release.outputs.release_created }}
       tag: ${{ steps.release.outputs.tag_name }}
     steps:
+      # Standard release token (see codapact docs/publishing-codas.md#releases). With the
+      # release GitHub App configured, release-please pushes as the App, so the release
+      # pull request's own checks start normally and nothing waits for approval.
+      - id: app-token
+        if: vars.RELEASE_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-      # Pushes made with GITHUB_TOKEN start no pull_request workflows, and GitHub holds
-      # CodeQL for approval on such pull requests. Dispatching is allowed, and the
-      # required CodeQL results for the release branch's head come from this run.
+      # Fallback without the App: GitHub holds pull_request runs for pushes made with
+      # GITHUB_TOKEN, but dispatching is allowed, and these runs supply the required
+      # checks for the release branch's head.
       - name: Start CI and CodeQL for release pull request
-        if: steps.release.outputs.prs_created == 'true'
+        if: steps.release.outputs.prs_created == 'true' && steps.app-token.outcome != 'success'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_JSON: ${{ steps.release.outputs.pr }}
         run: |
-          branch=$(jq -r '.headBranchName' <<< "$PR_JSON")
+          branch=$(jq -er '.headBranchName' <<< "$PR_JSON")
           gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
           gh workflow run codeql.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
   ci:
