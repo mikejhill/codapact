@@ -152,6 +152,8 @@ class Pipeline:
                 for key in ("auth_plugin", "auth", "previous_programs", "extensions"):
                     if key in config.cli:
                         options.setdefault(key, config.cli[key])
+                if config.cli.get("skill"):
+                    options.setdefault("skill", _skill_option(config))
                 if config.e2e:
                     options.setdefault("e2e", dict(config.e2e))
             request = GenerationRequest(
@@ -261,7 +263,58 @@ def _readme_context(
         "auth_docs": docs,
         "auth_fields": fields,
         "package_dir": _relative(package, output),
+        "skill": bool(config.cli.get("skill")),
     }
+
+
+SKILL_KEYS = frozenset({"description", "api_name", "path"})
+
+
+def _skill_option(config: ProjectConfig) -> dict[str, Any]:
+    """Resolve ``cli.skill`` for the python-cli target.
+
+    ``true`` or ``{description, api_name}`` selects the standard thin skill;
+    ``{path}`` names a hand-written ``SKILL.md`` or a folder holding one (relative to the
+    project file), copied as is.
+    """
+    raw = config.cli["skill"]
+    if raw is True:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ConfigError("cli.skill must be true or a mapping (description, api_name, or path)")
+    unknown = set(raw) - SKILL_KEYS
+    if unknown:
+        raise ConfigError(f"cli.skill: unknown keys {sorted(unknown)}")
+    for key, value in raw.items():
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigError(f"cli.skill.{key} must be a non-empty string")
+    if "path" not in raw:
+        return {"enabled": True, **raw}
+    if set(raw) != {"path"}:
+        raise ConfigError("cli.skill.path cannot be combined with description or api_name")
+    root = config.base.resolve()
+    path = (config.base / raw["path"]).resolve()
+    if not path.is_relative_to(root):
+        raise ConfigError(f"cli.skill.path {raw['path']!r} is outside the project directory")
+    if path.is_file():
+        sources = {"SKILL.md": path}
+    elif path.is_dir():
+        sources = {
+            p.relative_to(path).as_posix(): p
+            for p in sorted(path.rglob("*"))
+            if p.is_file() and not any(part.startswith(".") for part in p.relative_to(path).parts)
+        }
+    else:
+        raise ConfigError(f"cli.skill.path {raw['path']!r} does not exist")
+    if "SKILL.md" not in sources:
+        raise ConfigError(f"cli.skill.path {raw['path']!r} has no SKILL.md")
+    files: dict[str, str] = {}
+    for rel, source in sources.items():
+        try:
+            files[rel] = source.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ConfigError(f"cli.skill.path: cannot read {rel}: {exc}") from None
+    return {"files": files}
 
 
 def _read_includes(include: Any, base: Path) -> dict[str, str]:

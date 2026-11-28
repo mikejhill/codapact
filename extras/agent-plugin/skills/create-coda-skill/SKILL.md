@@ -67,16 +67,25 @@ typed JSON, against one `--help` call per command and text to parse.
 
    No command names, flags, or version numbers.
 
-4. **Fill the template.** Copy [assets/SKILL.template.md](assets/SKILL.template.md) and
-   replace `{{PROGRAM}}`, `{{DISTRIBUTION}}`, `{{TOOL}}`, `{{API_NAME}}`, and
-   `{{DESCRIPTION}}`. Change nothing else. If the body seems to need more, see "When the CLI lacks something".
+4. **Ship it with the CLI.** Set the values in the coda's `codapact.yaml` and regenerate:
 
-5. **Place it.** Commit it in the coda repo as `skills/PROGRAM/SKILL.md`, so it ships with
-   the coda. To use it, copy the `PROGRAM` folder into the agent's skills folder
-   (Claude Code: `~/.claude/skills/`; GitHub Copilot: `~/.copilot/skills/`).
-   The coda's README is generated; to mention the skill there, add a `readme.sections`
-   entry to `codapact.yaml` (title `Agent skill`, body: the path and the copy step) and
-   regenerate. Never edit `README.md` by hand
+   ```yaml
+   cli:
+     skill:
+       description: "Read and change YNAB plans, ... Use when ..."
+       api_name: YNAB
+   ```
+
+   The generator fills [assets/SKILL.template.md](assets/SKILL.template.md) with
+   `PROGRAM`, `DISTRIBUTION`, and `TOOL` from the coda and these two values, and ships it in
+   the package, so it always matches the installed CLI. Change nothing else. If the body
+   seems to need more, see "When the CLI lacks something".
+
+5. **Install it.** `uvx TOOL skill install --dir SKILLS_DIR` copies it to
+   `SKILLS_DIR/PROGRAM/SKILL.md` (e.g. `~/.agents/skills`, Claude Code `~/.claude/skills`,
+   GitHub Copilot `~/.copilot/skills`, or a private skills repo). Rerun it after a coda
+   update to refresh an unmodified copy. The generated README gets an "Agent skill"
+   section on its own; never edit `README.md` by hand
    ([README format](https://github.com/mikejhill/codapact/blob/main/docs/publishing-codas.md#readme)).
 
 6. **Test it.** Run this locally, on a machine where the user's own credentials are already
@@ -99,10 +108,9 @@ If the agent needed information that the CLI did not give it, fix the CLI, never
 
 ## Checklist
 
-- [ ] Body is the template with five values filled; nothing else added.
+- [ ] The skill comes from `cli.skill` in `codapact.yaml`, not a hand-copied template.
 - [ ] No command list, flags, argument names, output fields, or token instructions in the skill.
 - [ ] No version pin: the skill always installs the latest coda.
 - [ ] `name` equals `PROGRAM`; the description names the product, its resources, and the CLI.
 - [ ] `describe --brief` of the released coda has `start`, `exit_codes`, and `auth` with `docs`.
-- [ ] The coda's README is generated (`python-readme` target) and points to the skill through
-      `readme.sections`, not a hand edit.
+- [ ] `uvx TOOL skill show` prints the skill from the released coda.

@@ -29,6 +29,7 @@ cli:
   previous_programs: [pets]   # optional; earlier names whose logins and settings carry over
   auth_plugin: my_auth:provider   # optional; see Authentication
   auth: {sso: {client_id: petstore-cli, scopes: [read]}}
+  skill: {description: "Manage pets ..."}   # optional; ship an agent skill (see Agent skill)
 readme:                      # optional; README of the Python package (see README)
   name: Petstore API
   docs: https://petstore.example.com/docs
@@ -325,8 +326,9 @@ exists. Set `cli.env_prefix` too if the environment variables should keep their 
 | Machine-readable errors | `--error-format json` prints one `{"error": {"type", "message", "exit_code", "status", "hint", "details"}}` object on stderr; contract warnings become `{"warning": …}` lines |
 
 | Credentials | `<program> auth login\|logout\|status\|token\|profiles\|use`; see [Authentication](#authentication) |
+| Agent skill | `<program> skill show\|install --dir DIR` when `cli.skill` is set; see [Agent skill](#agent-skill) |
 
-`describe`, `doctor`, `completion`, and `auth` are skipped when the API has a top-level command
+`describe`, `doctor`, `completion`, `skill`, and `auth` are skipped when the API has a top-level command
 of the same name; `--version`, `--dry-run`, `--verbose`, `--error-format`, and `--profile` are
 reserved, so API parameters with those names become `--arg-version` and so on.
 
@@ -350,6 +352,30 @@ response checks. Generated libraries default to `strict` and raise
 Exit codes: `0` success, `1` API error or contract break, `2` usage or validation, `3` auth
 (missing credentials or HTTP 401/403), `4` transport, `130` interrupted. Root help and
 `describe` list them.
+
+### Agent skill
+
+`cli.skill` makes the CLI ship an agent skill as package data, so the skill always matches
+the installed version, and adds a `skill` command to install it:
+
+```console
+$ uvx codapact-acme skill install --dir ~/.agents/skills
+{"skill": "codapact-acme", "path": "/home/me/.agents/skills/codapact-acme", "files": ["SKILL.md"], "status": "created"}
+$ uvx codapact-acme skill show          # print SKILL.md
+```
+
+| `cli.skill` | Skill |
+| --- | --- |
+| `true` | The standard thin coda skill ([create-coda-skill](../extras/agent-plugin/skills/create-coda-skill/SKILL.md) template) with a generic description |
+| `{description: TEXT, api_name: NAME}` | The same template with this description (decides when an agent loads the skill) and product name; both optional. `api_name` defaults to the contract title without a trailing `API` |
+| `{path: FILE_OR_DIR}` | A hand-written `SKILL.md`, or a folder holding one plus any other files, relative to `codapact.yaml`; copied as is |
+
+`skill install --dir DIR` writes `DIR/NAME/`, where `NAME` is the skill's front-matter
+`name` (the program for the template), creating `DIR` if needed (`~` is expanded). It
+records what it wrote in `NAME/.codapact-skill.json`, so rerunning it after an update
+replaces an unmodified copy (`status: updated`, or `unchanged`), while a copy with local
+edits, or a folder it did not create, is left alone unless `--force` is given. `--dry-run`
+reports the status without writing. The generated README gains an "Agent skill" section.
 
 ## Authentication
 

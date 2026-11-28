@@ -6,9 +6,11 @@ surface path (``client.pets.list(...)``); no handler touches the protocol.
 
 from __future__ import annotations
 
+import json
 import re
 import textwrap
 from collections.abc import Callable
+from pathlib import Path
 
 from codapact.commands.model import Arg, ArgKind, Command, CommandTree, Group
 from codapact.core.errors import PluginError, expect
@@ -59,8 +61,10 @@ class PythonCliTarget:
                     previous_programs=_previous_programs(request),
                     protocols=bool(request.options.get("protocols")),
                     extensions=_extensions(request),
+                    skill=options.package if request.options.get("skill") else "",
                 ),
             ),
+            *_skill_files(request, root, tree.program.kebab, options.distribution),
             *(
                 render_suite(
                     request.api, request.surface, tree, options.package, request.options.get("e2e")
@@ -76,6 +80,51 @@ class PythonCliTarget:
             ),
         )
         return GenerationResponse(files)
+
+
+SKILL_TEMPLATE = Path(__file__).with_name("skill_template.md")
+_PLAIN_YAML = re.compile(r"[A-Za-z0-9`(][^\n]*")
+
+
+def _skill_files(
+    request: GenerationRequest, root: str, program: str, distribution: str
+) -> tuple[GeneratedFile, ...]:
+    """``cli.skill``: the agent skill shipped as package data in ``<package>/skill/``.
+
+    The pipeline resolves the option to ``{"files": {...}}`` (a hand-written skill from
+    ``cli.skill.path``) or ``{"description": ..., "api_name": ...}`` (the standard thin
+    skill, filled from the template the create-coda-skill skill uses).
+    """
+    spec = request.options.get("skill")
+    if not spec:
+        return ()
+    if not isinstance(spec, dict):
+        raise PluginError("cli.skill must be true or a mapping")
+    custom = spec.get("files")
+    if custom:
+        return tuple(GeneratedFile(f"{root}/skill/{rel}", text) for rel, text in custom.items())
+    api_name = str(spec.get("api_name") or request.api.name).strip()
+    api_name = re.sub(r"\s+API(\s+Endpoints)?$", "", api_name) or api_name
+    description = " ".join(
+        str(
+            spec.get("description")
+            or f"Read and change {api_name} data through the `{program}` CLI. Use when the "
+            f"user asks about their {api_name} data or wants to change it."
+        ).split()
+    )
+    if not _PLAIN_YAML.fullmatch(description) or ": " in description or " #" in description:
+        description = json.dumps(description, ensure_ascii=False)
+    tool = distribution if program == distribution else f"--from {distribution} {program}"
+    text = SKILL_TEMPLATE.read_text(encoding="utf-8")
+    for key, value in (
+        ("PROGRAM", program),
+        ("DISTRIBUTION", distribution),
+        ("TOOL", tool),
+        ("API_NAME", api_name),
+        ("DESCRIPTION", description),
+    ):
+        text = text.replace("{{" + key + "}}", value)
+    return (GeneratedFile(f"{root}/skill/SKILL.md", text),)
 
 
 def _extensions(request: GenerationRequest) -> tuple[str, ...]:
@@ -254,6 +303,7 @@ def render_cli(
     previous_programs: tuple[str, ...] = (),
     protocols: bool = False,
     extensions: tuple[str, ...] = (),
+    skill: str = "",
 ) -> str:
     """Render the argparse module.
 
@@ -274,6 +324,7 @@ def render_cli(
         + (f", previous_programs={previous_programs!r}" if previous_programs else "")
         + (", protocols=_protocols" if protocols else "")
         + (f", extensions={extensions!r}" if extensions else "")
+        + (f", skill={skill!r}" if skill else "")
         + ")"
     )
     head = [
