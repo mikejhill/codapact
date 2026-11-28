@@ -2,6 +2,14 @@
 
 <!-- markdownlint-configure-file { "MD024": { "siblings_only": true } } -->
 
+## [0.18.0](https://github.com/mikejhill/codapact/compare/v0.17.3...v0.18.0) (2026-11-28)
+
+
+### Features
+
+* **cli:** doctor proves the login works with one signed-in call ([#92](https://github.com/mikejhill/codapact/issues/92)) ([0532eb4](https://github.com/mikejhill/codapact/commit/0532eb430f6cc8b3dcb547df32f25ba5a1fb2535))
+* **cli:** ship an agent skill with the CLI and install it with `skill install` ([#93](https://github.com/mikejhill/codapact/issues/93)) ([7b82a97](https://github.com/mikejhill/codapact/commit/7b82a97eea686ab3c728b07468674dfce611ad41))
+
 ## [0.17.3](https://github.com/mikejhill/codapact/compare/v0.17.2...v0.17.3) (2026-11-25)
 
 
