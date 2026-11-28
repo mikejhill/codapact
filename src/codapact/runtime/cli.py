@@ -1082,7 +1082,7 @@ class CliRuntime:
                     if "check" in spec
                 },
                 call=lambda operation, scheme: self._probe(
-                    args, load_model(), operation, scheme, auth=settings()[0].get("auth")
+                    args, load_model(), operation, scheme, resolved=settings()[0]
                 ),
             )
             checks = doctor.run(offline=args.offline)
@@ -1263,17 +1263,16 @@ class CliRuntime:
         operation: str,
         scheme: str | None = None,
         *,
-        auth: Any = None,
+        resolved: Mapping[str, Any] | None = None,
     ) -> Any:
         """Call ``operation`` without arguments, as a command would, and return the result.
 
         With ``scheme``, the call sends that credential alone, so each ``login`` row of
-        ``doctor`` proves its own scheme; ``auth`` reuses a credential chain already resolved.
+        ``doctor`` proves its own scheme. ``resolved`` reuses settings already resolved, so
+        the credential goes to the destination doctor checked and commands run only once.
         """
-        options = self._client_options(args, io.StringIO())
+        options = self._client_options(args, io.StringIO(), resolved)
         options["response_validation"] = "off"
-        if auth is not None:
-            options["auth"] = auth
         if scheme is not None:
             only = AuthRequirement(((scheme,),))
             api = dataclasses.replace(
@@ -1285,8 +1284,10 @@ class CliRuntime:
             )
         return RuntimeClient(api, protocols=self.protocols, **options).call(operation, {})
 
-    def _client_options(self, args: argparse.Namespace, err: TextIO) -> dict[str, Any]:
-        options = self.settings(args)
+    def _client_options(
+        self, args: argparse.Namespace, err: TextIO, resolved: Mapping[str, Any] | None = None
+    ) -> dict[str, Any]:
+        options = dict(resolved) if resolved is not None else self.settings(args)
         # The CLI builds the transport so the response cap also applies to clients
         # generated before ``max_response_bytes`` existed.
         options["transport"] = SafeHttpClient(

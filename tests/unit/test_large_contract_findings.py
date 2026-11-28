@@ -765,7 +765,9 @@ def test_doctor_login_labels_and_sign_in_hints() -> None:
     assert check.fix == "sign in again: acme auth login --scheme portal --profile work"
     single = Api("A", "1", (custom,), auth_schemes=(BEARER,))
     check = doctor._login(single, "portal", refuse, None, where("", "default"))
-    assert check.fix == "sign in again: acme auth login"
+    assert check.fix == "sign in again: acme auth login --profile default"
+    check = doctor._login(single, "portal", refuse, None, where("saved username u with PW", "d"))
+    assert check.fix == "replace PW in the environment"
     basic = AuthScheme("portal", AuthKind.BASIC)
     plain = Api("A", "1", (custom,), auth_schemes=(basic,))
     check = doctor._login(plain, "portal", refuse, None, where("environment (ACME_PORTAL)", "x"))
@@ -776,6 +778,40 @@ def test_doctor_login_labels_and_sign_in_hints() -> None:
     check = named._login(paired, "portal", refuse, None, where("", "default"))
     assert (check.status, check.code) == ("fail", 1)
     assert "get_me does not accept portal on its own" in check.detail
+
+    open_too = dataclasses.replace(custom, auth=AuthRequirement(((), ("portal",))))
+    check = named._login(Api("A", "1", (open_too,)), "portal", refuse, None, where("", "d"))
+    assert check.detail.endswith("get_me also answers anonymous callers")
+
+
+def test_doctor_403_on_a_picked_probe_is_not_a_bad_login() -> None:
+    def forbid(operation: str, scheme: str) -> object:
+        raise ApiError(operation, 403, None, None)
+
+    rows = {c.check: c for c in _doctor(_me_api(scheme=BEARER), call=forbid)}
+    login = rows["login: portal"]
+    assert (login.status, login.code, login.fix) == ("fail", 1, "")
+    assert "refused access (HTTP 403)" in login.detail
+    assert cli_tools.doctor_exit_code(list(rows.values())) == 1
+
+
+@pytest.mark.parametrize(
+    ("path", "name", "caller"),
+    [
+        ("/user", "get_user", True),
+        ("/myself", "get_myself", True),
+        ("/user/current", "get_current", True),
+        ("/me/subscription", "get_subscription", False),
+        ("/subscriptions/current", "get_current", False),
+        ("/users/{id}", "get_user", False),
+        ("/", "get_root", False),
+        ("", "viewer", True),
+        ("", "viewer_plans", False),
+    ],
+)
+def test_about_caller(path: str, name: str, caller: bool) -> None:
+    method = "GQL" if not path else "GET"
+    assert cli_tools._about_caller(_op(name, method, path)) is caller
 
 
 def test_doctor_dry_run_sends_no_credentials() -> None:
@@ -858,7 +894,10 @@ def test_generator_validates_the_session_check_operation() -> None:
         auth=portal,
     )
     anonymous = Operation("ping", OperationKind.QUERY, (), None)
-    api = Api("A", "1", (*api.operations, needs, writes, posts, anonymous), auth_schemes=(TOKEN,))
+    peek = Operation("peek", OperationKind.QUERY, (), None, auth=AuthRequirement(((), ("portal",))))
+    api = Api(
+        "A", "1", (*api.operations, needs, writes, posts, anonymous, peek), auth_schemes=(TOKEN,)
+    )
 
     def request(auth: object) -> GenerationRequest:
         return GenerationRequest(
@@ -877,6 +916,7 @@ def test_generator_validates_the_session_check_operation() -> None:
         ({"portal": {"check": "reset_me"}}, "reset_me changes data"),
         ({"portal": {"check": "find_me"}}, "find_me changes data"),
         ({"portal": {"check": "ping"}}, "ping does not accept portal on its own"),
+        ({"portal": {"check": "peek"}}, "peek also answers anonymous callers"),
     ]:
         with pytest.raises(PluginError, match=message):
             _auth_config(request(bad))

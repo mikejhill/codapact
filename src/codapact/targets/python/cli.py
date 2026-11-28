@@ -222,6 +222,9 @@ def _check_operation(request: GenerationRequest, scheme: str, raw: object) -> st
         raise PluginError(f"{where}: {operation.name} changes data; choose one that only reads")
     if (scheme,) not in operation.auth.alternatives:
         raise PluginError(f"{where}: {operation.name} does not accept {scheme} on its own")
+    if operation.auth.anonymous_allowed:
+        # An anonymous answer would pass with an expired credential.
+        raise PluginError(f"{where}: {operation.name} also answers anonymous callers")
     return operation.name
 
 

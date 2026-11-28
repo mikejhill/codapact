@@ -406,14 +406,16 @@ The first source that has a credential wins, per scheme:
 the CLI (no secrets); `fields` declares [credential fields](#credential-fields); `docs` tells a
 person how to get the credential (shown in `describe` under `auth`, e.g. "Create a personal
 access token under Account Settings > Developer Settings"); `check` names a read-only operation
-(a query; over HTTP, a `GET`) that needs no arguments and accepts the scheme on its own (any
-spelling, e.g. `getCurrentUser`), which `doctor` calls to prove the credential works; `check: false` turns the call off. Without `check`, `doctor` picks a query
+(a query; over HTTP, a `GET`) that needs no arguments and accepts the scheme on its own and never
+anonymous callers (any spelling, `getCurrentUser`), which `doctor` calls to prove the credential works; `check: false` turns the call off. Without `check`, `doctor` picks a query
 (over HTTP, a `GET`) that runs without arguments and accepts this scheme on its own, preferring one about
 the signed-in identity (`/user`, `/me`, `/myself`, `viewer`, `.../current`), then the shortest
 path. The call sends only that scheme's credential. A 401, 403, redirect or `expired()` fails
 the `login: <scheme>` check with exit code 3 and says where to replace the credential;
 any other error fails it as "not verified" (exit 4 when the API is unreachable, else 1).
-The row names the caller (`as id ...`) only when the call is about the caller.
+The row names the caller (`as id ...`) only when the route returns the caller's own record.
+A 403 from an operation doctor picked itself fails as "not verified" (exit 1), since it may
+just lack rights; name a `check` every credential may call.
 The row's `fix` (printed in full under the table) says where to replace the credential: the
 environment variable or command it came from, or `auth login` with `--scheme`/`--profile`.
 `--dry-run` skips the call, and the credential chain is resolved once for the whole run. When

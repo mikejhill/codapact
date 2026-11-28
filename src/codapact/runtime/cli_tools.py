@@ -610,13 +610,24 @@ def _identity_rank(operation: Operation) -> int:
 
 
 def _about_caller(operation: Operation) -> bool:
-    """Whether the route or name says the response describes the caller (``GET /user``)."""
+    """Whether the response is the caller's own record (``GET /user``, ``/user/current``).
+
+    Over HTTP the last path segment decides (``/me/subscription`` is a subscription);
+    otherwise the operation name's last word (``viewer``, ``get_myself``).
+    """
     http = operation.binding(HttpBinding)
-    words = {w for s in (http.path.split("/") if http else []) for w in _words(s)}
-    words |= set(_words(operation.name))
-    if http is not None:
-        words |= {"".join(_words(s)) for s in http.path.split("/")}
-    return bool(words & _CALLER_WORDS)
+    if http is None:
+        named = _words(operation.name)
+        return bool(named) and named[-1] in _CALLER_WORDS
+    segments = [s for s in http.path.split("/") if s]
+    if not segments or segments[-1].startswith("{"):
+        return False
+    last = _words(segments[-1])
+    if last and (last[-1] in _CALLER_WORDS or "".join(last) in _CALLER_WORDS):
+        return True
+    # "/user/current", "/users/me/current": the current record of a caller collection.
+    parent = _words(segments[-2]) if len(segments) > 1 else []
+    return last == ["current"] and any(w in _CALLER_WORDS for w in parent)
 
 
 def login_check_operation(api: Api, scheme: str) -> str | None:
@@ -797,13 +808,16 @@ class Doctor:
         if skipped:
             return Check(label, "skip", skipped)
         operation = _operation(api, name)
-        if operation is not None and (scheme,) not in operation.auth.alternatives:
-            return Check(
-                label,
-                "fail",
-                f"cli.auth.{scheme}.check: {name} does not accept {scheme} on its own",
-                code=1,
+        if operation is not None and (
+            (scheme,) not in operation.auth.alternatives or operation.auth.anonymous_allowed
+        ):
+            why = (
+                "also answers anonymous callers"
+                if operation.auth.anonymous_allowed
+                else (f"does not accept {scheme} on its own")
             )
+            return Check(label, "fail", f"cli.auth.{scheme}.check: {name} {why}", code=1)
+        chosen = scheme in sessions
         where = _operation_label(operation, name)
         fix = self._relogin(api, scheme, where_from)
         try:
@@ -811,6 +825,16 @@ class Doctor:
         except AuthError as error:
             return Check(label, "fail", f"{where}: {error}", fix=fix)
         except ApiError as error:
+            if error.status == 403 and not chosen:
+                # A probe doctor picked may need rights this credential lacks; 403 alone
+                # does not say the credential is invalid.
+                return Check(
+                    label,
+                    "fail",
+                    f"not verified: {where} refused access (HTTP 403); name a check "
+                    f"every credential may call in cli.auth.{scheme}.check",
+                    code=1,
+                )
             if error.status in (401, 403) or 300 <= error.status < 400:
                 return Check(label, "fail", f"rejected by {where}: {error}", fix=fix)
             return Check(label, "fail", f"not verified: {where}: {error}", code=1)
@@ -828,10 +852,13 @@ class Doctor:
     def _relogin(self, api: Api, scheme: str, where_from: _Where) -> str:
         """Say how to replace the refused credential, where it actually comes from."""
         source = where_from.source
+        password = re.fullmatch(r"saved username .+ with (\w+)", source)
+        if password:
+            return f"replace {password.group(1)} in the environment"
         if source.startswith(("saved", "browser session")) or not source:
             flags = f" --scheme {scheme}" if len(api.auth_schemes) > 1 else ""
-            if where_from.profile != "default":
-                flags += f" --profile {where_from.profile}"
+            # Always name the profile: another one may be the active default.
+            flags += f" --profile {where_from.profile}"
             return f"sign in again: {self.program} auth login{flags}"
         kind = next((s.kind for s in api.auth_schemes if s.name == scheme), None)
         variable = re.fullmatch(r"environment \((\w+)\)", source)
