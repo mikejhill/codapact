@@ -52,6 +52,15 @@ class GraphQLAdapter:
         response = exchange.send(
             operation, HttpRequest("POST", url, headers, body), auth.authenticators
         )
+        if response.status in (401, 403) or 300 <= response.status < 400:
+            # The credential was refused (or a login page answered): keep the HTTP status,
+            # whatever the body holds, as the HTTP adapter does.
+            try:
+                payload = parse_json(response, operation.name)
+            except Exception:  # noqa: BLE001 - an undecodable error body must not hide the status
+                payload = None
+            # No redirect target: it may carry a signed URL or query-string credential.
+            raise ApiError(operation.name, response.status, None, payload)
         document = parse_json(response, operation.name)
         if not isinstance(document, dict):
             raise ApiError(operation.name, response.status, None, document)

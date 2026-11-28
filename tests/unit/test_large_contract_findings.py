@@ -7,6 +7,7 @@ expired-session detection.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import io
 import json
 import ssl
@@ -15,7 +16,13 @@ from typing import Any
 
 import pytest
 
-from codapact.core.errors import ConfigError, ContractError, PluginError
+from codapact.core.errors import (
+    ConfigError,
+    ContractError,
+    PluginError,
+    ResponseTooLargeError,
+    TransportError,
+)
 from codapact.core.net import HttpRequest, HttpResponse, SafeHttpClient, tls_context
 from codapact.model import types as t
 from codapact.model.api import (
@@ -23,6 +30,7 @@ from codapact.model.api import (
     AuthKind,
     AuthRequirement,
     AuthScheme,
+    CustomBinding,
     HttpBinding,
     HttpParam,
     Operation,
@@ -514,29 +522,34 @@ def test_doctor_counts_a_redirect_as_reachable() -> None:
 
 
 @pytest.mark.parametrize(
-    ("raised", "status", "detail"),
+    ("raised", "status", "detail", "code"),
     [
-        (None, "ok", "accepted by get_myself"),
-        (AuthError("the portal session has expired"), "fail", "get_myself: the portal session"),
+        (None, "ok", "accepted by GET /me as name me", 0),
+        (AuthError("the portal session has expired"), "fail", "GET /me: the portal session", 3),
         (
             ApiError("get_myself", 401, None, None),
             "fail",
-            "rejected: get_myself failed with HTTP 401",
+            "rejected by GET /me (HTTP 401)",
+            3,
         ),
         (
-            ApiError("get_myself", 302, None, None, location="/login"),
+            ApiError("get_myself", 302, None, None, location="/x?api_key=SECRET"),
             "fail",
-            "redirected to /login",
+            "rejected by GET /me (HTTP 302)",
+            3,
         ),
-        (ApiError("get_myself", 500, None, None), "warn", "could not verify: get_myself failed"),
-        (ValidationError("x", "bad"), "warn", "could not verify: get_myself: x: bad"),
+        (ApiError("get_myself", 500, None, None), "fail", "not verified: GET /me (HTTP 500)", 1),
+        (ValidationError("x", "bad"), "fail", "not verified: GET /me: x: bad", 1),
+        (TransportError("refused"), "fail", "not verified: GET /me: refused", 4),
+        (ResponseTooLargeError(9), "fail", "not verified: GET /me: response exceeds 9 bytes", 1),
     ],
 )
-def test_doctor_session_check(raised: Exception | None, status: str, detail: str) -> None:
-    def call(operation: str) -> None:
-        assert operation == "get_myself"
+def test_doctor_login_check(raised: Exception | None, status: str, detail: str, code: int) -> None:
+    def call(operation: str, scheme: str) -> object:
+        assert (operation, scheme) == ("get_myself", "portal")
         if raised is not None:
             raise raised
+        return {"data": {"user": {"name": "me", "active": True}}}
 
     checks = cli_tools.Doctor(
         program="acme",
@@ -550,10 +563,327 @@ def test_doctor_session_check(raised: Exception | None, status: str, detail: str
         sessions={"portal": "get_myself", "other": "get_myself"},
         call=call,
     ).run(offline=False)
-    session = {c.check: c for c in checks}["session: portal"]
-    assert session.status == status and detail in session.detail
-    assert "session: other" not in {c.check for c in checks}
-    assert cli_tools.doctor_exit_code(checks) == (3 if status == "fail" else 0)
+    login = {c.check: c for c in checks}["login: portal"]
+    assert login.status == status and detail in login.detail
+    assert "SECRET" not in json.dumps(login.as_dict())
+    if code == 3:
+        assert login.fix == "replace the credential from environment (ACME_PORTAL)"
+        assert login.as_dict()["fix"] == login.fix
+    else:
+        assert "fix" not in login.as_dict()
+    assert "login: other" not in {c.check for c in checks}
+    assert cli_tools.doctor_exit_code(checks) == code
+
+
+def _doctor(api: Api, *, connect: int | None = 200, **kwargs: Any) -> list[cli_tools.Check]:
+    def send(client: object, request: HttpRequest) -> HttpResponse:
+        if connect is None:
+            raise TransportError("refused")
+        return HttpResponse(connect, {}, b"")
+
+    return cli_tools.Doctor(
+        program="acme",
+        version="1",
+        env_prefix="ACME",
+        env={"ACME_PORTAL": "t"},
+        load_model=lambda: api,
+        settings=lambda: ({}, {}),
+        config_status=lambda: cli_tools.Check("settings file", "info", "none"),
+        send=send,
+        **kwargs,
+    ).run(offline=False)
+
+
+def test_doctor_picks_a_login_check_without_configuration() -> None:
+    calls: list[str] = []
+
+    def call(operation: str, scheme: str) -> object:
+        calls.append(operation)
+        return {"data": {"user": {"id": "u-1"}}}
+
+    checks = _doctor(_me_api(scheme=BEARER), call=call)
+    assert calls == ["get_myself"]
+    login = {c.check: c for c in checks}["login: portal"]
+    assert (login.status, login.detail) == ("ok", "accepted by GET /me as id u-1")
+    assert cli_tools.doctor_exit_code(checks) == 0
+
+
+def test_doctor_login_check_skips_offline_unreachable_and_off() -> None:
+    def call(operation: str, scheme: str) -> object:
+        raise AssertionError("no call expected")
+
+    api = _me_api(scheme=BEARER)
+    rows = {c.check: c for c in _doctor(api, connect=None, call=call)}
+    assert rows["login: portal"].detail == "skipped (API unreachable)"
+    offline = cli_tools.Doctor(
+        program="acme",
+        version="1",
+        env_prefix="ACME",
+        env={"ACME_PORTAL": "t"},
+        load_model=lambda: api,
+        settings=lambda: ({}, {}),
+        config_status=lambda: cli_tools.Check("settings file", "info", "none"),
+        call=call,
+    ).run(offline=True)
+    assert {c.check: c for c in offline}["login: portal"].detail == "skipped (--offline)"
+    rows = {c.check: c for c in _doctor(api, sessions={"portal": None}, call=call)}
+    assert rows["login: portal"].status == "skip"
+    assert "cli.auth.portal.check is off" in rows["login: portal"].detail
+
+
+def test_doctor_login_check_warns_without_a_usable_operation() -> None:
+    api = _me_api(scheme=BEARER)
+    me = api.operations[0]
+    anonymous = Operation(
+        me.name, me.kind, me.params, me.result, bindings=me.bindings, auth=AuthRequirement(((),))
+    )
+    api = Api("A", "1", (anonymous,), auth_schemes=(BEARER,), servers=api.servers)
+    rows = {c.check: c for c in _doctor(api, call=lambda op, scheme: None)}
+    assert rows["login: portal"].status == "warn"
+    assert "cli.auth.portal.check" in rows["login: portal"].detail
+    assert cli_tools.doctor_exit_code(list(rows.values())) == 0
+
+
+def _op(
+    name: str,
+    method: str,
+    path: str,
+    *,
+    params: tuple[Param, ...] = (),
+    auth: AuthRequirement | None = None,
+) -> Operation:
+    kind = OperationKind.QUERY if method in ("GET", "GQL") else OperationKind.MUTATION
+    bindings: tuple[Any, ...] = (
+        () if method == "GQL" else (HttpBinding(method, path, (), (Bound("200", "result"),)),)
+    )
+    return Operation(
+        name,
+        kind,
+        params,
+        t.Primitive(t.ScalarKind.ANY),
+        bindings=bindings,
+        auth=auth or AuthRequirement((("portal",),)),
+    )
+
+
+def test_login_check_operation_prefers_identity_reads() -> None:
+    key = Param("key", t.Primitive(t.ScalarKind.STRING), required=True)
+    optional = Param("limit", t.Primitive(t.ScalarKind.INTEGER), required=False)
+    defaulted = Param("plan_id", t.Primitive(t.ScalarKind.STRING), default="last-used")
+    ops = (
+        _op("list_plans", "GET", "/plans", params=(optional,)),
+        _op("get_plan", "GET", "/plans/{plan_id}", params=(defaulted,)),
+        _op("get_issue", "GET", "/issues/{key}", params=(key,)),
+        _op("delete_user", "DELETE", "/user"),
+        Operation(
+            "search_user",
+            OperationKind.QUERY,
+            (),
+            None,
+            bindings=(HttpBinding("POST", "/user", (), ()),),
+            auth=AuthRequirement((("portal",),)),
+        ),
+        _op("get_user_public", "GET", "/user/public", auth=AuthRequirement(((),))),
+        _op("get_user_other", "GET", "/user/other", auth=AuthRequirement((("other",),))),
+        _op("get_user", "GET", "/user"),
+    )
+    api = Api("A", "1", ops, auth_schemes=(BEARER,))
+    assert cli_tools.login_check_operation(api, "portal") == "get_user"
+    api = Api("A", "1", ops[:3], auth_schemes=(BEARER,))
+    assert cli_tools.login_check_operation(api, "portal") == "list_plans"
+    named = (_op("viewer", "GQL", ""), _op("list_plans", "GET", "/plans"))
+    assert cli_tools.login_check_operation(Api("A", "1", named), "portal") == "viewer"
+    current = (
+        _op("search_users", "GET", "/users/search"),
+        _op("get_current", "GET", "/wiki/rest/api/user/current"),
+    )
+    assert cli_tools.login_check_operation(Api("A", "1", current), "portal") == "get_current"
+    assert cli_tools.login_check_operation(Api("A", "1", ops[2:5]), "portal") is None
+    either = AuthRequirement((("other",), ("portal",)))
+    both = AuthRequirement((("portal", "other"),))
+    paired = (
+        _op("get_me", "GET", "/me", auth=both),
+        _op("get_plans", "GET", "/plans", auth=either),
+    )
+    assert cli_tools.login_check_operation(Api("A", "1", paired), "portal") == "get_plans"
+    assert cli_tools.login_check_operation(Api("A", "1", paired[:1]), "portal") is None
+
+
+def test_identity_finds_who_signed_in() -> None:
+    assert cli_tools.identity({"data": {"user": {"id": "u-1"}}}) == "id u-1"
+    assert cli_tools.identity({"accountId": "a", "emailAddress": "x@y"}) == "emailAddress x@y"
+    assert cli_tools.identity({"login": "x" * 70}) == f"login {'x' * 60}..."
+    assert cli_tools.identity({"id": True, "flags": [1]}) is None
+    assert cli_tools.identity(["not", "a", "record"]) is None
+    assert cli_tools.identity({"data": {"data": {"data": {"data": {"data": {"id": 1}}}}}}) is None
+    assert cli_tools.identity({"plan": {"owner": {"id": 1}}}) is None
+
+
+def test_doctor_names_the_caller_only_for_identity_calls() -> None:
+    plans = _op("list_plans", "GET", "/plans")
+    api = Api("A", "1", (plans,), auth_schemes=(BEARER,), servers=(Server("https://a.test"),))
+    rows = {c.check: c for c in _doctor(api, call=lambda op, scheme: {"id": "p-17"})}
+    assert rows["login: portal"].detail == "accepted by GET /plans"
+    current = _op("get_current", "GET", "/subscriptions/current")
+    api = Api("A", "1", (current,), auth_schemes=(BEARER,), servers=(Server("https://a.test"),))
+    rows = {c.check: c for c in _doctor(api, call=lambda op, scheme: {"id": "s-1"})}
+    assert rows["login: portal"].detail == "accepted by GET /subscriptions/current"
+    user = _op("get_user", "GET", "/user")
+    ranked = Api("A", "1", (current, user), auth_schemes=(BEARER,))
+    assert cli_tools.login_check_operation(ranked, "portal") == "get_user"
+    featured = _op("get_featured_user", "GET", "/featured-user")
+    mine = _op("get_mine", "GET", "/user/current")
+    ranked = Api("A", "1", (featured, mine), auth_schemes=(BEARER,))
+    assert cli_tools.login_check_operation(ranked, "portal") == "get_mine"
+
+
+def test_doctor_login_labels_and_sign_in_hints() -> None:
+    custom = Operation(
+        "get_me",
+        OperationKind.QUERY,
+        (),
+        None,
+        bindings=(
+            CustomBinding("rpc"),
+            HttpBinding("GET", "/me", (), ()),
+        ),
+        auth=AuthRequirement((("portal",),)),
+    )
+    other = AuthScheme("other", AuthKind.BEARER)
+    api = Api("A", "1", (custom,), auth_schemes=(BEARER, other))
+    doctor = cli_tools.Doctor(
+        program="acme",
+        version="1",
+        env_prefix="ACME",
+        env={},
+        load_model=lambda: api,
+        settings=lambda: ({}, {}),
+        config_status=lambda: cli_tools.Check("settings file", "info", "none"),
+    )
+
+    def refuse(operation: str, scheme: str) -> object:
+        raise ApiError("get_me", 401, None, None)
+
+    where = cli_tools._Where
+    check = doctor._login(api, "portal", refuse, None, where("saved login (keyring)", "work"))
+    assert check.detail == "rejected by get_me (HTTP 401)"
+    assert check.fix == "sign in again: acme auth login --scheme portal --profile work"
+    single = Api("A", "1", (custom,), auth_schemes=(BEARER,))
+    check = doctor._login(single, "portal", refuse, None, where("", "default"))
+    assert check.fix == "sign in again: acme auth login --profile default"
+    check = doctor._login(single, "portal", refuse, None, where("saved username u with PW", "d"))
+    assert check.fix == "replace PW in the environment"
+    basic = AuthScheme("portal", AuthKind.BASIC)
+    plain = Api("A", "1", (custom,), auth_schemes=(basic,))
+    check = doctor._login(plain, "portal", refuse, None, where("environment (ACME_PORTAL)", "x"))
+    assert check.fix == "replace ACME_PORTAL_USERNAME and ACME_PORTAL_PASSWORD in the environment"
+    both = dataclasses.replace(custom, auth=AuthRequirement((("portal", "other"),)))
+    paired = Api("A", "1", (both,), auth_schemes=(BEARER, other))
+    named = dataclasses.replace(doctor, sessions={"portal": "get_me"})
+    check = named._login(paired, "portal", refuse, None, where("", "default"))
+    assert (check.status, check.code) == ("fail", 1)
+    assert "get_me does not accept portal on its own" in check.detail
+
+    open_too = dataclasses.replace(custom, auth=AuthRequirement(((), ("portal",))))
+    check = named._login(Api("A", "1", (open_too,)), "portal", refuse, None, where("", "d"))
+    assert check.detail.endswith("get_me also answers anonymous callers")
+
+
+def test_doctor_unverifiable_answers_from_a_picked_probe() -> None:
+    def redirect(operation: str, scheme: str) -> object:
+        raise ApiError(operation, 301, None, None, location="/canonical?key=SECRET")
+
+    login = {c.check: c for c in _doctor(_me_api(scheme=BEARER), call=redirect)}["login: portal"]
+    assert (login.detail, login.code, login.fix) == (
+        "not verified: GET /me redirected (HTTP 301)",
+        1,
+        "",
+    )
+
+    def issuer_down(operation: str, scheme: str) -> object:
+        error = AuthError("token endpoint failed with HTTP 503")
+        error.upstream = True
+        raise error
+
+    login = {c.check: c for c in _doctor(_me_api(scheme=BEARER), call=issuer_down)}["login: portal"]
+    assert (login.code, login.fix) == (1, "")
+    assert login.detail.startswith("not verified: GET /me: token endpoint")
+
+
+def test_doctor_refuses_an_old_check_that_writes() -> None:
+    writes = _op("reset_me", "POST", "/me/reset")
+    api = Api("A", "1", (writes,), auth_schemes=(BEARER,), servers=(Server("https://a.test"),))
+
+    def call(operation: str, scheme: str) -> object:
+        raise AssertionError("a write must never be called")
+
+    rows = {c.check: c for c in _doctor(api, call=call, sessions={"portal": "reset_me"})}
+    assert rows["login: portal"].detail == (
+        "cli.auth.portal.check: reset_me changes data; choose one that only reads"
+    )
+
+
+def test_doctor_403_on_a_picked_probe_is_not_a_bad_login() -> None:
+    def forbid(operation: str, scheme: str) -> object:
+        raise ApiError(operation, 403, None, None)
+
+    rows = {c.check: c for c in _doctor(_me_api(scheme=BEARER), call=forbid)}
+    login = rows["login: portal"]
+    assert (login.status, login.code, login.fix) == ("fail", 1, "")
+    assert "refused access (HTTP 403)" in login.detail
+    assert cli_tools.doctor_exit_code(list(rows.values())) == 1
+
+
+@pytest.mark.parametrize(
+    ("path", "name", "caller"),
+    [
+        ("/user", "get_user", True),
+        ("/myself", "get_myself", True),
+        ("/user/current", "get_current", True),
+        ("/me/subscription", "get_subscription", False),
+        ("/featured-user", "get_featured_user", False),
+        ("/users/{user}", "get_user", False),
+        ("/users/current", "get_current", True),
+        ("", "get_myself", True),
+        ("", "get_featured_user", False),
+        ("/subscriptions/current", "get_current", False),
+        ("/users/{id}", "get_user", False),
+        ("/", "get_root", False),
+        ("", "viewer", True),
+        ("", "viewer_plans", False),
+    ],
+)
+def test_about_caller(path: str, name: str, caller: bool) -> None:
+    method = "GQL" if not path else "GET"
+    assert cli_tools._about_caller(_op(name, method, path)) is caller
+
+
+def test_doctor_dry_run_sends_no_credentials() -> None:
+    def call(operation: str, scheme: str) -> object:
+        raise AssertionError("no call expected")
+
+    checks = _doctor(_me_api(scheme=BEARER), call=call, dry_run=True)
+    assert {c.check: c for c in checks}["login: portal"].detail.startswith("skipped (--dry-run")
+
+
+def test_doctor_counts_an_oversized_answer_as_reachable() -> None:
+    def send(client: object, request: HttpRequest) -> HttpResponse:
+        raise ResponseTooLargeError(5)
+
+    check = cli_tools.Doctor(
+        program="acme",
+        version="1",
+        env_prefix="ACME",
+        env={},
+        load_model=_me_api,
+        settings=lambda: ({}, {}),
+        config_status=lambda: cli_tools.Check("settings file", "info", "none"),
+        send=send,
+    )._connect("https://a.test", {})
+    assert (check.status, check.detail) == (
+        "ok",
+        "reached https://a.test: response exceeds the size limit",
+    )
 
 
 def test_generated_cli_doctor_checks_the_saved_session() -> None:
@@ -581,7 +911,12 @@ def test_generated_cli_doctor_checks_the_saved_session() -> None:
 
             assert runtime.main(parser, lambda o: None, lambda: api, ["doctor"], stdout=out) == code
             rows = {row["check"]: row for row in json.loads(out.getvalue())}
-            assert rows["session: portal"]["status"] == ("ok" if code == 0 else "fail")
+            assert rows["login: portal"]["status"] == ("ok" if code == 0 else "fail")
+            table = io.StringIO()
+            argv = ["doctor", "-o", "table"]
+            assert runtime.main(parser, lambda o: None, lambda: api, argv, stdout=table) == code
+            fix = "\nlogin: portal: replace the credential from environment (ACME_PORTAL)\n"
+            assert (fix in table.getvalue()) == (code == 3)
 
 
 def test_generator_validates_the_session_check_operation() -> None:
@@ -592,7 +927,21 @@ def test_generator_validates_the_session_check_operation() -> None:
         (Param("key", t.Primitive(t.ScalarKind.STRING), required=True),),
         None,
     )
-    api = Api("A", "1", (*api.operations, needs), auth_schemes=(TOKEN,))
+    portal = AuthRequirement((("portal",),))
+    writes = Operation("reset_me", OperationKind.MUTATION, (), None, auth=portal)
+    posts = Operation(
+        "find_me",
+        OperationKind.QUERY,
+        (),
+        None,
+        bindings=(HttpBinding("POST", "/find", (), ()),),
+        auth=portal,
+    )
+    anonymous = Operation("ping", OperationKind.QUERY, (), None)
+    peek = Operation("peek", OperationKind.QUERY, (), None, auth=AuthRequirement(((), ("portal",))))
+    api = Api(
+        "A", "1", (*api.operations, needs, writes, posts, anonymous, peek), auth_schemes=(TOKEN,)
+    )
 
     def request(auth: object) -> GenerationRequest:
         return GenerationRequest(
@@ -603,10 +952,15 @@ def test_generator_validates_the_session_check_operation() -> None:
         assert _auth_config(request({"portal": {"check": spelling}})) == {
             "portal": {"check": "get_myself"}
         }
+    assert _auth_config(request({"portal": {"check": False}})) == {"portal": {"check": False}}
     for bad, message in [
         ({"portal": {"check": 3}}, "must name an operation"),
         ({"portal": {"check": "whoami"}}, "no operation named 'whoami'"),
         ({"portal": {"check": "get-issue"}}, r"get_issue needs arguments \(key\)"),
+        ({"portal": {"check": "reset_me"}}, "reset_me changes data"),
+        ({"portal": {"check": "find_me"}}, "find_me changes data"),
+        ({"portal": {"check": "ping"}}, "ping does not accept portal on its own"),
+        ({"portal": {"check": "peek"}}, "peek also answers anonymous callers"),
     ]:
         with pytest.raises(PluginError, match=message):
             _auth_config(request(bad))

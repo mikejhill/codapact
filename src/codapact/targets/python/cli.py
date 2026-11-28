@@ -15,7 +15,7 @@ from pathlib import Path
 from codapact.commands.model import Arg, ArgKind, Command, CommandTree, Group
 from codapact.core.errors import PluginError, expect
 from codapact.core.naming import Name, env_variable
-from codapact.model.api import Api, AuthKind
+from codapact.model.api import Api, AuthKind, login_check_problem
 from codapact.model.types import ListOf, Nullable, Record, Ref, ScalarKind, TypeExpr
 from codapact.plugins.protocol import GeneratedFile, GenerationRequest, GenerationResponse
 from codapact.targets.python.e2e import render_suite
@@ -246,11 +246,13 @@ def _spelling(name: str) -> str:
     return re.sub(r"[^0-9a-z]", "", name.lower())
 
 
-def _check_operation(request: GenerationRequest, scheme: str, raw: object) -> str:
+def _check_operation(request: GenerationRequest, scheme: str, raw: object) -> str | bool:
     """Resolve ``cli.auth.<scheme>.check``: an operation ``doctor`` calls without arguments."""
     where = f"cli.auth.{scheme}.check"
+    if raw is False:
+        return False  # doctor skips the login check for this scheme
     if not isinstance(raw, str) or not raw:
-        raise PluginError(f"{where} must name an operation")
+        raise PluginError(f"{where} must name an operation, or be false to skip the check")
     wanted = _spelling(raw)
     found = [op for op in request.api.operations if op.name == raw or _spelling(op.name) == wanted]
     if not found:
@@ -262,6 +264,9 @@ def _check_operation(request: GenerationRequest, scheme: str, raw: object) -> st
             f"{where}: {operation.name} needs arguments ({', '.join(needed)}); "
             "choose an operation that runs without any"
         )
+    problem = login_check_problem(operation, scheme)
+    if problem:
+        raise PluginError(f"{where}: {operation.name} {problem}")
     return operation.name
 
 

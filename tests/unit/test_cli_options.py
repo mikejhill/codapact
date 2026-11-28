@@ -187,7 +187,7 @@ def test_builtin_commands_shape() -> None:
     runtime().add_builtins(commands)
     assert {c.dest: c.help for c in commands._choices_actions} == {
         "describe": "describe commands as JSON: arguments, types, flags (for agents and scripts)",
-        "doctor": "check version, settings, credentials, and connectivity",
+        "doctor": "check settings, credentials, connectivity, and that the login works",
         "completion": "print a shell completion script",
         "auth": "sign in, sign out, and inspect credentials",
     }
@@ -230,11 +230,13 @@ def test_builtin_commands_shape() -> None:
         **hidden(GLOBALS),
     }
     doctor = commands.choices["doctor"]
-    assert (doctor.description or "").startswith("Diagnose configuration problems. Exits 0")
+    assert (doctor.description or "").startswith(
+        "Diagnose configuration problems and make one signed-in call"
+    )
     assert shape(doctor) == {
         ("--offline",): (
             "offline",
-            "skip the network check",
+            "skip the network and login checks",
             None,
             None,
             False,

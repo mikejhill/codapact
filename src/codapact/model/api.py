@@ -304,3 +304,18 @@ class Api:
             if scheme.name == name:
                 return scheme
         raise KeyError(name)
+
+
+def login_check_problem(operation: Operation, scheme: str) -> str | None:
+    """Why ``operation`` cannot prove ``scheme``'s credential works (``doctor``), or None.
+
+    It must only read, accept ``scheme`` on its own, and refuse anonymous callers.
+    """
+    http = operation.binding(HttpBinding)
+    if operation.kind is not OperationKind.QUERY or (http and http.method.upper() != "GET"):
+        return "changes data; choose one that only reads"
+    if (scheme,) not in operation.auth.alternatives:
+        return f"does not accept {scheme} on its own"
+    if operation.auth.anonymous_allowed:
+        return "also answers anonymous callers"
+    return None

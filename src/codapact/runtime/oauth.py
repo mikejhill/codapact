@@ -640,7 +640,9 @@ class TokenEndpoint:
         form, headers = (client or ClientAuth("")).apply(dict(form))
         status, data = self.post(url, form, headers)
         if status >= 400 or "error" in data:
-            raise AuthError(_oauth_error(data, status))
+            error = AuthError(_oauth_error(data, status))
+            error.upstream = status >= 500 or status == 429  # outage or rate limit
+            raise error
         return Token.from_response(data, self.clock())
 
     def discover(self, url: str) -> dict[str, Any]:
@@ -1025,7 +1027,9 @@ class OAuth2:
             fresh = self._endpoint.token(
                 self.refresh_url or self.grant.token_url, form, self.grant.client
             )
-        except (AuthError, CodapactError):
+        except CodapactError as error:
+            if isinstance(error, AuthError) and error.upstream:
+                raise  # the token service failed; the saved login may still be good
             return None
         if fresh.refresh_token is None:
             fresh = replace(fresh, refresh_token=token.refresh_token)

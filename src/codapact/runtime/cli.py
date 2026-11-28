@@ -8,6 +8,7 @@ code an error maps to) lives here so every generated CLI behaves the same.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import difflib
 import getpass
 import importlib.metadata
@@ -36,7 +37,7 @@ from codapact.core.errors import (
     TransportError,
 )
 from codapact.core.net import HttpRequest, HttpResponse, SafeHttpClient
-from codapact.model.api import Api, AuthKind, AuthScheme
+from codapact.model.api import Api, AuthKind, AuthRequirement, AuthScheme
 from codapact.runtime import cli_auth, cli_tools
 from codapact.runtime import skill as skills
 from codapact.runtime.abstractions import CallContext, Credential, Next, Secret
@@ -412,7 +413,7 @@ class CliRuntime:
         lines += [f"  {example}" for example in examples]
         lines += [
             f"  {p} describe                  list every command as JSON (for agents)",
-            f"  {p} doctor                    check settings, credentials, connectivity",
+            f"  {p} doctor                    check settings, credentials, connectivity, login",
             f"  {p} completion bash|zsh|fish|powershell",
             *([f"  {p} skill install --dir ~/.agents/skills"] if self.skill else []),
             "",
@@ -584,12 +585,15 @@ class CliRuntime:
         if "doctor" not in taken:
             sub = commands.add_parser(
                 "doctor",
-                help="check version, settings, credentials, and connectivity",
-                description="Diagnose configuration problems. Exits 0 when ready, 3 when "
+                help="check settings, credentials, connectivity, and that the login works",
+                description="Diagnose configuration problems and make one signed-in call to "
+                "prove the server accepts the credential. Exits 0 when ready, 3 when "
                 "credentials are missing or rejected, 4 when the API is unreachable, and 1 "
                 "when another check fails.",
             )
-            sub.add_argument("--offline", action="store_true", help="skip the network check")
+            sub.add_argument(
+                "--offline", action="store_true", help="skip the network and login checks"
+            )
             self.add_global_options(sub, hidden=True)
             sub.set_defaults(builtin="doctor")
         if "completion" not in taken:
@@ -1127,25 +1131,44 @@ class CliRuntime:
                     compact=self.compact_json(args, out),
                 )
                 return EXIT_OK
+            resolved: list[tuple[dict[str, Any], dict[str, str]]] = []
+
+            def settings() -> tuple[dict[str, Any], dict[str, str]]:
+                # Resolved once: the login probe reuses the credential chain doctor inspected,
+                # so a password-manager command runs (and prompts) only once.
+                if not resolved:
+                    resolved.append(self.resolve(args))
+                return resolved[0]
+
             doctor = cli_tools.Doctor(
                 program=self.program,
                 version=self.program_version,
                 env_prefix=self.env_prefix,
                 env=self.env,
                 load_model=load_model,
-                settings=lambda: self.resolve(args),
+                settings=settings,
+                dry_run=bool(getattr(args, "dry_run", False)),
                 config_status=lambda: self._config_check(getattr(args, "config", None)),
                 sessions={
-                    name: str(spec["check"])
+                    name: str(spec["check"]) if spec["check"] else None
                     for name, spec in (self.auth_config or {}).items()
-                    if spec.get("check")
+                    if "check" in spec
                 },
-                call=lambda operation: self._probe(args, load_model(), operation),
+                call=lambda operation, scheme: self._probe(
+                    args, load_model(), operation, scheme, resolved=settings()[0]
+                ),
             )
             checks = doctor.run(offline=args.offline)
             rows = [c.as_dict() for c in checks]
             fmt = self.output_format(args, "table" if out.isatty() else "json")
-            render(rows, fmt, out, compact=self.compact_json(args, out))
+            if fmt == "table":
+                # Table cells are cut short; each fix is printed in full below the table.
+                render([{k: v for k, v in r.items() if k != "fix"} for r in rows], fmt, out)
+                for check in checks:
+                    if check.fix:
+                        out.write(f"\n{check.check}: {check.fix}\n")
+            else:
+                render(rows, fmt, out, compact=self.compact_json(args, out))
             return cli_tools.doctor_exit_code(checks)
         except CodapactError as error:
             return emit_error(self.program, "usage", str(error), EXIT_USAGE, err)
@@ -1199,9 +1222,9 @@ class CliRuntime:
         """Return the steps an agent or script follows to start using this CLI."""
         p = self.program
         steps = [
-            f"Run {p} doctor once per session. Exit 0 means ready; 3 means credentials are "
-            "missing or rejected; 4 means the API is unreachable; 1 means another check "
-            "failed. Each row's detail says how to fix it.",
+            f"Run {p} doctor once per session; it makes one signed-in call (the login row). "
+            "Exit 0 means ready; 3 means credentials are missing or rejected; 4 means the API "
+            "is unreachable; 1 means another check failed. Each row's detail says how to fix it.",
         ]
         if api.auth_schemes:
             steps.append(
@@ -1306,14 +1329,38 @@ class CliRuntime:
                 found[f"{variable}_SCOPES"] = f"OAuth scopes for {scheme.name}"
         return found
 
-    def _probe(self, args: argparse.Namespace, api: Api, operation: str) -> Any:
-        """Call ``operation`` without arguments, as a command would, ignoring the result."""
-        options = self._client_options(args, io.StringIO())
+    def _probe(
+        self,
+        args: argparse.Namespace,
+        api: Api,
+        operation: str,
+        scheme: str | None = None,
+        *,
+        resolved: Mapping[str, Any] | None = None,
+    ) -> Any:
+        """Call ``operation`` without arguments, as a command would, and return the result.
+
+        With ``scheme``, the call sends that credential alone, so each ``login`` row of
+        ``doctor`` proves its own scheme. ``resolved`` reuses settings already resolved, so
+        the credential goes to the destination doctor checked and commands run only once.
+        """
+        options = self._client_options(args, io.StringIO(), resolved)
         options["response_validation"] = "off"
+        if scheme is not None:
+            only = AuthRequirement(((scheme,),))
+            api = dataclasses.replace(
+                api,
+                operations=tuple(
+                    dataclasses.replace(op, auth=only) if op.name == operation else op
+                    for op in api.operations
+                ),
+            )
         return RuntimeClient(api, protocols=self.protocols, **options).call(operation, {})
 
-    def _client_options(self, args: argparse.Namespace, err: TextIO) -> dict[str, Any]:
-        options = self.settings(args)
+    def _client_options(
+        self, args: argparse.Namespace, err: TextIO, resolved: Mapping[str, Any] | None = None
+    ) -> dict[str, Any]:
+        options = dict(resolved) if resolved is not None else self.settings(args)
         # The CLI builds the transport so the response cap also applies to clients
         # generated before ``max_response_bytes`` existed.
         options["transport"] = SafeHttpClient(
