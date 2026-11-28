@@ -17,9 +17,9 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from codapact import __version__
-from codapact.core.errors import CodapactError, TransportError
+from codapact.core.errors import CodapactError, ResponseTooLargeError, TransportError
 from codapact.core.net import HttpRequest, SafeHttpClient, validate_url
-from codapact.model.api import Api, HttpBinding, Operation, OperationKind
+from codapact.model.api import Api, CustomBinding, HttpBinding, Operation, OperationKind
 from codapact.model.types import (
     Enum,
     ListOf,
@@ -566,46 +566,67 @@ def _words(text: str) -> list[str]:
     return [w for w in re.split(r"[^0-9a-z]+", spaced.lower()) if w]
 
 
+# Wrappers a response may put the caller's record under (``{"data": {"user": {...}}}``).
+_IDENTITY_WRAPPERS = (
+    "data",
+    "result",
+    "user",
+    "me",
+    "myself",
+    "viewer",
+    "currentUser",
+    "current_user",
+    "account",
+    "profile",
+)
+
+
 def _runs_bare(operation: Operation) -> bool:
     return all(not p.required or p.default is not None for p in operation.params)
+
+
+def _identity_rank(operation: Operation) -> int:
+    """Rank how surely ``operation`` is about the caller: lower is surer, ``-1`` is not."""
+    http = operation.binding(HttpBinding)
+    segments = [s for s in (http.path.split("/") if http else []) if s]
+    last = _words(segments[-1]) if segments and not segments[-1].startswith("{") else []
+    named = _words(operation.name)
+    ranks = [i for i, word in enumerate(_IDENTITY_WORDS) if word in last or "".join(last) == word]
+    ranks += [len(_IDENTITY_WORDS) + i for i, word in enumerate(_IDENTITY_WORDS) if word in named]
+    return min(ranks, default=-1)
 
 
 def login_check_operation(api: Api, scheme: str) -> str | None:
     """Pick the operation ``doctor`` calls to prove ``scheme``'s credential works.
 
-    It must be a query (over HTTP, a ``GET``), run without arguments, and refuse
-    anonymous callers while accepting ``scheme``. Operations about the signed-in identity
-    (``GET /user``, ``/myself``, ``viewer``) come first, then the shortest path.
+    It must be a query (over HTTP, a ``GET``) that runs without arguments, refuses
+    anonymous callers, and accepts ``scheme`` on its own. Operations about the signed-in
+    identity (``GET /user``, ``/myself``, ``viewer``) come first, then the shortest path.
     """
     ranked: list[tuple[int, int, int, str]] = []
     for operation in api.operations:
-        alternatives = operation.auth.alternatives
         if (
             operation.kind is not OperationKind.QUERY
             or operation.auth.anonymous_allowed
-            or not any(scheme in alternative for alternative in alternatives)
+            or (scheme,) not in operation.auth.alternatives
             or not _runs_bare(operation)
         ):
             continue
         http = operation.binding(HttpBinding)
         if http is not None and http.method.upper() != "GET":
             continue
-        segments = [s for s in (http.path.split("/") if http else []) if s]
-        literal = [s for s in segments if not s.startswith("{")]
-        last = _words(literal[-1]) if literal and segments[-1] == literal[-1] else []
-        named = _words(operation.name)
-        rank = len(_IDENTITY_WORDS) * 2
-        for index, word in enumerate(_IDENTITY_WORDS):
-            if word in last or "".join(last) == word:
-                rank = min(rank, index)
-            elif word in named:
-                rank = min(rank, len(_IDENTITY_WORDS) + index)
-        ranked.append((rank, len(segments), len(operation.name), operation.name))
+        rank = _identity_rank(operation)
+        depth = len([s for s in http.path.split("/") if s]) if http else 0
+        ranked.append((rank if rank >= 0 else 99, depth, len(operation.name), operation.name))
     return min(ranked)[3] if ranked else None
 
 
 def identity(result: Any, depth: int = 0) -> str | None:
-    """Find who signed in from a response (``data.user.id``, ``emailAddress``, ``login``)."""
+    """Find who signed in from a response (``data.user.id``, ``emailAddress``, ``login``).
+
+    Only the top level and caller wrappers (``data``, ``user``, ``viewer``, ...) are read,
+    so an owner or author nested in the record is never taken for the caller.
+    """
     if not isinstance(result, Mapping) or depth > 3:
         return None
     for key in _IDENTITY_KEYS:
@@ -613,16 +634,21 @@ def identity(result: Any, depth: int = 0) -> str | None:
         if isinstance(value, (str, int)) and not isinstance(value, bool) and str(value):
             text = str(value)
             return f"{key} {text[:60]}{'...' if len(text) > 60 else ''}"
-    for value in result.values():
-        found = identity(value, depth + 1)
+    for key in _IDENTITY_WRAPPERS:
+        found = identity(result.get(key), depth + 1)
         if found:
             return found
     return None
 
 
-def _operation_label(api: Api, name: str) -> str:
-    operation = next((op for op in api.operations if op.name == name), None)
-    http = operation.binding(HttpBinding) if operation is not None else None
+def _operation(api: Api, name: str) -> Operation | None:
+    return next((op for op in api.operations if op.name == name), None)
+
+
+def _operation_label(operation: Operation | None, name: str) -> str:
+    if operation is None or operation.binding(CustomBinding) is not None:
+        return name  # a custom protocol handler, not the modeled HTTP route, sends it
+    http = operation.binding(HttpBinding)
     return f"{http.method.upper()} {http.path}" if http is not None else name
 
 
@@ -643,8 +669,8 @@ class Doctor:
 
     ``None`` turns the check off; a scheme left out gets :func:`login_check_operation`.
     """
-    call: Callable[[str], Any] | None = None
-    """Call an operation by name, without arguments, with the resolved settings."""
+    call: Callable[[str, str], Any] | None = None
+    """Call an operation by name, without arguments, sending only the named scheme."""
 
     def run(self, *, offline: bool) -> list[Check]:
         """Run every check; network checks are skipped when ``offline``."""
@@ -699,19 +725,34 @@ class Doctor:
                 reason = "skipped (--offline)"
             elif connect is not None and connect.status == "fail":
                 reason = "skipped (API unreachable)"
-            checks.extend(self._login(api, scheme, self.call, reason) for scheme in usable)
+            sources = {
+                # "from environment (YNAB_BEARER) (bearer)": the source, without the kind.
+                c.check.removeprefix("credentials: "): c.detail.removeprefix("from ").rsplit(
+                    " (", 1
+                )[0]
+                for c in credentials
+            }
+            checks.extend(
+                self._login(api, scheme, self.call, reason, sources.get(scheme, ""))
+                for scheme in usable
+            )
         return checks
 
     def _login(
-        self, api: Api, scheme: str, call: Callable[[str], Any], skipped: str | None
+        self,
+        api: Api,
+        scheme: str,
+        call: Callable[[str, str], Any],
+        skipped: str | None,
+        source: str,
     ) -> Check:
         """Make an authenticated call: proves the server accepts the credential."""
         label = f"login: {scheme}"
         sessions = self.sessions or {}
         if scheme in sessions and sessions[scheme] is None:
             return Check(label, "skip", f"not checked (cli.auth.{scheme}.check is off)")
-        operation = sessions.get(scheme) or login_check_operation(api, scheme)
-        if operation is None:
+        name = sessions.get(scheme) or login_check_operation(api, scheme)
+        if name is None:
             return Check(
                 label,
                 "warn",
@@ -720,22 +761,35 @@ class Doctor:
             )
         if skipped:
             return Check(label, "skip", skipped)
-        where = _operation_label(api, operation)
-        relogin = f"sign in again: {self.program} auth login"
+        operation = _operation(api, name)
+        where = _operation_label(operation, name)
+        fix = self._relogin(api, scheme, source)
         try:
-            result = call(operation)
+            result = call(name, scheme)
         except AuthError as error:
-            return Check(label, "fail", f"{where}: {error}; {relogin}")
+            return Check(label, "fail", f"{where}: {error}; {fix}")
         except ApiError as error:
             if error.status in (401, 403) or 300 <= error.status < 400:
-                return Check(label, "fail", f"rejected by {where}: {error}; {relogin}")
+                return Check(label, "fail", f"rejected by {where}: {error}; {fix}")
+            return Check(label, "fail", f"not verified: {where}: {error}", code=1)
+        except ResponseTooLargeError as error:
+            # The server answered; the answer was just too big to read.
             return Check(label, "fail", f"not verified: {where}: {error}", code=1)
         except TransportError as error:
             return Check(label, "fail", f"not verified: {where}: {error}", code=4)
         except CodapactError as error:
             return Check(label, "fail", f"not verified: {where}: {error}", code=1)
-        who = identity(result)
+        # Name the caller only when the call is about the caller (GET /user, /myself).
+        about_caller = operation is not None and _identity_rank(operation) >= 0
+        who = identity(result) if about_caller else None
         return Check(label, "ok", f"accepted by {where}" + (f" as {who}" if who else ""))
+
+    def _relogin(self, api: Api, scheme: str, source: str) -> str:
+        """Say how to replace the refused credential, where it actually comes from."""
+        if source.startswith(("saved", "browser session")) or not source:
+            flag = f" --scheme {scheme}" if len(api.auth_schemes) > 1 else ""
+            return f"sign in again: {self.program} auth login{flag}"
+        return f"replace the credential from {source}"
 
     def _base_url(
         self, checks: list[Check], url: str, source: str, options: Mapping[str, Any]

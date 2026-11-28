@@ -15,7 +15,13 @@ from typing import Any
 
 import pytest
 
-from codapact.core.errors import ConfigError, ContractError, PluginError, TransportError
+from codapact.core.errors import (
+    ConfigError,
+    ContractError,
+    PluginError,
+    ResponseTooLargeError,
+    TransportError,
+)
 from codapact.core.net import HttpRequest, HttpResponse, SafeHttpClient, tls_context
 from codapact.model import types as t
 from codapact.model.api import (
@@ -23,6 +29,7 @@ from codapact.model.api import (
     AuthKind,
     AuthRequirement,
     AuthScheme,
+    CustomBinding,
     HttpBinding,
     HttpParam,
     Operation,
@@ -533,11 +540,12 @@ def test_doctor_counts_a_redirect_as_reachable() -> None:
         (ApiError("get_myself", 500, None, None), "fail", "not verified: GET /me: get_myself", 1),
         (ValidationError("x", "bad"), "fail", "not verified: GET /me: x: bad", 1),
         (TransportError("refused"), "fail", "not verified: GET /me: refused", 4),
+        (ResponseTooLargeError(9), "fail", "not verified: GET /me: response exceeds 9 bytes", 1),
     ],
 )
 def test_doctor_login_check(raised: Exception | None, status: str, detail: str, code: int) -> None:
-    def call(operation: str) -> object:
-        assert operation == "get_myself"
+    def call(operation: str, scheme: str) -> object:
+        assert (operation, scheme) == ("get_myself", "portal")
         if raised is not None:
             raise raised
         return {"data": {"user": {"name": "me", "active": True}}}
@@ -557,7 +565,7 @@ def test_doctor_login_check(raised: Exception | None, status: str, detail: str, 
     login = {c.check: c for c in checks}["login: portal"]
     assert login.status == status and detail in login.detail
     if code == 3:
-        assert login.detail.endswith("sign in again: acme auth login")
+        assert login.detail.endswith("replace the credential from environment (ACME_PORTAL)")
     assert "login: other" not in {c.check for c in checks}
     assert cli_tools.doctor_exit_code(checks) == code
 
@@ -584,7 +592,7 @@ def _doctor(api: Api, *, connect: int | None = 200, **kwargs: Any) -> list[cli_t
 def test_doctor_picks_a_login_check_without_configuration() -> None:
     calls: list[str] = []
 
-    def call(operation: str) -> object:
+    def call(operation: str, scheme: str) -> object:
         calls.append(operation)
         return {"data": {"user": {"id": "u-1"}}}
 
@@ -596,7 +604,7 @@ def test_doctor_picks_a_login_check_without_configuration() -> None:
 
 
 def test_doctor_login_check_skips_offline_unreachable_and_off() -> None:
-    def call(operation: str) -> object:
+    def call(operation: str, scheme: str) -> object:
         raise AssertionError("no call expected")
 
     api = _me_api(scheme=BEARER)
@@ -625,7 +633,7 @@ def test_doctor_login_check_warns_without_a_usable_operation() -> None:
         me.name, me.kind, me.params, me.result, bindings=me.bindings, auth=AuthRequirement(((),))
     )
     api = Api("A", "1", (anonymous,), auth_schemes=(BEARER,), servers=api.servers)
-    rows = {c.check: c for c in _doctor(api, call=lambda op: None)}
+    rows = {c.check: c for c in _doctor(api, call=lambda op, scheme: None)}
     assert rows["login: portal"].status == "warn"
     assert "cli.auth.portal.check" in rows["login: portal"].detail
     assert cli_tools.doctor_exit_code(list(rows.values())) == 0
@@ -686,6 +694,14 @@ def test_login_check_operation_prefers_identity_reads() -> None:
     )
     assert cli_tools.login_check_operation(Api("A", "1", current), "portal") == "get_current"
     assert cli_tools.login_check_operation(Api("A", "1", ops[2:5]), "portal") is None
+    either = AuthRequirement((("other",), ("portal",)))
+    both = AuthRequirement((("portal", "other"),))
+    paired = (
+        _op("get_me", "GET", "/me", auth=both),
+        _op("get_plans", "GET", "/plans", auth=either),
+    )
+    assert cli_tools.login_check_operation(Api("A", "1", paired), "portal") == "get_plans"
+    assert cli_tools.login_check_operation(Api("A", "1", paired[:1]), "portal") is None
 
 
 def test_identity_finds_who_signed_in() -> None:
@@ -694,7 +710,50 @@ def test_identity_finds_who_signed_in() -> None:
     assert cli_tools.identity({"login": "x" * 70}) == f"login {'x' * 60}..."
     assert cli_tools.identity({"id": True, "flags": [1]}) is None
     assert cli_tools.identity(["not", "a", "record"]) is None
-    assert cli_tools.identity({"a": {"b": {"c": {"d": {"e": {"id": 1}}}}}}) is None
+    assert cli_tools.identity({"data": {"data": {"data": {"data": {"data": {"id": 1}}}}}}) is None
+    assert cli_tools.identity({"plan": {"owner": {"id": 1}}}) is None
+
+
+def test_doctor_names_the_caller_only_for_identity_calls() -> None:
+    plans = _op("list_plans", "GET", "/plans")
+    api = Api("A", "1", (plans,), auth_schemes=(BEARER,), servers=(Server("https://a.test"),))
+    rows = {c.check: c for c in _doctor(api, call=lambda op, scheme: {"id": "p-17"})}
+    assert rows["login: portal"].detail == "accepted by GET /plans"
+
+
+def test_doctor_login_labels_and_sign_in_hints() -> None:
+    custom = Operation(
+        "get_me",
+        OperationKind.QUERY,
+        (),
+        None,
+        bindings=(
+            CustomBinding("rpc"),
+            HttpBinding("GET", "/me", (), ()),
+        ),
+        auth=AuthRequirement((("portal",),)),
+    )
+    other = AuthScheme("other", AuthKind.BEARER)
+    api = Api("A", "1", (custom,), auth_schemes=(BEARER, other))
+    doctor = cli_tools.Doctor(
+        program="acme",
+        version="1",
+        env_prefix="ACME",
+        env={},
+        load_model=lambda: api,
+        settings=lambda: ({}, {}),
+        config_status=lambda: cli_tools.Check("settings file", "info", "none"),
+    )
+
+    def refuse(operation: str, scheme: str) -> object:
+        raise ApiError("get_me", 401, None, None)
+
+    check = doctor._login(api, "portal", refuse, None, "saved login (keyring)")
+    assert check.detail.startswith("rejected by get_me: ")
+    assert check.detail.endswith("sign in again: acme auth login --scheme portal")
+    single = Api("A", "1", (custom,), auth_schemes=(BEARER,))
+    check = doctor._login(single, "portal", refuse, None, "")
+    assert check.detail.endswith("sign in again: acme auth login")
 
 
 def test_generated_cli_doctor_checks_the_saved_session() -> None:
@@ -720,7 +779,8 @@ def test_generated_cli_doctor_checks_the_saved_session() -> None:
                 runtime.add_builtins(commands)
                 return root
 
-            assert runtime.main(parser, lambda o: None, lambda: api, ["doctor"], stdout=out) == code
+            argv = ["doctor", "--dry-run"] if code == 0 else ["doctor"]
+            assert runtime.main(parser, lambda o: None, lambda: api, argv, stdout=out) == code
             rows = {row["check"]: row for row in json.loads(out.getvalue())}
             assert rows["login: portal"]["status"] == ("ok" if code == 0 else "fail")
 

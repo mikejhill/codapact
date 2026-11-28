@@ -408,10 +408,12 @@ person how to get the credential (shown in `describe` under `auth`, e.g. "Create
 access token under Account Settings > Developer Settings"); `check` names an operation that
 needs no arguments (any spelling, e.g. `getCurrentUser`) which `doctor` calls to prove the
 credential works; `check: false` turns the call off. Without `check`, `doctor` picks a query
-(over HTTP, a `GET`) that runs without arguments and needs this scheme, preferring one about
+(over HTTP, a `GET`) that runs without arguments and accepts this scheme on its own, preferring one about
 the signed-in identity (`/user`, `/me`, `/myself`, `viewer`, `.../current`), then the shortest
-path. A 401, 403, redirect or `expired()` fails the `login: <scheme>` check with exit code 3;
-any other error fails it as "not verified" (exit 4 when the API is unreachable, else 1). When
+path. The call sends only that scheme's credential. A 401, 403, redirect or `expired()` fails
+the `login: <scheme>` check with exit code 3 and says where to replace the credential;
+any other error fails it as "not verified" (exit 4 when the API is unreachable, else 1).
+The row names the caller (`as id ...`) only when the call is about the caller. When
 no operation qualifies, the row warns and asks for a `check`.
 `auth login` picks a flow in this order: `--flow`, then client credentials when a secret is
 set, then device code, then authorization code with PKCE.

@@ -232,6 +232,11 @@ def test_graphql_errors_surface() -> None:
     client, _ = library_client(lambda r: json_response(500, {"data": None}))
     with pytest.raises(ApiError):
         client.call("dashboard", {})
+    refused = {"data": None, "errors": [{"message": "unauthorized"}]}
+    client, _ = library_client(lambda r: json_response(401, refused))
+    with pytest.raises(ApiError) as caught:
+        client.call("dashboard", {})
+    assert caught.value.status == 401
 
 
 # ---------------------------------------------------------------- helpers and cli runtime

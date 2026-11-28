@@ -57,6 +57,9 @@ class GraphQLAdapter:
             raise ApiError(operation.name, response.status, None, document)
         errors = document.get("errors")
         data = document.get("data")
+        if errors and response.status in (401, 403):
+            # The HTTP status says the credential was refused; keep it for callers.
+            raise ApiError(operation.name, response.status, None, document)
         if errors:
             raise GraphQLResponseError(operation.name, list(errors), data)
         if not 200 <= response.status < 300 or data is None:

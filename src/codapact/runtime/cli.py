@@ -8,6 +8,7 @@ code an error maps to) lives here so every generated CLI behaves the same.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import difflib
 import getpass
 import importlib.metadata
@@ -36,7 +37,7 @@ from codapact.core.errors import (
     TransportError,
 )
 from codapact.core.net import HttpRequest, HttpResponse, SafeHttpClient
-from codapact.model.api import Api, AuthKind, AuthScheme
+from codapact.model.api import Api, AuthKind, AuthRequirement, AuthScheme
 from codapact.runtime import cli_auth, cli_tools
 from codapact.runtime.abstractions import CallContext, Credential, Next, Secret
 from codapact.runtime.auth import ChainAuth, EnvAuth, FunctionAuthenticator
@@ -1070,7 +1071,7 @@ class CliRuntime:
                     for name, spec in (self.auth_config or {}).items()
                     if "check" in spec
                 },
-                call=lambda operation: self._probe(args, load_model(), operation),
+                call=lambda operation, scheme: self._probe(args, load_model(), operation, scheme),
             )
             checks = doctor.run(offline=args.offline)
             rows = [c.as_dict() for c in checks]
@@ -1236,10 +1237,26 @@ class CliRuntime:
                 found[f"{variable}_SCOPES"] = f"OAuth scopes for {scheme.name}"
         return found
 
-    def _probe(self, args: argparse.Namespace, api: Api, operation: str) -> Any:
-        """Call ``operation`` without arguments, as a command would, ignoring the result."""
-        options = self._client_options(args, io.StringIO())
+    def _probe(
+        self, args: argparse.Namespace, api: Api, operation: str, scheme: str | None = None
+    ) -> Any:
+        """Call ``operation`` without arguments, as a command would, and return the result.
+
+        With ``scheme``, the call sends that credential alone, so each ``login`` row of
+        ``doctor`` proves its own scheme. ``--dry-run`` never applies: doctor is a live check.
+        """
+        live = argparse.Namespace(**{**vars(args), "dry_run": False})
+        options = self._client_options(live, io.StringIO())
         options["response_validation"] = "off"
+        if scheme is not None:
+            only = AuthRequirement(((scheme,),))
+            api = dataclasses.replace(
+                api,
+                operations=tuple(
+                    dataclasses.replace(op, auth=only) if op.name == operation else op
+                    for op in api.operations
+                ),
+            )
         return RuntimeClient(api, protocols=self.protocols, **options).call(operation, {})
 
     def _client_options(self, args: argparse.Namespace, err: TextIO) -> dict[str, Any]:
