@@ -368,13 +368,14 @@ $ uvx codapact-acme skill show          # print SKILL.md
 | --- | --- |
 | `true` | The standard thin coda skill ([create-coda-skill](../extras/agent-plugin/skills/create-coda-skill/SKILL.md) template) with a generic description |
 | `{description: TEXT, api_name: NAME}` | The same template with this description (decides when an agent loads the skill) and product name; both optional. `api_name` defaults to the contract title without a trailing `API` |
-| `{path: FILE_OR_DIR}` | A hand-written `SKILL.md`, or a folder holding one plus any other files, relative to `codapact.yaml`; copied as is |
+| `{path: FILE_OR_DIR}` | A hand-written `SKILL.md`, or a folder holding one plus other UTF-8 text files (no binary assets), relative to `codapact.yaml` and inside its directory; copied as is |
 
 `skill install --dir DIR` writes `DIR/NAME/`, where `NAME` is the skill's front-matter
 `name` (the program for the template), creating `DIR` if needed (`~` is expanded). It
 records what it wrote in `NAME/.codapact-skill.json`, so rerunning it after an update
 replaces an unmodified copy (`status: updated`, or `unchanged`), while a copy with local
-edits, or a folder it did not create, is left alone unless `--force` is given. `--dry-run`
+edits, a file at one of its paths that it did not write, or a folder another program
+created, is left alone unless `--force` is given. `--dry-run`
 reports the status without writing. The generated README gains an "Agent skill" section.
 
 ## Authentication
