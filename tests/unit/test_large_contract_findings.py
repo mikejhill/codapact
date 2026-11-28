@@ -731,6 +731,10 @@ def test_doctor_names_the_caller_only_for_identity_calls() -> None:
     user = _op("get_user", "GET", "/user")
     ranked = Api("A", "1", (current, user), auth_schemes=(BEARER,))
     assert cli_tools.login_check_operation(ranked, "portal") == "get_user"
+    featured = _op("get_featured_user", "GET", "/featured-user")
+    mine = _op("get_mine", "GET", "/user/current")
+    ranked = Api("A", "1", (featured, mine), auth_schemes=(BEARER,))
+    assert cli_tools.login_check_operation(ranked, "portal") == "get_mine"
 
 
 def test_doctor_login_labels_and_sign_in_hints() -> None:
@@ -838,6 +842,7 @@ def test_doctor_403_on_a_picked_probe_is_not_a_bad_login() -> None:
         ("/user/current", "get_current", True),
         ("/me/subscription", "get_subscription", False),
         ("/featured-user", "get_featured_user", False),
+        ("/users/{user}", "get_user", False),
         ("/users/current", "get_current", True),
         ("", "get_myself", True),
         ("", "get_featured_user", False),

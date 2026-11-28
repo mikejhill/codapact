@@ -532,6 +532,17 @@ def test_oauth2_falls_back_to_the_grant_and_respects_interactivity() -> None:
     assert inline.token().access_token == "t1"
 
 
+@pytest.mark.parametrize("status", [503, 429])
+def test_oauth2_refresh_keeps_token_service_failures(status: int) -> None:
+    clock = Clock()
+    down = FakeTransport(lambda r: json_response(status, {"error": "temporarily_unavailable"}))
+    session = OAuth2(Grant(), http=down, clock=clock)
+    session._save(Token("old", "Bearer", 1001.0, "r"))  # expired, with a refresh token
+    with pytest.raises(AuthError) as caught:
+        session.token()
+    assert caught.value.upstream is True
+
+
 def test_oauth2_refresh_after_401() -> None:
     clock = Clock()
     rotating = OAuth2(Grant(), http=refresh_server(rotate=True), clock=clock)

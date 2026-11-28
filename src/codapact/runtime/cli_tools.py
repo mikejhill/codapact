@@ -600,13 +600,19 @@ def _runs_bare(operation: Operation) -> bool:
 
 
 def _identity_rank(operation: Operation) -> int:
-    """Rank how surely ``operation`` is about the caller: lower is surer, ``-1`` is not."""
+    """Rank how surely ``operation`` is about the caller: lower is surer, ``-1`` is not.
+
+    A confirmed caller route (:func:`_about_caller`) beats any loose word match.
+    """
+    if _about_caller(operation):
+        return 0
     http = operation.binding(HttpBinding)
     segments = [s for s in (http.path.split("/") if http else []) if s]
     last = _words(segments[-1]) if segments and not segments[-1].startswith("{") else []
     named = _words(operation.name)
-    ranks = [i for i, word in enumerate(_IDENTITY_WORDS) if word in last or "".join(last) == word]
-    ranks += [len(_IDENTITY_WORDS) + i for i, word in enumerate(_IDENTITY_WORDS) if word in named]
+    count = len(_IDENTITY_WORDS)
+    ranks = [1 + i for i, word in enumerate(_IDENTITY_WORDS) if word in last]
+    ranks += [1 + count + i for i, word in enumerate(_IDENTITY_WORDS) if word in named]
     return min(ranks, default=-1)
 
 
@@ -628,8 +634,8 @@ def _about_caller(operation: Operation) -> bool:
             named = named[1:]
         return "".join(named) in _CALLER_WORDS
     segments = [s for s in http.path.split("/") if s]
-    if not segments:
-        return False
+    if not segments or segments[-1].startswith("{"):
+        return False  # "/users/{user}" reads whichever user the argument names
     last = "".join(_words(segments[-1]))
     if last in _CALLER_WORDS:
         return True

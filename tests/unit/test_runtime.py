@@ -241,9 +241,11 @@ def test_graphql_errors_surface() -> None:
     with pytest.raises(ApiError) as caught:
         client.call("dashboard", {})
     assert caught.value.status == 403
-    client, _ = library_client(lambda r: HttpResponse(302, {"Location": "/login"}, b""))
-    with pytest.raises(ApiError, match="redirected to /login"):
+    moved = HttpResponse(302, {"Location": "/login?key=SECRET"}, b"")
+    client, _ = library_client(lambda r: moved)
+    with pytest.raises(ApiError) as caught:
         client.call("dashboard", {})
+    assert caught.value.status == 302 and "SECRET" not in str(caught.value)
 
 
 # ---------------------------------------------------------------- helpers and cli runtime

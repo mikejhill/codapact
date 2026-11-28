@@ -56,7 +56,7 @@ class AuthError(ClientError):
     """No configured credentials satisfy the operation's auth requirement."""
 
     upstream: bool = False
-    """True when a token service failed (HTTP 5xx), not the credential itself."""
+    """True when a token service failed (HTTP 5xx or 429), not the credential itself."""
 
 
 class ApiError(ClientError):

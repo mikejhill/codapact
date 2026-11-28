@@ -59,8 +59,8 @@ class GraphQLAdapter:
                 payload = parse_json(response, operation.name)
             except Exception:  # noqa: BLE001 - an undecodable error body must not hide the status
                 payload = None
-            location = response.header("Location") if 300 <= response.status < 400 else None
-            raise ApiError(operation.name, response.status, None, payload, location=location)
+            # No redirect target: it may carry a signed URL or query-string credential.
+            raise ApiError(operation.name, response.status, None, payload)
         document = parse_json(response, operation.name)
         if not isinstance(document, dict):
             raise ApiError(operation.name, response.status, None, document)
