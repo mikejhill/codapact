@@ -19,7 +19,14 @@ from urllib.parse import urlsplit, urlunsplit
 from codapact import __version__
 from codapact.core.errors import CodapactError, ResponseTooLargeError, TransportError
 from codapact.core.net import HttpRequest, SafeHttpClient, validate_url
-from codapact.model.api import Api, CustomBinding, HttpBinding, Operation, OperationKind
+from codapact.model.api import (
+    Api,
+    AuthKind,
+    CustomBinding,
+    HttpBinding,
+    Operation,
+    OperationKind,
+)
 from codapact.model.types import (
     Enum,
     ListOf,
@@ -485,10 +492,13 @@ class Check:
     detail: str
     code: int | None = None
     """Exit code for a failure, when the check's name alone does not decide it."""
+    fix: str = ""
+    """How to fix a failure; printed in full under the table, where cells are cut short."""
 
     def as_dict(self) -> dict[str, str]:
         """Return the JSON form."""
-        return {"check": self.check, "status": self.status, "detail": self.detail}
+        found = {"check": self.check, "status": self.status, "detail": self.detail}
+        return found | ({"fix": self.fix} if self.fix else {})
 
 
 def _mask(url: str) -> str:
@@ -535,14 +545,17 @@ _IDENTITY_WORDS = (
     "me",
     "myself",
     "self",
-    "current",
     "currentuser",
     "viewer",
     "user",
     "identity",
+    "current",
     "profile",
     "account",
 )
+# Of those, the words only a route about the caller uses: ``/subscriptions/current`` and
+# ``/account`` rank as probes but never name the caller.
+_CALLER_WORDS = frozenset(_IDENTITY_WORDS[:8])
 # Response keys that name who signed in, best first.
 _IDENTITY_KEYS = (
     "email",
@@ -594,6 +607,16 @@ def _identity_rank(operation: Operation) -> int:
     ranks = [i for i, word in enumerate(_IDENTITY_WORDS) if word in last or "".join(last) == word]
     ranks += [len(_IDENTITY_WORDS) + i for i, word in enumerate(_IDENTITY_WORDS) if word in named]
     return min(ranks, default=-1)
+
+
+def _about_caller(operation: Operation) -> bool:
+    """Whether the route or name says the response describes the caller (``GET /user``)."""
+    http = operation.binding(HttpBinding)
+    words = {w for s in (http.path.split("/") if http else []) for w in _words(s)}
+    words |= set(_words(operation.name))
+    if http is not None:
+        words |= {"".join(_words(s)) for s in http.path.split("/")}
+    return bool(words & _CALLER_WORDS)
 
 
 def login_check_operation(api: Api, scheme: str) -> str | None:
@@ -653,6 +676,14 @@ def _operation_label(operation: Operation | None, name: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class _Where:
+    """Where a credential came from: its source label and the profile in use."""
+
+    source: str
+    profile: str
+
+
+@dataclass(frozen=True, slots=True)
 class Doctor:
     """Inputs the doctor needs; ``settings`` resolves client options and their sources."""
 
@@ -664,6 +695,8 @@ class Doctor:
     settings: Callable[[], tuple[dict[str, Any], dict[str, str]]]
     config_status: Callable[[], Check]
     send: Callable[[SafeHttpClient, HttpRequest], Any] | None = None
+    dry_run: bool = False
+    """``--dry-run``: nothing that sends a credential runs."""
     sessions: Mapping[str, str | None] | None = None
     """Scheme name to the operation that proves its credential works (``cli.auth.*.check``).
 
@@ -723,19 +756,21 @@ class Doctor:
             reason = None
             if offline:
                 reason = "skipped (--offline)"
+            elif self.dry_run:
+                reason = "skipped (--dry-run sends no credentials)"
             elif connect is not None and connect.status == "fail":
                 reason = "skipped (API unreachable)"
-            sources = {
+            origins = {
                 # "from environment (YNAB_BEARER) (bearer)": the source, without the kind.
                 c.check.removeprefix("credentials: "): c.detail.removeprefix("from ").rsplit(
                     " (", 1
                 )[0]
                 for c in credentials
             }
-            checks.extend(
-                self._login(api, scheme, self.call, reason, sources.get(scheme, ""))
-                for scheme in usable
-            )
+            profile = (sources.get("profile") or "default").split()[0]
+            for scheme in usable:
+                where = _Where(origins.get(scheme, ""), profile)
+                checks.append(self._login(api, scheme, self.call, reason, where))
         return checks
 
     def _login(
@@ -744,7 +779,7 @@ class Doctor:
         scheme: str,
         call: Callable[[str, str], Any],
         skipped: str | None,
-        source: str,
+        where_from: _Where,
     ) -> Check:
         """Make an authenticated call: proves the server accepts the credential."""
         label = f"login: {scheme}"
@@ -762,15 +797,22 @@ class Doctor:
         if skipped:
             return Check(label, "skip", skipped)
         operation = _operation(api, name)
+        if operation is not None and (scheme,) not in operation.auth.alternatives:
+            return Check(
+                label,
+                "fail",
+                f"cli.auth.{scheme}.check: {name} does not accept {scheme} on its own",
+                code=1,
+            )
         where = _operation_label(operation, name)
-        fix = self._relogin(api, scheme, source)
+        fix = self._relogin(api, scheme, where_from)
         try:
             result = call(name, scheme)
         except AuthError as error:
-            return Check(label, "fail", f"{where}: {error}; {fix}")
+            return Check(label, "fail", f"{where}: {error}", fix=fix)
         except ApiError as error:
             if error.status in (401, 403) or 300 <= error.status < 400:
-                return Check(label, "fail", f"rejected by {where}: {error}; {fix}")
+                return Check(label, "fail", f"rejected by {where}: {error}", fix=fix)
             return Check(label, "fail", f"not verified: {where}: {error}", code=1)
         except ResponseTooLargeError as error:
             # The server answered; the answer was just too big to read.
@@ -780,15 +822,22 @@ class Doctor:
         except CodapactError as error:
             return Check(label, "fail", f"not verified: {where}: {error}", code=1)
         # Name the caller only when the call is about the caller (GET /user, /myself).
-        about_caller = operation is not None and _identity_rank(operation) >= 0
-        who = identity(result) if about_caller else None
+        who = identity(result) if operation is not None and _about_caller(operation) else None
         return Check(label, "ok", f"accepted by {where}" + (f" as {who}" if who else ""))
 
-    def _relogin(self, api: Api, scheme: str, source: str) -> str:
+    def _relogin(self, api: Api, scheme: str, where_from: _Where) -> str:
         """Say how to replace the refused credential, where it actually comes from."""
+        source = where_from.source
         if source.startswith(("saved", "browser session")) or not source:
-            flag = f" --scheme {scheme}" if len(api.auth_schemes) > 1 else ""
-            return f"sign in again: {self.program} auth login{flag}"
+            flags = f" --scheme {scheme}" if len(api.auth_schemes) > 1 else ""
+            if where_from.profile != "default":
+                flags += f" --profile {where_from.profile}"
+            return f"sign in again: {self.program} auth login{flags}"
+        kind = next((s.kind for s in api.auth_schemes if s.name == scheme), None)
+        variable = re.fullmatch(r"environment \((\w+)\)", source)
+        if kind is AuthKind.BASIC and variable:
+            name = variable.group(1)
+            return f"replace {name}_USERNAME and {name}_PASSWORD in the environment"
         return f"replace the credential from {source}"
 
     def _base_url(
@@ -843,6 +892,9 @@ class Doctor:
             started = time.monotonic()
             send = self.send or (lambda c, r: c.send(r))
             response = send(client, HttpRequest("GET", url, {"Accept": "*/*"}))
+        except ResponseTooLargeError:
+            # The server answered; only the body was too big to read.
+            return Check("connectivity", "ok", f"reached {url}: response exceeds the size limit")
         except CodapactError as error:
             return Check("connectivity", "fail", f"{url}: {error}")
         elapsed = (time.monotonic() - started) * 1000

@@ -1058,25 +1058,44 @@ class CliRuntime:
                     compact=self.compact_json(args, out),
                 )
                 return EXIT_OK
+            resolved: list[tuple[dict[str, Any], dict[str, str]]] = []
+
+            def settings() -> tuple[dict[str, Any], dict[str, str]]:
+                # Resolved once: the login probe reuses the credential chain doctor inspected,
+                # so a password-manager command runs (and prompts) only once.
+                if not resolved:
+                    resolved.append(self.resolve(args))
+                return resolved[0]
+
             doctor = cli_tools.Doctor(
                 program=self.program,
                 version=self.program_version,
                 env_prefix=self.env_prefix,
                 env=self.env,
                 load_model=load_model,
-                settings=lambda: self.resolve(args),
+                settings=settings,
+                dry_run=bool(getattr(args, "dry_run", False)),
                 config_status=lambda: self._config_check(getattr(args, "config", None)),
                 sessions={
                     name: str(spec["check"]) if spec["check"] else None
                     for name, spec in (self.auth_config or {}).items()
                     if "check" in spec
                 },
-                call=lambda operation, scheme: self._probe(args, load_model(), operation, scheme),
+                call=lambda operation, scheme: self._probe(
+                    args, load_model(), operation, scheme, auth=settings()[0].get("auth")
+                ),
             )
             checks = doctor.run(offline=args.offline)
             rows = [c.as_dict() for c in checks]
             fmt = self.output_format(args, "table" if out.isatty() else "json")
-            render(rows, fmt, out, compact=self.compact_json(args, out))
+            if fmt == "table":
+                # Table cells are cut short; each fix is printed in full below the table.
+                render([{k: v for k, v in r.items() if k != "fix"} for r in rows], fmt, out)
+                for check in checks:
+                    if check.fix:
+                        out.write(f"\n{check.check}: {check.fix}\n")
+            else:
+                render(rows, fmt, out, compact=self.compact_json(args, out))
             return cli_tools.doctor_exit_code(checks)
         except CodapactError as error:
             return emit_error(self.program, "usage", str(error), EXIT_USAGE, err)
@@ -1238,16 +1257,23 @@ class CliRuntime:
         return found
 
     def _probe(
-        self, args: argparse.Namespace, api: Api, operation: str, scheme: str | None = None
+        self,
+        args: argparse.Namespace,
+        api: Api,
+        operation: str,
+        scheme: str | None = None,
+        *,
+        auth: Any = None,
     ) -> Any:
         """Call ``operation`` without arguments, as a command would, and return the result.
 
         With ``scheme``, the call sends that credential alone, so each ``login`` row of
-        ``doctor`` proves its own scheme. ``--dry-run`` never applies: doctor is a live check.
+        ``doctor`` proves its own scheme; ``auth`` reuses a credential chain already resolved.
         """
-        live = argparse.Namespace(**{**vars(args), "dry_run": False})
-        options = self._client_options(live, io.StringIO())
+        options = self._client_options(args, io.StringIO())
         options["response_validation"] = "off"
+        if auth is not None:
+            options["auth"] = auth
         if scheme is not None:
             only = AuthRequirement(((scheme,),))
             api = dataclasses.replace(

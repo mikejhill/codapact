@@ -7,6 +7,7 @@ expired-session detection.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import io
 import json
 import ssl
@@ -565,7 +566,10 @@ def test_doctor_login_check(raised: Exception | None, status: str, detail: str, 
     login = {c.check: c for c in checks}["login: portal"]
     assert login.status == status and detail in login.detail
     if code == 3:
-        assert login.detail.endswith("replace the credential from environment (ACME_PORTAL)")
+        assert login.fix == "replace the credential from environment (ACME_PORTAL)"
+        assert login.as_dict()["fix"] == login.fix
+    else:
+        assert "fix" not in login.as_dict()
     assert "login: other" not in {c.check for c in checks}
     assert cli_tools.doctor_exit_code(checks) == code
 
@@ -719,6 +723,13 @@ def test_doctor_names_the_caller_only_for_identity_calls() -> None:
     api = Api("A", "1", (plans,), auth_schemes=(BEARER,), servers=(Server("https://a.test"),))
     rows = {c.check: c for c in _doctor(api, call=lambda op, scheme: {"id": "p-17"})}
     assert rows["login: portal"].detail == "accepted by GET /plans"
+    current = _op("get_current", "GET", "/subscriptions/current")
+    api = Api("A", "1", (current,), auth_schemes=(BEARER,), servers=(Server("https://a.test"),))
+    rows = {c.check: c for c in _doctor(api, call=lambda op, scheme: {"id": "s-1"})}
+    assert rows["login: portal"].detail == "accepted by GET /subscriptions/current"
+    user = _op("get_user", "GET", "/user")
+    ranked = Api("A", "1", (current, user), auth_schemes=(BEARER,))
+    assert cli_tools.login_check_operation(ranked, "portal") == "get_user"
 
 
 def test_doctor_login_labels_and_sign_in_hints() -> None:
@@ -748,12 +759,51 @@ def test_doctor_login_labels_and_sign_in_hints() -> None:
     def refuse(operation: str, scheme: str) -> object:
         raise ApiError("get_me", 401, None, None)
 
-    check = doctor._login(api, "portal", refuse, None, "saved login (keyring)")
+    where = cli_tools._Where
+    check = doctor._login(api, "portal", refuse, None, where("saved login (keyring)", "work"))
     assert check.detail.startswith("rejected by get_me: ")
-    assert check.detail.endswith("sign in again: acme auth login --scheme portal")
+    assert check.fix == "sign in again: acme auth login --scheme portal --profile work"
     single = Api("A", "1", (custom,), auth_schemes=(BEARER,))
-    check = doctor._login(single, "portal", refuse, None, "")
-    assert check.detail.endswith("sign in again: acme auth login")
+    check = doctor._login(single, "portal", refuse, None, where("", "default"))
+    assert check.fix == "sign in again: acme auth login"
+    basic = AuthScheme("portal", AuthKind.BASIC)
+    plain = Api("A", "1", (custom,), auth_schemes=(basic,))
+    check = doctor._login(plain, "portal", refuse, None, where("environment (ACME_PORTAL)", "x"))
+    assert check.fix == "replace ACME_PORTAL_USERNAME and ACME_PORTAL_PASSWORD in the environment"
+    both = dataclasses.replace(custom, auth=AuthRequirement((("portal", "other"),)))
+    paired = Api("A", "1", (both,), auth_schemes=(BEARER, other))
+    named = dataclasses.replace(doctor, sessions={"portal": "get_me"})
+    check = named._login(paired, "portal", refuse, None, where("", "default"))
+    assert (check.status, check.code) == ("fail", 1)
+    assert "get_me does not accept portal on its own" in check.detail
+
+
+def test_doctor_dry_run_sends_no_credentials() -> None:
+    def call(operation: str, scheme: str) -> object:
+        raise AssertionError("no call expected")
+
+    checks = _doctor(_me_api(scheme=BEARER), call=call, dry_run=True)
+    assert {c.check: c for c in checks}["login: portal"].detail.startswith("skipped (--dry-run")
+
+
+def test_doctor_counts_an_oversized_answer_as_reachable() -> None:
+    def send(client: object, request: HttpRequest) -> HttpResponse:
+        raise ResponseTooLargeError(5)
+
+    check = cli_tools.Doctor(
+        program="acme",
+        version="1",
+        env_prefix="ACME",
+        env={},
+        load_model=_me_api,
+        settings=lambda: ({}, {}),
+        config_status=lambda: cli_tools.Check("settings file", "info", "none"),
+        send=send,
+    )._connect("https://a.test", {})
+    assert (check.status, check.detail) == (
+        "ok",
+        "reached https://a.test: response exceeds the size limit",
+    )
 
 
 def test_generated_cli_doctor_checks_the_saved_session() -> None:
@@ -779,10 +829,14 @@ def test_generated_cli_doctor_checks_the_saved_session() -> None:
                 runtime.add_builtins(commands)
                 return root
 
-            argv = ["doctor", "--dry-run"] if code == 0 else ["doctor"]
-            assert runtime.main(parser, lambda o: None, lambda: api, argv, stdout=out) == code
+            assert runtime.main(parser, lambda o: None, lambda: api, ["doctor"], stdout=out) == code
             rows = {row["check"]: row for row in json.loads(out.getvalue())}
             assert rows["login: portal"]["status"] == ("ok" if code == 0 else "fail")
+            table = io.StringIO()
+            argv = ["doctor", "-o", "table"]
+            assert runtime.main(parser, lambda o: None, lambda: api, argv, stdout=table) == code
+            fix = "\nlogin: portal: replace the credential from environment (ACME_PORTAL)\n"
+            assert (fix in table.getvalue()) == (code == 3)
 
 
 def test_generator_validates_the_session_check_operation() -> None:
@@ -793,7 +847,18 @@ def test_generator_validates_the_session_check_operation() -> None:
         (Param("key", t.Primitive(t.ScalarKind.STRING), required=True),),
         None,
     )
-    api = Api("A", "1", (*api.operations, needs), auth_schemes=(TOKEN,))
+    portal = AuthRequirement((("portal",),))
+    writes = Operation("reset_me", OperationKind.MUTATION, (), None, auth=portal)
+    posts = Operation(
+        "find_me",
+        OperationKind.QUERY,
+        (),
+        None,
+        bindings=(HttpBinding("POST", "/find", (), ()),),
+        auth=portal,
+    )
+    anonymous = Operation("ping", OperationKind.QUERY, (), None)
+    api = Api("A", "1", (*api.operations, needs, writes, posts, anonymous), auth_schemes=(TOKEN,))
 
     def request(auth: object) -> GenerationRequest:
         return GenerationRequest(
@@ -809,6 +874,9 @@ def test_generator_validates_the_session_check_operation() -> None:
         ({"portal": {"check": 3}}, "must name an operation"),
         ({"portal": {"check": "whoami"}}, "no operation named 'whoami'"),
         ({"portal": {"check": "get-issue"}}, r"get_issue needs arguments \(key\)"),
+        ({"portal": {"check": "reset_me"}}, "reset_me changes data"),
+        ({"portal": {"check": "find_me"}}, "find_me changes data"),
+        ({"portal": {"check": "ping"}}, "ping does not accept portal on its own"),
     ]:
         with pytest.raises(PluginError, match=message):
             _auth_config(request(bad))

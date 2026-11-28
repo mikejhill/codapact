@@ -237,6 +237,13 @@ def test_graphql_errors_surface() -> None:
     with pytest.raises(ApiError) as caught:
         client.call("dashboard", {})
     assert caught.value.status == 401
+    client, _ = library_client(lambda r: HttpResponse(403, {}, b"<html>denied</html>"))
+    with pytest.raises(ApiError) as caught:
+        client.call("dashboard", {})
+    assert caught.value.status == 403
+    client, _ = library_client(lambda r: HttpResponse(302, {"Location": "/login"}, b""))
+    with pytest.raises(ApiError, match="redirected to /login"):
+        client.call("dashboard", {})
 
 
 # ---------------------------------------------------------------- helpers and cli runtime
