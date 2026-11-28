@@ -105,7 +105,7 @@ def test_without_cli_skill_there_is_no_command(tmp_path: Path, monkeypatch) -> N
         ("[1]", "true or a mapping"),
         ("{description: 3}", "non-empty string"),
         ("{path: empty}", "has no SKILL.md"),
-        ("{path: latin1.md}", "only ship text files"),
+        ("{path: latin1.md}", "only ship UTF-8 text files"),
         ("{path: linked}", "links outside the project"),
     ],
 )
