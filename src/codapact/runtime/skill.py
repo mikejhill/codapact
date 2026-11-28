@@ -199,7 +199,7 @@ def install(
         try:
             current[rel] = (dest / rel).read_bytes()
         except OSError:
-            pass
+            continue  # missing or unreadable: the install will (re)write it
     stale = sorted(set(recorded or {}) - set(skill.files))
     unchanged = (
         current == skill.files
