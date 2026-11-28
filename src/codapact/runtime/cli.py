@@ -38,6 +38,7 @@ from codapact.core.errors import (
 from codapact.core.net import HttpRequest, HttpResponse, SafeHttpClient
 from codapact.model.api import Api, AuthKind, AuthScheme
 from codapact.runtime import cli_auth, cli_tools
+from codapact.runtime import skill as skills
 from codapact.runtime.abstractions import CallContext, Credential, Next, Secret
 from codapact.runtime.auth import ChainAuth, EnvAuth, FunctionAuthenticator
 from codapact.runtime.client import DEFAULT_MAX_RESPONSE_BYTES, RuntimeClient
@@ -326,6 +327,9 @@ class CliRuntime:
     extensions: tuple[str, ...] = ()
     """``package.module:factory`` CLI extensions (``cli.extensions``): extra global options,
     call hooks, and ``describe`` notes; see ``codapact.runtime.extensions``."""
+    skill: str = ""
+    """Package that ships an agent skill in ``skill/`` (``cli.skill``); enables the
+    ``skill`` command. Empty when the CLI ships no skill."""
 
     @staticmethod
     def secret_prompt(label: str) -> str:
@@ -410,6 +414,7 @@ class CliRuntime:
             f"  {p} describe                  list every command as JSON (for agents)",
             f"  {p} doctor                    check settings, credentials, connectivity",
             f"  {p} completion bash|zsh|fish|powershell",
+            *([f"  {p} skill install --dir ~/.agents/skills"] if self.skill else []),
             "",
         ]
         if credentials:
@@ -596,10 +601,68 @@ class CliRuntime:
             )
             sub.add_argument("shell", choices=cli_tools.SHELLS)
             sub.set_defaults(builtin="completion")
+        if self.skill and "skill" not in taken:
+            self._add_skill_commands(commands)
         if "auth" not in taken:
             cli_auth.add_auth_commands(
                 commands, self.program, lambda p: self.add_global_options(p, hidden=True)
             )
+
+    def _add_skill_commands(self, commands: argparse._SubParsersAction[Any]) -> None:
+        p = self.program
+        group = commands.add_parser(
+            "skill",
+            help="show or install the agent skill that ships with this CLI",
+            description="This CLI ships an agent skill (a SKILL.md folder) that matches its "
+            f"version. Example: {p} skill install --dir ~/.agents/skills",
+        )
+        actions = group.add_subparsers(dest="skill_action", metavar="ACTION", required=True)
+        show = actions.add_parser(
+            "show", help="print the skill's SKILL.md", description="Print the skill's SKILL.md."
+        )
+        show.set_defaults(builtin="skill")
+        install = actions.add_parser(
+            "install",
+            help="copy the skill into a skills directory",
+            description="Copy the skill folder to DIR/NAME/, where NAME is the skill's name. "
+            "Rerun after an update to refresh it: an unmodified copy is replaced; a copy "
+            "with local changes, or a folder this CLI did not install, needs --force. "
+            f"Examples: {p} skill install --dir ~/.agents/skills; "
+            f"{p} skill install --dir ~/.claude/skills",
+        )
+        install.add_argument(
+            "--dir",
+            required=True,
+            metavar="DIR",
+            dest="skill_dir",
+            help="skills directory to install into (created if missing; ~ is expanded)",
+        )
+        install.add_argument(
+            "--force", action="store_true", help="replace a modified or foreign copy"
+        )
+        for sub in (show, install):
+            self.add_global_options(sub, hidden=True)
+        install.set_defaults(builtin="skill")
+
+    def _skill(self, args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
+        try:
+            bundle = skills.bundled(self.skill, self.program)
+            if args.skill_action == "show":
+                out.write(bundle.text if bundle.text.endswith("\n") else bundle.text + "\n")
+                return EXIT_OK
+            result = skills.install(
+                bundle,
+                args.skill_dir,
+                program=self.program,
+                version=self.program_version,
+                force=args.force,
+                dry_run=bool(getattr(args, "dry_run", False)),
+            )
+        except skills.SkillError as error:
+            return emit_error(self.program, "skill", str(error), EXIT_API, err)
+        fmt = self.output_format(args)
+        render(result, fmt if fmt != "table" else "json", out, compact=self.compact_json(args, out))
+        return EXIT_OK
 
     # ------------------------------------------------------------ settings
 
@@ -994,6 +1057,8 @@ class CliRuntime:
             if name == "completion":
                 out.write(cli_tools.completion_script(self.program, args.shell))
                 return EXIT_OK
+            if name == "skill":
+                return self._skill(args, out, err)
             fmt = self.output_format(args)
             if name == "auth":
                 return self._auth(args, load_model(), fmt, out, err)
@@ -1026,6 +1091,14 @@ class CliRuntime:
                         "Errors print to stderr; --error-format json makes them one JSON object.",
                         "JSON arguments accept inline JSON, @file, or @- for stdin.",
                         "--dry-run prints the HTTP request without sending it.",
+                        *(
+                            [
+                                f"{self.program} skill install --dir DIR installs this CLI's "
+                                "agent skill into a skills directory; skill show prints it."
+                            ]
+                            if self.skill
+                            else []
+                        ),
                         *(
                             note
                             for extension in self.loaded_extensions()

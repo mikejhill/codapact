@@ -64,6 +64,7 @@ class ReadmeSettings:
     auth_docs: Mapping[str, str] = field(default_factory=dict)
     auth_fields: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     package_dir: str = "."
+    skill: bool = False
 
     @classmethod
     def from_options(cls, options: Mapping[str, Any]) -> ReadmeSettings:
@@ -93,6 +94,7 @@ class ReadmeSettings:
                 str(k): tuple(str(f) for f in v) for k, v in (data.get("auth_fields") or {}).items()
             },
             package_dir=str(data.get("package_dir", ".")),
+            skill=bool(data.get("skill")),
         )
 
 
@@ -143,6 +145,8 @@ def render_readme(api: Api, info: Package, settings: ReadmeSettings, version: st
         parts.append(_run(info, settings))
         parts.append(_credentials(api, info, settings))
     parts.append(_use(info, settings))
+    if info.command and settings.skill:
+        parts.append(_skill(info, settings))
     parts.extend(f"## {title}\n\n{body.strip()}\n" for title, body in settings.sections)
     parts.append(_development(info, settings, version))
     return "\n".join(p for p in parts if p)
@@ -280,6 +284,22 @@ def _use(info: Package, settings: ReadmeSettings) -> str:
     lines.append(f"uvx {run} describe --brief   # every command, for scripts and agents")
     commands = _aligned(lines)
     return f"## Use\n\n```console\n{commands}\n```\n\nAs a library:\n\n{library}"
+
+
+def _skill(info: Package, settings: ReadmeSettings) -> str:
+    run = tool(info, settings)
+    commands = _aligned(
+        [
+            f"uvx {run} skill install --dir ~/.agents/skills   # or any skills folder",
+            f"uvx {run} skill show   # print it",
+        ]
+    )
+    return (
+        "## Agent skill\n\n"
+        "The package ships an agent skill that points agents at the CLI. Install it into "
+        f"a skills folder:\n\n```console\n{commands}\n```\n\n"
+        "Rerun after an update to refresh it; a copy with local edits needs `--force`.\n"
+    )
 
 
 def _development(info: Package, settings: ReadmeSettings, version: str) -> str:
