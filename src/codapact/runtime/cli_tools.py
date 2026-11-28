@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import platform
+import re
 import time
 import urllib.request
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -16,9 +17,9 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from codapact import __version__
-from codapact.core.errors import CodapactError
+from codapact.core.errors import CodapactError, TransportError
 from codapact.core.net import HttpRequest, SafeHttpClient, validate_url
-from codapact.model.api import Api
+from codapact.model.api import Api, HttpBinding, Operation, OperationKind
 from codapact.model.types import (
     Enum,
     ListOf,
@@ -482,6 +483,8 @@ class Check:
     check: str
     status: str
     detail: str
+    code: int | None = None
+    """Exit code for a failure, when the check's name alone does not decide it."""
 
     def as_dict(self) -> dict[str, str]:
         """Return the JSON form."""
@@ -519,12 +522,108 @@ def auth_required(api: Api) -> str | None:
 
 def doctor_exit_code(checks: Sequence[Check]) -> int:
     """Map failed checks to the CLI exit codes: 3 credentials, 4 network, 1 anything else."""
-    failed = {c.check.split(":")[0] for c in checks if c.status == "fail"}
-    if not failed:
+    names = {"credentials": 3, "login": 3, "connectivity": 4}
+    codes = {c.code or names.get(c.check.split(":")[0], 1) for c in checks if c.status == "fail"}
+    if not codes:
         return 0
-    if failed - {"credentials", "session", "connectivity"}:
-        return 1
-    return 3 if failed & {"credentials", "session"} else 4
+    return 1 if 1 in codes else (3 if 3 in codes else 4)
+
+
+# Words that name the signed-in identity, best first (``GET /user``, ``/myself``, ``viewer``).
+_IDENTITY_WORDS = (
+    "whoami",
+    "me",
+    "myself",
+    "self",
+    "current",
+    "currentuser",
+    "viewer",
+    "user",
+    "identity",
+    "profile",
+    "account",
+)
+# Response keys that name who signed in, best first.
+_IDENTITY_KEYS = (
+    "email",
+    "emailAddress",
+    "email_address",
+    "login",
+    "username",
+    "userName",
+    "user_name",
+    "displayName",
+    "display_name",
+    "name",
+    "accountId",
+    "account_id",
+    "id",
+)
+
+
+def _words(text: str) -> list[str]:
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
+    return [w for w in re.split(r"[^0-9a-z]+", spaced.lower()) if w]
+
+
+def _runs_bare(operation: Operation) -> bool:
+    return all(not p.required or p.default is not None for p in operation.params)
+
+
+def login_check_operation(api: Api, scheme: str) -> str | None:
+    """Pick the operation ``doctor`` calls to prove ``scheme``'s credential works.
+
+    It must be a query (over HTTP, a ``GET``), run without arguments, and refuse
+    anonymous callers while accepting ``scheme``. Operations about the signed-in identity
+    (``GET /user``, ``/myself``, ``viewer``) come first, then the shortest path.
+    """
+    ranked: list[tuple[int, int, int, str]] = []
+    for operation in api.operations:
+        alternatives = operation.auth.alternatives
+        if (
+            operation.kind is not OperationKind.QUERY
+            or operation.auth.anonymous_allowed
+            or not any(scheme in alternative for alternative in alternatives)
+            or not _runs_bare(operation)
+        ):
+            continue
+        http = operation.binding(HttpBinding)
+        if http is not None and http.method.upper() != "GET":
+            continue
+        segments = [s for s in (http.path.split("/") if http else []) if s]
+        literal = [s for s in segments if not s.startswith("{")]
+        last = _words(literal[-1]) if literal and segments[-1] == literal[-1] else []
+        named = _words(operation.name)
+        rank = len(_IDENTITY_WORDS) * 2
+        for index, word in enumerate(_IDENTITY_WORDS):
+            if word in last or "".join(last) == word:
+                rank = min(rank, index)
+            elif word in named:
+                rank = min(rank, len(_IDENTITY_WORDS) + index)
+        ranked.append((rank, len(segments), len(operation.name), operation.name))
+    return min(ranked)[3] if ranked else None
+
+
+def identity(result: Any, depth: int = 0) -> str | None:
+    """Find who signed in from a response (``data.user.id``, ``emailAddress``, ``login``)."""
+    if not isinstance(result, Mapping) or depth > 3:
+        return None
+    for key in _IDENTITY_KEYS:
+        value = result.get(key)
+        if isinstance(value, (str, int)) and not isinstance(value, bool) and str(value):
+            text = str(value)
+            return f"{key} {text[:60]}{'...' if len(text) > 60 else ''}"
+    for value in result.values():
+        found = identity(value, depth + 1)
+        if found:
+            return found
+    return None
+
+
+def _operation_label(api: Api, name: str) -> str:
+    operation = next((op for op in api.operations if op.name == name), None)
+    http = operation.binding(HttpBinding) if operation is not None else None
+    return f"{http.method.upper()} {http.path}" if http is not None else name
 
 
 @dataclass(frozen=True, slots=True)
@@ -539,8 +638,11 @@ class Doctor:
     settings: Callable[[], tuple[dict[str, Any], dict[str, str]]]
     config_status: Callable[[], Check]
     send: Callable[[SafeHttpClient, HttpRequest], Any] | None = None
-    sessions: Mapping[str, str] | None = None
-    """Scheme name to the operation that proves its credential works (``cli.auth.*.check``)."""
+    sessions: Mapping[str, str | None] | None = None
+    """Scheme name to the operation that proves its credential works (``cli.auth.*.check``).
+
+    ``None`` turns the check off; a scheme left out gets :func:`login_check_operation`.
+    """
     call: Callable[[str], Any] | None = None
     """Call an operation by name, without arguments, with the resolved settings."""
 
@@ -580,33 +682,60 @@ class Doctor:
         if limit:
             source = sources.get("max_response_bytes", "default")
             checks.append(Check("response limit", "info", f"{limit} bytes (from {source})"))
+        usable = [
+            c.check.removeprefix("credentials: ")
+            for c in credentials
+            if c.status == "ok" and c.check.startswith("credentials: ")
+        ]
+        connect = None
         if offline:
             checks.append(Check("connectivity", "skip", "skipped (--offline)"))
         elif base_ok:
-            checks.append(self._connect(base_url, options))
-            usable = {
-                c.check.removeprefix("credentials: ") for c in credentials if c.status == "ok"
-            }
-            for scheme, operation in (self.sessions or {}).items():
-                if scheme in usable and self.call is not None:
-                    checks.append(self._session(scheme, operation, self.call))
+            connect = self._connect(base_url, options)
+            checks.append(connect)
+        if self.call is not None and (offline or base_ok):
+            reason = None
+            if offline:
+                reason = "skipped (--offline)"
+            elif connect is not None and connect.status == "fail":
+                reason = "skipped (API unreachable)"
+            checks.extend(self._login(api, scheme, self.call, reason) for scheme in usable)
         return checks
 
-    @staticmethod
-    def _session(scheme: str, operation: str, call: Callable[[str], Any]) -> Check:
-        """Call the scheme's check operation: proves a saved session is still accepted."""
-        label = f"session: {scheme}"
+    def _login(
+        self, api: Api, scheme: str, call: Callable[[str], Any], skipped: str | None
+    ) -> Check:
+        """Make an authenticated call: proves the server accepts the credential."""
+        label = f"login: {scheme}"
+        sessions = self.sessions or {}
+        if scheme in sessions and sessions[scheme] is None:
+            return Check(label, "skip", f"not checked (cli.auth.{scheme}.check is off)")
+        operation = sessions.get(scheme) or login_check_operation(api, scheme)
+        if operation is None:
+            return Check(
+                label,
+                "warn",
+                "not verified: no read-only command runs with just this credential; "
+                f"name one in cli.auth.{scheme}.check",
+            )
+        if skipped:
+            return Check(label, "skip", skipped)
+        where = _operation_label(api, operation)
+        relogin = f"sign in again: {self.program} auth login"
         try:
-            call(operation)
+            result = call(operation)
         except AuthError as error:
-            return Check(label, "fail", f"{operation}: {error}")
+            return Check(label, "fail", f"{where}: {error}; {relogin}")
         except ApiError as error:
             if error.status in (401, 403) or 300 <= error.status < 400:
-                return Check(label, "fail", f"rejected: {error}; sign in again")
-            return Check(label, "warn", f"could not verify: {error}")
+                return Check(label, "fail", f"rejected by {where}: {error}; {relogin}")
+            return Check(label, "fail", f"not verified: {where}: {error}", code=1)
+        except TransportError as error:
+            return Check(label, "fail", f"not verified: {where}: {error}", code=4)
         except CodapactError as error:
-            return Check(label, "warn", f"could not verify: {operation}: {error}")
-        return Check(label, "ok", f"accepted by {operation}")
+            return Check(label, "fail", f"not verified: {where}: {error}", code=1)
+        who = identity(result)
+        return Check(label, "ok", f"accepted by {where}" + (f" as {who}" if who else ""))
 
     def _base_url(
         self, checks: list[Check], url: str, source: str, options: Mapping[str, Any]

@@ -317,7 +317,7 @@ exists. Set `cli.env_prefix` too if the environment variables should keep their 
 | Help | `-h`/`--help` on every level; bare `<program>` or `<program> GROUP` prints help (exit `0`). Command help has a usage line with positionals and required options, examples, and a global-options reminder. |
 | Version | `-V`/`--version`: `poke 0.1.0 (PokéAPI 2.10.0; codapact 0.4.0)`; the installed distribution's version when it differs from the generated `version` option (so a release tool can bump packaging alone) |
 | Discovery for agents | `<program> describe [COMMAND…]`: JSON with every command's arguments (type, required, positional, choices, repeated), `read_only`/`destructive`/`paginated`, `requires_one_of` option groups, environment variables, exit codes, `start` (the steps an agent follows: doctor, credentials, describe, dry run) and `auth` (per scheme: environment variables, `auth login` commands, `docs` on how to get the credential, and whether every command or only some need it). `describe --brief` keeps those plus names, summaries, and usage lines, so one call is enough to start; past 150 commands it lists groups (name, summary, command count) instead, and `describe GROUP --brief` lists a group. Agent skills for a coda point here instead of repeating it (see [Agent skills for codas](../extras/agent-plugin/README.md)). Naming one command adds the JSON Schema of each JSON-valued argument; `--schemas` adds that and the output JSON Schema to every command. Printed to a pipe, `describe` is compact JSON. `--help` names the members of each JSON argument, and examples include one option of each `requires_one_of` group (see [Discovery efficiency](discovery-efficiency/README.md)) |
-| Diagnosis | `<program> doctor [--offline]`: version, settings file, base URL and its source, credentials (set or missing, never printed), proxy, connectivity (any HTTP answer counts, a redirect included), and, for schemes with `cli.auth.<scheme>.check`, whether the server still accepts the credential (`session: <scheme>`, see [CLI credential chain](#cli-credential-chain)). Missing credentials fail only when every command needs them. Table on a terminal, JSON otherwise; exit `0` ready, `3` credentials missing or rejected, `4` API unreachable, `1` any other failed check |
+| Diagnosis | `<program> doctor [--offline]`: version, settings file, base URL and its source, credentials (set or missing, never printed), proxy, connectivity (any HTTP answer counts, a redirect included), and one signed-in call per configured scheme proving the server accepts the credential (`login: <scheme>`: `ok` names the call and, when the response says, who signed in; see [CLI credential chain](#cli-credential-chain)). Missing credentials fail only when every command needs them. Table on a terminal, JSON otherwise; exit `0` ready, `3` credentials missing or rejected, `4` API unreachable, `1` any other failed check |
 | Completion | `<program> completion bash\|zsh\|fish\|powershell` prints a script that asks the program for candidates |
 | Preview | `--dry-run` prints the HTTP request (method, URL, headers, body) without sending it; credentials appear as `$VARIABLE` placeholders (optional credentials that are not set stay off the request), and destructive commands skip confirmation |
 | Tracing | `-v`/`--verbose` logs each request line and response status, size, and time to stderr, masking credential values |
@@ -407,8 +407,12 @@ the CLI (no secrets); `fields` declares [credential fields](#credential-fields);
 person how to get the credential (shown in `describe` under `auth`, e.g. "Create a personal
 access token under Account Settings > Developer Settings"); `check` names an operation that
 needs no arguments (any spelling, e.g. `getCurrentUser`) which `doctor` calls to prove the
-saved credential or session still works: a 401, 403, redirect or `expired()` fails the
-`session: <scheme>` check with exit code 3.
+credential works; `check: false` turns the call off. Without `check`, `doctor` picks a query
+(over HTTP, a `GET`) that runs without arguments and needs this scheme, preferring one about
+the signed-in identity (`/user`, `/me`, `/myself`, `viewer`, `.../current`), then the shortest
+path. A 401, 403, redirect or `expired()` fails the `login: <scheme>` check with exit code 3;
+any other error fails it as "not verified" (exit 4 when the API is unreachable, else 1). When
+no operation qualifies, the row warns and asks for a `check`.
 `auth login` picks a flow in this order: `--flow`, then client credentials when a secret is
 set, then device code, then authorization code with PKCE.
 `--with-token` reads a static token from stdin; `--username` saves basic credentials.

@@ -408,7 +408,7 @@ class CliRuntime:
         lines += [f"  {example}" for example in examples]
         lines += [
             f"  {p} describe                  list every command as JSON (for agents)",
-            f"  {p} doctor                    check settings, credentials, connectivity",
+            f"  {p} doctor                    check settings, credentials, connectivity, login",
             f"  {p} completion bash|zsh|fish|powershell",
             "",
         ]
@@ -579,12 +579,15 @@ class CliRuntime:
         if "doctor" not in taken:
             sub = commands.add_parser(
                 "doctor",
-                help="check version, settings, credentials, and connectivity",
-                description="Diagnose configuration problems. Exits 0 when ready, 3 when "
+                help="check settings, credentials, connectivity, and that the login works",
+                description="Diagnose configuration problems and make one signed-in call to "
+                "prove the server accepts the credential. Exits 0 when ready, 3 when "
                 "credentials are missing or rejected, 4 when the API is unreachable, and 1 "
                 "when another check fails.",
             )
-            sub.add_argument("--offline", action="store_true", help="skip the network check")
+            sub.add_argument(
+                "--offline", action="store_true", help="skip the network and login checks"
+            )
             self.add_global_options(sub, hidden=True)
             sub.set_defaults(builtin="doctor")
         if "completion" not in taken:
@@ -1063,9 +1066,9 @@ class CliRuntime:
                 settings=lambda: self.resolve(args),
                 config_status=lambda: self._config_check(getattr(args, "config", None)),
                 sessions={
-                    name: str(spec["check"])
+                    name: str(spec["check"]) if spec["check"] else None
                     for name, spec in (self.auth_config or {}).items()
-                    if spec.get("check")
+                    if "check" in spec
                 },
                 call=lambda operation: self._probe(args, load_model(), operation),
             )
@@ -1126,9 +1129,9 @@ class CliRuntime:
         """Return the steps an agent or script follows to start using this CLI."""
         p = self.program
         steps = [
-            f"Run {p} doctor once per session. Exit 0 means ready; 3 means credentials are "
-            "missing or rejected; 4 means the API is unreachable; 1 means another check "
-            "failed. Each row's detail says how to fix it.",
+            f"Run {p} doctor once per session; it makes one signed-in call (the login row). "
+            "Exit 0 means ready; 3 means credentials are missing or rejected; 4 means the API "
+            "is unreachable; 1 means another check failed. Each row's detail says how to fix it.",
         ]
         if api.auth_schemes:
             steps.append(

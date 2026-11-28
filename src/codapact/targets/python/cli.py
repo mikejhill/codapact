@@ -199,11 +199,13 @@ def _spelling(name: str) -> str:
     return re.sub(r"[^0-9a-z]", "", name.lower())
 
 
-def _check_operation(request: GenerationRequest, scheme: str, raw: object) -> str:
+def _check_operation(request: GenerationRequest, scheme: str, raw: object) -> str | bool:
     """Resolve ``cli.auth.<scheme>.check``: an operation ``doctor`` calls without arguments."""
     where = f"cli.auth.{scheme}.check"
+    if raw is False:
+        return False  # doctor skips the login check for this scheme
     if not isinstance(raw, str) or not raw:
-        raise PluginError(f"{where} must name an operation")
+        raise PluginError(f"{where} must name an operation, or be false to skip the check")
     wanted = _spelling(raw)
     found = [op for op in request.api.operations if op.name == raw or _spelling(op.name) == wanted]
     if not found:

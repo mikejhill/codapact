@@ -267,7 +267,7 @@ def _credentials(api: Api, info: Package, settings: ReadmeSettings) -> str:
         f"Save once in the OS keyring with `uvx {run} auth login`, or set per shell:\n\n"
         + "".join(entries)
         + "\n`<VAR>_COMMAND` runs a command that prints the secret (e.g. a password manager). "
-        f"`uvx {run} doctor` checks settings, credentials, and connectivity.\n"
+        f"`uvx {run} doctor` checks settings, credentials, connectivity, and the login.\n"
     )
 
 
