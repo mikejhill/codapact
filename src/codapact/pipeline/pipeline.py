@@ -152,7 +152,7 @@ class Pipeline:
                 for key in ("auth_plugin", "auth", "previous_programs", "extensions"):
                     if key in config.cli:
                         options.setdefault(key, config.cli[key])
-                if config.cli.get("skill"):
+                if _skill_enabled(config):
                     options.setdefault("skill", _skill_option(config))
                 if config.e2e:
                     options.setdefault("e2e", dict(config.e2e))
@@ -263,11 +263,16 @@ def _readme_context(
         "auth_docs": docs,
         "auth_fields": fields,
         "package_dir": _relative(package, output),
-        "skill": bool(config.cli.get("skill")),
+        "skill": _skill_enabled(config),
     }
 
 
 SKILL_KEYS = frozenset({"description", "api_name", "path"})
+
+
+def _skill_enabled(config: ProjectConfig) -> bool:
+    """``cli.skill`` is set to anything but ``false``/``null`` (``{}`` enables it too)."""
+    return config.cli.get("skill") not in (None, False)
 
 
 def _skill_option(config: ProjectConfig) -> dict[str, Any]:
@@ -304,6 +309,9 @@ def _skill_option(config: ProjectConfig) -> dict[str, Any]:
             for p in sorted(path.rglob("*"))
             if p.is_file() and not any(part.startswith(".") for part in p.relative_to(path).parts)
         }
+        for rel, source in sources.items():  # a symlink must not reach outside the project
+            if not source.resolve().is_relative_to(root):
+                raise ConfigError(f"cli.skill.path: {rel} links outside the project directory")
     else:
         raise ConfigError(f"cli.skill.path {raw['path']!r} does not exist")
     if "SKILL.md" not in sources:
@@ -312,7 +320,11 @@ def _skill_option(config: ProjectConfig) -> dict[str, Any]:
     for rel, source in sources.items():
         try:
             files[rel] = source.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
+        except UnicodeDecodeError:
+            raise ConfigError(
+                f"cli.skill.path: {rel} is not UTF-8 text; skills can only ship text files"
+            ) from None
+        except OSError as exc:
             raise ConfigError(f"cli.skill.path: cannot read {rel}: {exc}") from None
     return {"files": files}
 

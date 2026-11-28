@@ -122,3 +122,42 @@ def test_destination_conflicts(tmp_path: Path) -> None:
     (tmp_path / "skills" / "acme" / "references").write_text("in the way")
     with pytest.raises(SkillError, match="cannot write"):
         _install(Skill("acme", {"SKILL.md": SKILL, "references/a.md": b"a"}), tmp_path, force=True)
+
+
+def test_untracked_files_at_incoming_paths_need_force(tmp_path: Path) -> None:
+    _install(Skill("acme", {"SKILL.md": SKILL}), tmp_path)
+    dest = tmp_path / "skills" / "acme"
+    (dest / "references").mkdir()
+    (dest / "references" / "notes.md").write_text("mine")
+    (dest / "SKILL.md.tmp").write_text("also mine")
+    newer = Skill("acme", {"SKILL.md": SKILL + b"v2\n", "references/notes.md": b"shipped"})
+    with pytest.raises(SkillError, match=r"local changes \(references/notes.md\)"):
+        _install(newer, tmp_path)
+    assert (dest / "references" / "notes.md").read_text() == "mine"
+    (dest / "references" / "notes.md").write_bytes(b"shipped")  # identical: not a conflict
+    assert _install(newer, tmp_path)["status"] == "updated"
+    assert (dest / "SKILL.md.tmp").read_text() == "also mine"
+
+
+def test_marker_from_another_program_or_with_unsafe_paths_is_ignored(tmp_path: Path) -> None:
+    skill = Skill("acme", {"SKILL.md": SKILL})
+    _install(skill, tmp_path)
+    dest = tmp_path / "skills" / "acme"
+    with pytest.raises(SkillError, match="not installed by other"):
+        install(skill, tmp_path / "skills", program="other", version="1")
+    keep = tmp_path / "keep.txt"
+    keep.write_text("keep")
+    for bad in ("../../keep.txt", str(keep), "C:/x", "a\\\\b", "", MARKER):
+        (dest / MARKER).write_text(json.dumps({"program": "acme", "files": {bad: "0"}}))
+        with pytest.raises(SkillError, match="not installed by acme"):
+            _install(skill, tmp_path)
+        _install(Skill("acme", {"SKILL.md": SKILL + b"x"}), tmp_path, force=True)
+        assert keep.read_text() == "keep"
+
+
+def test_failed_write_leaves_no_temporary_file(tmp_path: Path) -> None:
+    dest = tmp_path / "skills" / "acme"
+    (dest / "SKILL.md" / "inner").mkdir(parents=True)
+    with pytest.raises(SkillError, match="cannot write"):
+        _install(Skill("acme", {"SKILL.md": SKILL}), tmp_path, force=True)
+    assert sorted(p.name for p in dest.iterdir()) == ["SKILL.md"]

@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 from dataclasses import dataclass
 from importlib.resources import files
 from importlib.resources.abc import Traversable
@@ -87,33 +88,79 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _recorded(dest: Path) -> dict[str, str] | None:
-    """Return the hashes a previous install recorded, or None when there is no record."""
+def _safe(rel: str) -> bool:
+    """A recorded path must stay inside the skill folder."""
+    path = PurePosixPath(rel)
+    return (
+        bool(rel)
+        and "\\" not in rel
+        and not path.is_absolute()
+        and ":" not in path.parts[0]
+        and all(part not in {"", ".", ".."} for part in path.parts)
+        and rel != MARKER
+    )
+
+
+def _recorded(dest: Path, program: str) -> dict[str, str] | None:
+    """Return the hashes ``program`` recorded when it installed ``dest``, else None.
+
+    A record written by another program, or naming a path outside the folder, is no
+    record: the folder is then treated as not ours.
+    """
     try:
         data = json.loads((dest / MARKER).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    hashes = data.get("files") if isinstance(data, dict) else None
+    if not isinstance(data, dict) or data.get("program") != program:
+        return None
+    hashes = data.get("files")
     if not isinstance(hashes, dict) or not all(
-        isinstance(k, str) and isinstance(v, str) for k, v in hashes.items()
+        isinstance(k, str) and isinstance(v, str) and _safe(k) for k, v in hashes.items()
     ):
         return None
     return hashes
 
 
-def _edited(dest: Path, recorded: dict[str, str]) -> list[str]:
-    """Files a previous install wrote that changed or vanished since."""
+def _digest(path: Path) -> str | None:
+    """SHA-256 of a file; None when it does not exist; "" when it cannot be read."""
+    if not path.exists() and not path.is_symlink():
+        return None
+    try:
+        return _sha(path.read_bytes())
+    except OSError:
+        return ""
+
+
+def _edited(dest: Path, recorded: dict[str, str], incoming: dict[str, bytes]) -> list[str]:
+    """Files an install would change that are not as a previous install left them.
+
+    A recorded file that changed, or any file at an incoming path that the previous install
+    did not write (the user's own), counts. A recorded file that was deleted does not.
+    """
     changed = []
-    for rel, digest in recorded.items():
-        path = dest / rel
-        try:
-            if _sha(path.read_bytes()) != digest:
+    for rel in sorted(set(recorded) | set(incoming)):
+        digest = _digest(dest / rel)
+        if digest is None:
+            continue
+        if rel in recorded:
+            if digest != recorded[rel]:
                 changed.append(rel)
-        except FileNotFoundError:
-            continue  # a deleted file is not an edit worth protecting
-        except OSError:
+        elif digest != _sha(incoming[rel]):
             changed.append(rel)
     return changed
+
+
+def _write(target: Path, data: bytes) -> None:
+    """Replace ``target`` through a uniquely named temporary file in the same folder."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    handle, name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(data)
+        os.replace(name, target)
+    except BaseException:
+        Path(name).unlink(missing_ok=True)
+        raise
 
 
 def install(
@@ -133,7 +180,7 @@ def install(
     result: dict[str, Any] = {"skill": skill.name, "path": str(dest), "files": sorted(skill.files)}
     if dest.exists() and not dest.is_dir():
         raise SkillError(f"{dest} exists and is not a directory")
-    recorded = _recorded(dest) if dest.is_dir() else None
+    recorded = _recorded(dest, program) if dest.is_dir() else None
     existing = dest.is_dir() and any(dest.iterdir())
     if existing and not force:
         if recorded is None:
@@ -141,7 +188,7 @@ def install(
                 f"{dest} already exists and was not installed by {program}; "
                 "rerun with --force to replace it"
             )
-        edited = _edited(dest, recorded)
+        edited = _edited(dest, recorded, skill.files)
         if edited:
             raise SkillError(
                 f"{dest} has local changes ({', '.join(sorted(edited))}); "
@@ -167,11 +214,7 @@ def install(
         return result
     try:
         for rel, data in skill.files.items():
-            target = dest / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            temp = target.with_name(target.name + ".tmp")
-            temp.write_bytes(data)
-            os.replace(temp, target)
+            _write(dest / rel, data)
         for rel in stale:  # files an older release shipped and this one dropped
             (dest / rel).unlink(missing_ok=True)
         marker = {
@@ -179,7 +222,7 @@ def install(
             "version": version,
             "files": {rel: _sha(data) for rel, data in sorted(skill.files.items())},
         }
-        (dest / MARKER).write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
+        _write(dest / MARKER, (json.dumps(marker, indent=2) + "\n").encode("utf-8"))
     except OSError as error:
         raise SkillError(f"cannot write {dest}: {error.strerror or error}") from None
     return result

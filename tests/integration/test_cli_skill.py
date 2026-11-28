@@ -105,19 +105,31 @@ def test_without_cli_skill_there_is_no_command(tmp_path: Path, monkeypatch) -> N
         ("[1]", "true or a mapping"),
         ("{description: 3}", "non-empty string"),
         ("{path: empty}", "has no SKILL.md"),
-        ("{path: latin1.md}", "cannot read"),
+        ("{path: latin1.md}", "only ship text files"),
+        ("{path: linked}", "links outside the project"),
     ],
 )
 def test_invalid_settings(tmp_path: Path, skill: str, message: str) -> None:
     project = _project(tmp_path, skill)
     (project / "empty").mkdir()
     (project / "latin1.md").write_bytes(b"caf\xe9")
+    (project / "linked").mkdir()
+    (project / "linked/SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("secret", encoding="utf-8")
+    try:
+        (project / "linked/secret.txt").symlink_to(secret)
+    except OSError:  # Windows without symlink rights
+        if skill == "{path: linked}":
+            pytest.skip("symlinks unavailable")
     with pytest.raises(ConfigError, match=message):
         _generate(project)
 
 
-def test_true_and_a_single_file(tmp_path: Path) -> None:
-    root = _generate(_project(tmp_path / "a", "true"))
+@pytest.mark.parametrize("enabled", ["true", "{}"])
+def test_true_empty_mapping_and_a_single_file(tmp_path: Path, enabled: str) -> None:
+    root = _generate(_project(tmp_path / "a", enabled))
+    assert "## Agent skill" in (root / "python/README.md").read_text(encoding="utf-8")
     text = (root / "python/src/petstore/skill/SKILL.md").read_text(encoding="utf-8")
     assert "description: Read and change Petstore data through the `petstore` CLI." in text
     project = _project(tmp_path / "b", "{path: notes/my.md}")
