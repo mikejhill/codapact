@@ -65,8 +65,10 @@ Follow [codapact-ynab](https://github.com/mikejhill/codapact-ynab):
 - `gen/`: generated, never edited by hand; CI regenerates and fails on a diff.
 - Root `pyproject.toml`: hand-written PyPI metadata and version (owned by release-please),
   building from `gen/python/src`.
-- `skills/codapact-<api>/SKILL.md`: the agent skill, written with
-  [create-coda-skill](../extras/agent-plugin/skills/create-coda-skill/SKILL.md).
+- `cli.skill` in `codapact.yaml`: the agent skill, shipped in the package and installed
+  with `codapact-<api> skill install --dir DIR` (see
+  [Agent skill](configuration.md#agent-skill) and
+  [create-coda-skill](../extras/agent-plugin/skills/create-coda-skill/SKILL.md)).
 
 Run a coda through `uvx`; do not document `uv tool install` as the way to run it.
 
@@ -97,4 +99,4 @@ readme:
   API source section and no API badge. Say nothing about how the contract was written.
 - **Not on PyPI yet.** Without `repository` (or with `pypi: false`), the README runs the coda
   with `uvx --from ./gen/python codapact-<api>`.
-- **Agent skill.** Link it with a `sections` entry once the skill exists.
+- **Agent skill.** With `cli.skill` set, the README gets an "Agent skill" section on its own.
