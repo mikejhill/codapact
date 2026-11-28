@@ -320,12 +320,10 @@ def _skill_option(config: ProjectConfig) -> dict[str, Any]:
     for rel, source in sources.items():
         try:
             files[rel] = source.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
+        except (OSError, UnicodeDecodeError) as exc:
             raise ConfigError(
-                f"cli.skill.path: {rel} is not UTF-8 text; skills can only ship text files"
+                f"cli.skill.path: cannot read {rel} (skills can only ship UTF-8 text files): {exc}"
             ) from None
-        except OSError as exc:
-            raise ConfigError(f"cli.skill.path: cannot read {rel}: {exc}") from None
     return {"files": files}
 
 
